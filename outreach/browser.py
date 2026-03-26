@@ -1,0 +1,825 @@
+"""
+LinkedIn browser client — Playwright-based.
+
+Handles all LinkedIn UI interactions: login, profile scraping,
+connection requests, and message sending.
+
+── Modes ──────────────────────────────────────────────────────────────────────
+
+  launch  (default)
+      Playwright spawns a fresh Chromium process that lives for the duration
+      of the async-with block, then closes.  Auth cookies are saved to disk
+      so re-login is skipped on subsequent runs.
+
+  attach
+      Playwright connects to an already-running Chrome/Chromium via the
+      Chrome DevTools Protocol (CDP).  The browser stays open after the
+      Python process exits — it is never closed by this code.
+
+      Start Chrome once (you only need to do this once per machine):
+
+          /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \\
+            --remote-debugging-port=9222 \\
+            --user-data-dir=$HOME/.linkedin-chrome-profile \\
+            --no-first-run
+
+      Then use LinkedInBrowser in attach mode:
+
+          async with LinkedInBrowser(mode="attach") as li:
+              # browser stays alive after this block exits
+              profile = await li.scrape_profile(url)
+
+      Benefits for LinkedIn:
+        - You log in once manually (and solve any CAPTCHA yourself).
+        - Session cookies live in the --user-data-dir indefinitely.
+        - Automation attaches silently to the real, warm browser session.
+        - No headless flag, no stealth tricks needed.
+
+── Usage examples ─────────────────────────────────────────────────────────────
+
+    # Launch mode (default)
+    async with LinkedInBrowser(headless=False) as li:
+        await li.login("you@example.com", "yourpassword")
+        profile = await li.scrape_profile("https://www.linkedin.com/in/alex-chen-softeng/")
+        await li.send_connection_request(profile["url"], note="Hey Alex — ...")
+
+    # Attach mode
+    async with LinkedInBrowser(mode="attach", cdp_url="http://localhost:9222") as li:
+        profile = await li.scrape_profile("https://www.linkedin.com/in/alex-chen-softeng/")
+        await li.send_message(profile["url"], "Quick follow-up ...")
+
+── Design notes ───────────────────────────────────────────────────────────────
+
+    - All waits use Playwright's built-in locator + expect helpers rather than
+      arbitrary time.sleep() calls, which makes the code faster and more robust.
+    - Human-like delays (random 500–1500 ms) are injected before clicks to reduce
+      bot-detection risk.
+    - The browser session is maintained across calls so LinkedIn's session cookie
+      stays valid.
+    - Stealth tweaks (launch mode only): webdriver property removed, plugins
+      and navigator.languages spoofed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import random
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from playwright.async_api import (
+    Browser,
+    BrowserContext,
+    Page,
+    Playwright,
+    async_playwright,
+    expect,
+)
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+BASE_URL    = "https://www.linkedin.com"
+FEED_URL    = f"{BASE_URL}/feed/"
+
+# Playwright's default navigation timeout (30 s) works for most pages.
+NAV_TIMEOUT = 30_000   # ms
+# Shorter timeout when waiting for a UI element to appear.
+EL_TIMEOUT  = 10_000   # ms
+
+# Paths
+STORAGE_DIR = Path(__file__).parent / "storage"
+STORAGE_DIR.mkdir(exist_ok=True)
+
+# ── Stealth helpers ───────────────────────────────────────────────────────────
+
+_STEALTH_SCRIPT = """
+// Remove the webdriver flag that LinkedIn (and most bot-detection services) check.
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+// Spoof plugins length so it doesn't look like a bare headless Chrome.
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+
+// Languages — match a real US-English browser.
+Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+"""
+
+
+# ── Human-behaviour helpers ───────────────────────────────────────────────────
+# All functions that simulate realistic human interaction patterns.
+# Use these instead of bare asyncio.sleep() throughout the codebase.
+
+async def _human_pause(low: float = 0.5, high: float = 1.5) -> None:
+    """Random sleep simulating human think-time between actions."""
+    await asyncio.sleep(random.uniform(low, high))
+
+
+async def _human_mouse_move(page: Page) -> None:
+    """
+    Move the mouse along a short curved path before the next interaction.
+
+    Real users don't teleport the cursor; they glide it across the screen
+    with minor deviations.  We approximate this with a few intermediate
+    waypoints sampled from a random walk within the visible viewport.
+    """
+    vp_w = page.viewport_size["width"]  if page.viewport_size else 1280
+    vp_h = page.viewport_size["height"] if page.viewport_size else 800
+
+    # Start from somewhere in the middle third of the viewport.
+    x = random.randint(vp_w // 3, 2 * vp_w // 3)
+    y = random.randint(vp_h // 3, 2 * vp_h // 3)
+
+    steps = random.randint(3, 6)
+    for _ in range(steps):
+        x = max(10, min(vp_w - 10, x + random.randint(-120, 120)))
+        y = max(10, min(vp_h - 10, y + random.randint(-80,  80)))
+        await page.mouse.move(x, y)
+        await asyncio.sleep(random.uniform(0.04, 0.12))
+
+
+async def _human_scroll(page: Page, direction: str = "down", ticks: int | None = None) -> None:
+    """
+    Scroll the page in short bursts as a human would when reading.
+
+    Parameters
+    ----------
+    direction : "down" | "up"
+    ticks     : total scroll distance in pixels; randomised if None.
+    """
+    total   = ticks if ticks is not None else random.randint(300, 900)
+    delta   = 100 if direction == "down" else -100
+    steps   = max(1, total // abs(delta))
+    vp_w    = page.viewport_size["width"]  if page.viewport_size else 640
+    vp_h    = page.viewport_size["height"] if page.viewport_size else 400
+    x, y    = vp_w // 2, vp_h // 2
+
+    for _ in range(steps):
+        await page.mouse.wheel(0, delta + random.randint(-20, 20))
+        await asyncio.sleep(random.uniform(0.08, 0.22))
+
+
+async def _human_type(page: Page, selector: str, text: str) -> None:
+    """
+    Click a field and type text one character at a time at a human-like WPM.
+
+    Average typing speed ≈ 200 CPM (≈ 40 WPM) with natural variance.
+    Occasional brief pauses simulate the human hesitating mid-word.
+    """
+    await page.click(selector)
+    await _human_pause(0.2, 0.5)
+
+    for char in text:
+        await page.keyboard.type(char)
+        delay = random.gauss(0.10, 0.04)          # ~100 ms ± noise
+        delay = max(0.04, min(delay, 0.35))        # clamp to [40 ms, 350 ms]
+        if random.random() < 0.05:                 # 5 % chance of a short thinking pause
+            delay += random.uniform(0.3, 0.8)
+        await asyncio.sleep(delay)
+
+
+async def _human_click(page: Page, locator) -> None:
+    """
+    Move the mouse to a locator and click it like a human would.
+
+    - Jitters the mouse into position before clicking.
+    - Adds a brief pause after the click (reaction time).
+    """
+    await _human_mouse_move(page)
+    await locator.scroll_into_view_if_needed()
+    box = await locator.bounding_box()
+    if box:
+        # Land somewhere within the element, not exactly at its centre.
+        tx = box["x"] + box["width"]  * random.uniform(0.3, 0.7)
+        ty = box["y"] + box["height"] * random.uniform(0.3, 0.7)
+        await page.mouse.move(tx, ty, steps=random.randint(5, 12))
+        await asyncio.sleep(random.uniform(0.08, 0.2))
+        await page.mouse.click(tx, ty)
+    else:
+        await locator.click()
+    await _human_pause(0.3, 0.8)
+
+
+# ── Browser wrapper ───────────────────────────────────────────────────────────
+
+class LinkedInBrowser:
+    """
+    Async context manager wrapping a Playwright Chromium session.
+
+    Parameters
+    ----------
+    mode : "launch" | "attach"
+        "launch"  — Playwright spawns and owns a new Chromium process.
+        "attach"  — Playwright connects to an existing Chrome via CDP; the
+                    browser is NOT closed when the context manager exits.
+    cdp_url : str
+        CDP endpoint to attach to (only used when mode="attach").
+        Defaults to http://localhost:9222.
+    headless : bool
+        Headless flag for launch mode (ignored in attach mode).
+    slow_mo : int
+        Milliseconds to slow down each Playwright action (launch mode only).
+    reuse_auth : bool
+        In launch mode, persist / restore auth cookies from disk.
+
+    Example
+    -------
+    # Launch mode
+    async with LinkedInBrowser(headless=False) as li:
+        await li.login(email, password)
+        profile = await li.scrape_profile(url)
+
+    # Attach mode — browser outlives this block
+    async with LinkedInBrowser(mode="attach") as li:
+        profile = await li.scrape_profile(url)
+    """
+
+    def __init__(
+        self,
+        *,
+        mode: str = "attach",
+        cdp_url: str = "http://localhost:9222",
+        headless: bool = True,
+        slow_mo: int = 50,
+    ) -> None:
+        if mode not in ("launch", "attach"):
+            raise ValueError(f"mode must be 'launch' or 'attach', got {mode!r}")
+
+        self.mode    = mode
+        self.cdp_url = cdp_url
+        self.headless = headless
+        self.slow_mo  = slow_mo
+
+        self._pw:          Playwright    | None = None
+        self._browser:     Browser       | None = None
+        self._ctx:         BrowserContext | None = None
+        self._page:        Page          | None = None
+        self._is_attached: bool = False   # True when we connected via CDP
+        self._owned_page:  bool = False   # True when we opened the tab (attach mode)
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    async def __aenter__(self) -> "LinkedInBrowser":
+        self._pw = await async_playwright().start()
+
+        if self.mode == "attach":
+            await self._attach()
+        else:
+            await self._launch()
+
+        return self
+
+    async def _launch(self) -> None:
+        """Spawn a fresh Chromium process (launch mode)."""
+        self._browser = await self._pw.chromium.launch(
+            headless=self.headless,
+            slow_mo=self.slow_mo,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
+
+        ctx_kwargs: dict[str, Any] = {
+            "viewport": {"width": 1280, "height": 800},
+            "user_agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "locale": "en-US",
+        }
+
+        self._ctx  = await self._browser.new_context(**ctx_kwargs)
+        self._page = await self._ctx.new_page()
+
+        # Inject stealth overrides on every new page / frame.
+        await self._ctx.add_init_script(_STEALTH_SCRIPT)
+
+    async def _attach(self) -> None:
+        """
+        Attach to an already-running Chrome via CDP and pick the best tab to use.
+
+        Tab selection priority (most to least preferred):
+          1. A tab already on linkedin.com — most human-like, session is warm.
+          2. Any other ordinary http/https tab — safe to navigate away from.
+          3. Open a new blank tab — only if no usable tab exists.
+
+        Internal Chrome pages (chrome://, devtools://, about:, data:, etc.) are
+        skipped because they block page.goto() and page.title() indefinitely.
+
+        We never close a tab we didn't open, so the user's browsing is undisturbed.
+        """
+        self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
+        self._is_attached = True
+
+        # Inherit the real user session (cookies, localStorage, etc.).
+        self._ctx = self._browser.contexts[0] if self._browser.contexts \
+                    else await self._browser.new_context()
+
+        page = self._pick_tab(self._ctx.pages)
+        if page is not None:
+            self._page       = page
+            self._owned_page = False   # we reused it — don't close on exit
+            print(f"[browser] Attached to Chrome at {self.cdp_url} "
+                  f"(reusing tab: {page.url!r})")
+        else:
+            self._page       = await self._ctx.new_page()
+            self._owned_page = True    # we opened it — close on exit
+            print(f"[browser] Attached to Chrome at {self.cdp_url} "
+                  f"(opened new tab)")
+
+    @staticmethod
+    def _pick_tab(pages: list[Page]) -> Page | None:
+        """
+        Return the best existing tab for automation, or None if none is usable.
+
+        Preference order:
+          1. Any tab already on linkedin.com (warm session, no navigation needed).
+          2. Any ordinary http/https tab (will navigate to LinkedIn on first use).
+
+        Tabs on internal Chrome URLs are always skipped — they hang on goto().
+        """
+        _SKIP = ("chrome://", "devtools://", "about:", "data:", "chrome-extension://")
+
+        usable    = [p for p in pages if not any(p.url.startswith(s) for s in _SKIP)]
+        linkedin  = [p for p in usable if "linkedin.com" in p.url]
+
+        if linkedin:
+            return linkedin[0]
+        if usable:
+            return usable[0]
+        return None
+
+    async def __aexit__(self, *_: Any) -> None:
+        if self._is_attached:
+            # Close only the tab we opened — leave the rest of the browser alone.
+            if self._owned_page and self._page and not self._page.is_closed():
+                await self._page.close()
+            print("[browser] Detaching from Chrome (browser stays open).")
+            if self._pw:
+                await self._pw.stop()
+            return
+
+        # Launch mode — full teardown.
+        if self._ctx:
+            await self._ctx.close()
+        if self._browser:
+            await self._browser.close()
+        if self._pw:
+            await self._pw.stop()
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+
+    async def is_logged_in(self) -> bool:
+        """
+        Return True if the attached Chrome session is already logged in to LinkedIn.
+
+        Login is always done manually by the user in the browser window.
+        Run `make browser`, log in once, and every subsequent `make run` will
+        reuse the session from the Chrome profile directory.
+        """
+        await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT)
+        return "/login" not in self._page.url
+
+    async def assert_logged_in(self) -> None:
+        """
+        Raise a clear error if the user is not logged in, with instructions
+        on how to fix it.  Call this at the start of any job that needs auth.
+        """
+        if not await self.is_logged_in():
+            raise RuntimeError(
+                "Not logged in to LinkedIn.\n"
+                "  1. Run `make browser` to open Chrome.\n"
+                "  2. Log in to LinkedIn manually in that window.\n"
+                "  3. Re-run `make server` (or `make run`)."
+            )
+
+    # ── Profile scraping ──────────────────────────────────────────────────────
+
+    async def scrape_profile(self, profile_url: str) -> dict:
+        """
+        Navigate to a LinkedIn profile and extract key fields.
+
+        Returns a dict that matches (or extends) the prospect schema used by
+        outreach/planner.py.
+        """
+        await self._page.goto(profile_url, timeout=NAV_TIMEOUT)
+        await _human_pause(1.5, 2.5)
+        await _human_scroll(self._page, "down")   # read down the page like a human
+
+        # ── Name ──
+        name = await self._page.locator("h1").first.inner_text(timeout=EL_TIMEOUT)
+
+        # ── Headline / title ──
+        headline_el = self._page.locator(".text-body-medium.break-words").first
+        headline = await headline_el.inner_text(timeout=EL_TIMEOUT) if await headline_el.count() else ""
+
+        # ── Location ──
+        location_el = self._page.locator(".text-body-small.inline.t-black--light.break-words").first
+        location = await location_el.inner_text(timeout=EL_TIMEOUT) if await location_el.count() else ""
+
+        # ── Connection degree ──
+        degree_el = self._page.locator(".dist-value").first
+        degree_text = await degree_el.inner_text(timeout=EL_TIMEOUT) if await degree_el.count() else ""
+        connection_degree = int(re.search(r"\d", degree_text).group()) if re.search(r"\d", degree_text) else None
+
+        await _human_scroll(self._page, "down")   # scroll further to reveal About / Experience
+
+        # ── About section ──
+        about_el = self._page.locator("section#about ~ div, div[data-generated-suggestion-target='urn:li:fs_aboutPrompt']").first
+        about = await about_el.inner_text(timeout=EL_TIMEOUT) if await about_el.count() else ""
+
+        # ── Recent posts (activity feed) ──
+        posts: list[dict] = []
+        try:
+            activity_url = profile_url.rstrip("/") + "/recent-activity/all/"
+            await self._page.goto(activity_url, timeout=NAV_TIMEOUT)
+            await _human_pause(1.5, 2.5)
+            await _human_scroll(self._page, "down")
+
+            post_els = self._page.locator(".feed-shared-update-v2__description")
+            count = await post_els.count()
+            for i in range(min(count, 3)):
+                text = await post_els.nth(i).inner_text(timeout=EL_TIMEOUT)
+                posts.append({"text": text.strip(), "timestamp": "", "likes": 0})
+                await _human_pause(0.3, 0.8)   # brief read pause between posts
+        except Exception as exc:
+            print(f"[browser] Could not scrape activity feed: {exc}")
+
+        return {
+            "linkedin_url":      profile_url,
+            "name":              name.strip(),
+            "title":             headline.strip(),
+            "location":          location.strip(),
+            "connection_degree": connection_degree,
+            "about":             about.strip(),
+            "recent_posts":      posts,
+            "scraped_at":        datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ── Connection request ────────────────────────────────────────────────────
+
+    async def send_connection_request(self, profile_url: str, note: str = "") -> bool:
+        """
+        Send a connection request to a LinkedIn profile.
+
+        Parameters
+        ----------
+        profile_url : str
+            Full LinkedIn profile URL.
+        note : str
+            Personalised connection note (≤300 chars).  Pass empty string to
+            send without a note.
+
+        Returns
+        -------
+        bool
+            True on success, False if the button wasn't found or request failed.
+        """
+        if len(note) > 300:
+            raise ValueError(f"Connection note too long: {len(note)} chars (LinkedIn limit: 300)")
+
+        await self._page.goto(profile_url, timeout=NAV_TIMEOUT)
+        await _human_pause(1.5, 2.5)
+        await _human_scroll(self._page, "down", ticks=300)   # skim the profile before acting
+        await _human_mouse_move(self._page)
+
+        # Try the prominent "Connect" button first.
+        connect_btn = self._page.get_by_role("button", name=re.compile(r"^Connect$", re.I))
+
+        # Fall back to the "More" overflow menu.
+        if not await connect_btn.count():
+            more_btn = self._page.get_by_role("button", name=re.compile(r"^More$", re.I))
+            if not await more_btn.count():
+                print("[browser] No Connect / More button found.")
+                return False
+            await _human_click(self._page, more_btn)
+            connect_btn = self._page.get_by_role("menuitem", name=re.compile(r"Connect", re.I))
+
+        await _human_click(self._page, connect_btn)
+
+        # LinkedIn may show "How do you know X?" modal — pick "Other".
+        how_know_other = self._page.get_by_role("radio", name="Other")
+        if await how_know_other.count():
+            await _human_click(self._page, how_know_other)
+            await _human_click(self._page, self._page.get_by_role("button", name="Connect"))
+
+        if note:
+            add_note_btn = self._page.get_by_role("button", name=re.compile(r"Add a note", re.I))
+            if await add_note_btn.count():
+                await _human_click(self._page, add_note_btn)
+                note_area = self._page.locator("textarea[name='message']")
+                await _human_type(self._page, "textarea[name='message']", note)
+                await _human_pause()
+
+        # Submit.
+        send_btn = self._page.get_by_role("button", name=re.compile(r"^Send$|^Send invitation$", re.I))
+        if not await send_btn.count():
+            print("[browser] Send button not found after filling note.")
+            return False
+
+        await _human_click(self._page, send_btn)
+        await _human_pause(1.0, 2.0)
+        print(f"[browser] Connection request sent to {profile_url}")
+        return True
+
+    # ── Messaging ─────────────────────────────────────────────────────────────
+
+    async def send_message(self, profile_url: str, message: str) -> bool:
+        """
+        Send a direct message to an existing connection.
+
+        The prospect must already be a 1st-degree connection — LinkedIn does not
+        allow direct messages to non-connections unless InMail credits are used.
+
+        Returns True on success.
+        """
+        if len(message) > 8_000:
+            raise ValueError("Message too long (LinkedIn limit: ~8 000 chars)")
+
+        await self._page.goto(profile_url, timeout=NAV_TIMEOUT)
+        await _human_pause(1.5, 2.5)
+        await _human_scroll(self._page, "down", ticks=200)
+        await _human_mouse_move(self._page)
+
+        msg_btn = self._page.get_by_role("button", name=re.compile(r"^Message$", re.I))
+        if not await msg_btn.count():
+            print("[browser] Message button not found — is this a 1st-degree connection?")
+            return False
+
+        await _human_click(self._page, msg_btn)
+
+        compose = self._page.locator(
+            "div[role='textbox'][aria-label*='Write a message'], "
+            "div.msg-form__contenteditable"
+        ).first
+        await expect(compose).to_be_visible(timeout=EL_TIMEOUT)
+
+        # Type at human speed rather than pasting the whole string at once.
+        compose_selector = (
+            "div[role='textbox'][aria-label*='Write a message'], "
+            "div.msg-form__contenteditable"
+        )
+        await _human_type(self._page, compose_selector, message)
+        await _human_pause()
+
+        send_btn = self._page.locator("button.msg-form__send-button").first
+        await _human_click(self._page, send_btn)
+        await _human_pause(1.0, 2.0)
+        print(f"[browser] Message sent to {profile_url}")
+        return True
+
+    # ── Social engagement ─────────────────────────────────────────────────────
+
+    async def react_to_post(self, post_url: str, reaction: str = "Like") -> bool:
+        """
+        React to a LinkedIn post.
+
+        Parameters
+        ----------
+        post_url : str
+            Direct URL of the post/activity.
+        reaction : str
+            One of: Like, Celebrate, Support, Funny, Love, Insightful.
+        """
+        await self._page.goto(post_url, timeout=NAV_TIMEOUT)
+        await _human_pause(1.5, 3.0)
+        await _human_scroll(self._page, "down", ticks=200)  # read a bit before reacting
+        await _human_mouse_move(self._page)
+        await _human_pause(0.8, 2.0)                        # "reading" the post
+
+        like_btn = self._page.locator('button[aria-label*="Reaction button"]').first
+        if not await like_btn.count():
+            print("[browser] Like button not found.")
+            return False
+
+        if reaction == "Like":
+            await _human_click(self._page, like_btn)
+        else:
+            # Hover over Like to reveal the reaction picker, then click the target.
+            await like_btn.scroll_into_view_if_needed()
+            box = await like_btn.bounding_box()
+            if box:
+                await self._page.mouse.move(
+                    box["x"] + box["width"] / 2,
+                    box["y"] + box["height"] / 2,
+                    steps=random.randint(6, 12),
+                )
+            await _human_pause(0.8, 1.4)   # hold hover long enough for picker to appear
+            reaction_btn = self._page.get_by_label(reaction)
+            if not await reaction_btn.count():
+                print(f"[browser] Reaction '{reaction}' not found.")
+                return False
+            await _human_click(self._page, reaction_btn)
+
+        await _human_pause(0.5, 1.2)
+        print(f"[browser] Reacted '{reaction}' to {post_url}")
+        return True
+
+    async def comment_on_post(self, post_url: str, comment: str) -> bool:
+        """
+        Leave a comment on a LinkedIn post.
+        """
+        await self._page.goto(post_url, timeout=NAV_TIMEOUT)
+        await _human_pause(1.5, 3.0)
+
+        comment_btn = self._page.get_by_role("button", name=re.compile(r"Comment", re.I)).first
+        if not await comment_btn.count():
+            print("[browser] Comment button not found.")
+            return False
+
+        await _human_click(self._page, comment_btn)
+
+        editor = self._page.locator("div[role='textbox'][aria-label*='Add a comment']").first
+        await expect(editor).to_be_visible(timeout=EL_TIMEOUT)
+        await _human_type(
+            self._page,
+            "div[role='textbox'][aria-label*='Add a comment']",
+            comment,
+        )
+        await _human_pause()
+
+        post_btn = self._page.get_by_role("button", name=re.compile(r"^Post$", re.I)).first
+        await _human_click(self._page, post_btn)
+        await _human_pause(1.0, 2.0)
+        print(f"[browser] Comment posted on {post_url}")
+        return True
+
+    # ── Continuous browsing session ───────────────────────────────────────────
+
+    async def browse_forever(
+        self,
+        *,
+        react_urls: list[str] | None = None,
+        reaction: str = "Like",
+    ) -> None:
+        """
+        Simulate a human browsing LinkedIn indefinitely until Ctrl-C.
+
+        Each iteration of the loop:
+          1. Navigate to the feed (or stay there if already on it).
+          2. Read through several posts with realistic per-post dwell times.
+          3. Occasionally click into a post for a deeper read, then go back.
+          4. If react_urls is provided, visit one post per round and react to it.
+          5. Take a longer "idle" break between browsing rounds (2–6 minutes).
+
+        Timing is intentionally human-scale:
+          - Post dwell:      8 – 35 s   (reading time)
+          - Between scrolls: 2 – 8 s
+          - Post click dwell: 15 – 45 s
+          - Round break:     2 – 6 min
+
+        Parameters
+        ----------
+        react_urls : list of post URLs to react to (cycled through each round).
+        reaction   : reaction type — Like, Celebrate, Support, Love, Insightful.
+        """
+        import signal as _signal
+
+        _running = True
+
+        def _stop(*_):
+            nonlocal _running
+            print("\n[browse] Stopping after this round (Ctrl-C received).")
+            _running = False
+
+        _signal.signal(_signal.SIGINT,  _stop)
+        _signal.signal(_signal.SIGTERM, _stop)
+
+        round_num   = 0
+        react_index = 0
+
+        while _running:
+            round_num += 1
+            print(f"\n[browse] ── Round {round_num} ──────────────────────────────")
+
+            # ── 1. Land on the feed ───────────────────────────────────────────
+            if "linkedin.com/feed" not in self._page.url:
+                await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT)
+            await _human_pause(2.0, 4.0)          # page-load settle time
+
+            # ── 2. Read through the feed ──────────────────────────────────────
+            posts_to_read = random.randint(3, 7)
+            print(f"[browse] Reading {posts_to_read} posts…")
+
+            for post_n in range(posts_to_read):
+                if not _running:
+                    break
+
+                # Scroll to the next post in short bursts.
+                bursts = random.randint(2, 5)
+                for _ in range(bursts):
+                    await _human_scroll(self._page, "down", ticks=random.randint(80, 180))
+                    await asyncio.sleep(random.uniform(0.4, 1.2))
+
+                await _human_mouse_move(self._page)
+
+                # Dwell on this post — simulate reading time.
+                dwell = random.uniform(8, 35)
+                print(f"[browse]   post {post_n + 1}/{posts_to_read}  "
+                      f"(reading {dwell:.0f}s)")
+                await asyncio.sleep(dwell)
+
+                # ~20 % chance: click into the post for a deeper read.
+                if random.random() < 0.20:
+                    post_links = self._page.locator(
+                        "a[href*='/posts/'], a[href*='/pulse/'], "
+                        "span.feed-shared-inline-show-more-text"
+                    )
+                    count = await post_links.count()
+                    if count:
+                        link = post_links.nth(random.randint(0, min(count - 1, 3)))
+                        await _human_click(self._page, link)
+                        deep_dwell = random.uniform(15, 45)
+                        print(f"[browse]   → clicked into post (reading {deep_dwell:.0f}s)")
+                        await asyncio.sleep(deep_dwell)
+                        await _human_scroll(self._page, "down")
+                        await asyncio.sleep(random.uniform(5, 15))
+                        await self._page.go_back(timeout=NAV_TIMEOUT)
+                        await _human_pause(1.5, 3.0)
+
+            # ── 3. React to a post (if URLs provided) ─────────────────────────
+            if react_urls and _running:
+                url = react_urls[react_index % len(react_urls)]
+                react_index += 1
+                print(f"[browse] Reacting to post ({reaction}): {url}")
+                try:
+                    await self.react_to_post(url, reaction=reaction)
+                except Exception as exc:
+                    print(f"[browse] React failed: {exc}")
+
+            # ── 4. Idle break before next round ───────────────────────────────
+            if _running:
+                break_min  = random.uniform(2, 6)
+                break_secs = break_min * 60
+                print(f"[browse] Idle break {break_min:.1f} min before next round…")
+                # Sleep in short chunks so Ctrl-C is responsive.
+                elapsed = 0.0
+                while elapsed < break_secs and _running:
+                    chunk = min(5.0, break_secs - elapsed)
+                    await asyncio.sleep(chunk)
+                    elapsed += chunk
+
+        print("[browse] Session ended.")
+
+    # ── Resume download ───────────────────────────────────────────────────────
+
+    async def download_resume(
+        self,
+        conversation_url: str,
+        save_dir: str | Path = STORAGE_DIR / "resumes",
+    ) -> Path | None:
+        """
+        Watch a LinkedIn conversation for a shared file attachment (résumé PDF).
+        Downloads it and returns the local path, or None if no attachment is found.
+
+        LinkedIn does not surface résumé attachments via a stable URL — this
+        implementation intercepts the download event triggered by clicking the
+        attachment.
+        """
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        await self._page.goto(conversation_url, timeout=NAV_TIMEOUT)
+        await _human_pause(1.5, 2.5)
+
+        # Look for a file attachment card in the conversation.
+        attachment = self._page.locator(
+            "a[href*='media/'], "
+            ".msg-s-message-list__event a[data-tracking-control-name='messaging_attachment_link']"
+        ).first
+
+        if not await attachment.count():
+            print("[browser] No attachment found in conversation.")
+            return None
+
+        async with self._page.expect_download() as dl_info:
+            await attachment.click()
+        download = await dl_info.value
+
+        suggested = download.suggested_filename or "resume.pdf"
+        dest = save_path / suggested
+        await download.save_as(str(dest))
+        print(f"[browser] Résumé saved to {dest}")
+        return dest
+
+    # ── Evidence capture ──────────────────────────────────────────────────────
+
+    async def screenshot(self, label: str) -> Path:
+        """Save a full-page screenshot for audit / debugging purposes."""
+        evidence_dir = STORAGE_DIR / "evidence"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        ts   = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        dest = evidence_dir / f"{ts}_{label}.png"
+        await self._page.screenshot(path=str(dest), full_page=True)
+        return dest
+
+    # ── Convenience property ──────────────────────────────────────────────────
+
+    @property
+    def page(self) -> Page:
+        """Expose the raw Playwright Page for ad-hoc exploration."""
+        return self._page
