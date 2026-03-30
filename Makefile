@@ -35,7 +35,7 @@ LOG_DIR  := outreach/logs
 LOG_FILE := $(LOG_DIR)/worker.log
 PID_FILE := outreach/storage/worker.pid
 
-.PHONY: run browser server stop test smoke install logs queue status help
+.PHONY: run browser server stop test test_conversation smoke install logs queue status help
 
 # ── Default target ────────────────────────────────────────────────────────────
 
@@ -92,6 +92,10 @@ stop: ## Kill the running worker process
 
 test: ## Run all exploration tests (set env vars to unlock tiers)
 	uv run tests/test_playwright_exploration.py
+
+test_conversation: ## Run conversation-planner skill tests against Claude API (needs ANTHROPIC_API_KEY)
+	@echo "▶  Running conversation-planner tests..."
+	uv run tests/test_conversation_planner.py
 
 smoke: ## Run smoke tests only (no credentials needed)
 	uv run tests/test_playwright_exploration.py

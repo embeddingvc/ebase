@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prospect.schema.json",
+  "title": "ProspectProfile",
+  "description": "Canonical schema for a LinkedIn outreach prospect. Populated by profile-navigator and referenced by conversation-planner.",
+  "type": "object",
+  "required": ["id", "linkedin_url", "name", "outreach_stage"],
+  "additionalProperties": false,
+
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable unique identifier derived from the LinkedIn slug. Example: 'alex_chen_softeng'.",
+      "pattern": "^[a-z0-9_]+$"
+    },
+
+    "linkedin_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Canonical LinkedIn profile URL. Must be the full https:// form."
+    },
+
+    "name": {
+      "type": "string",
+      "description": "Full display name as shown on LinkedIn."
+    },
+
+    "title": {
+      "type": ["string", "null"],
+      "description": "Current job title as listed on LinkedIn headline.",
+      "default": null
+    },
+
+    "company": {
+      "type": ["string", "null"],
+      "description": "Current employer.",
+      "default": null
+    },
+
+    "location": {
+      "type": ["string", "null"],
+      "description": "Location string from LinkedIn profile (city, state/country).",
+      "default": null
+    },
+
+    "connection_degree": {
+      "type": ["integer", "null"],
+      "enum": [1, 2, 3, null],
+      "description": "LinkedIn connection degree at time of last profile visit. null if unknown.",
+      "default": null
+    },
+
+    "mutual_connections": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Names of shared connections visible on LinkedIn.",
+      "default": []
+    },
+
+    "recent_posts": {
+      "type": "array",
+      "description": "Up to 5 most recent posts scraped from the activity feed.",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["text", "timestamp"],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Full or truncated post text."
+          },
+          "likes": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "default": null
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "Post date. ISO 8601 date (YYYY-MM-DD) or LinkedIn relative label ('2 weeks ago')."
+          }
+        }
+      },
+      "default": []
+    },
+
+    "connection_status": {
+      "type": "string",
+      "enum": ["none", "pending", "connected"],
+      "description": "Current LinkedIn connection status observed during the last profile visit.",
+      "default": "none"
+    },
+
+    "outreach_stage": {
+      "type": "string",
+      "enum": ["cold", "pending_connection", "engaged", "replied", "converted", "ended", "dead"],
+      "description": "High-level stage of this prospect in the outreach funnel. Must stay in sync with the companion conversation file.",
+      "default": "cold"
+    },
+
+    "target_action": {
+      "type": ["string", "null"],
+      "enum": ["request_resume", "schedule_call", "general_outreach", null],
+      "description": "The ultimate goal for this outreach sequence.",
+      "default": "request_resume"
+    },
+
+    "notes": {
+      "type": ["string", "null"],
+      "description": "Free-form operator notes: signals from activity feed, context on openness to roles, prior offline contact, etc.",
+      "default": null
+    },
+
+    "profile_fetched_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of the last profile-navigator run for this prospect.",
+      "default": null
+    }
+  }
+}
