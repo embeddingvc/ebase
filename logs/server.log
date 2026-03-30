@@ -1,0 +1,19 @@
+2026-03-30 10:59:08,607  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-03-30 10:59:08,607  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-03-30 10:59:08,608  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-03-30 10:59:40,003  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-03-30 10:59:53,679  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-03-30 10:59:53,679  INFO      linkedin.server  browse_forever task created  cdp=http://localhost:9222  reaction=Like
+2026-03-30 10:59:53,681  INFO      linkedin.server  browse_forever session started  cdp=http://localhost:9222  reaction=Like
+2026-03-30 10:59:54,182  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/feed')
+2026-03-30 10:59:55,783  INFO      linkedin.browser  ── Round 1 ──────────────────────────────
+2026-03-30 10:59:58,209  INFO      linkedin.browser  Reading 5 posts…
+2026-03-30 11:00:02,413  INFO      linkedin.browser    post 1/5  (reading 18s)
+2026-03-30 11:00:24,278  INFO      linkedin.browser    post 2/5  (reading 15s)
+2026-03-30 11:00:44,667  INFO      linkedin.browser    post 3/5  (reading 14s)
+2026-03-30 11:01:00,835  INFO      linkedin.browser    → clicked into post (reading 42s)
+2026-03-30 11:01:56,597  INFO      linkedin.browser    post 4/5  (reading 22s)
+2026-03-30 11:02:20,849  INFO      linkedin.browser    post 5/5  (reading 11s)
+2026-03-30 11:02:31,800  INFO      linkedin.browser  Idle break 5.8 min before next round…
+2026-03-30 11:03:00,734  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-03-30 11:03:02,726  INFO      linkedin.browser  Stopping after this round (Ctrl-C received).

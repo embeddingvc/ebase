@@ -63,12 +63,15 @@ connection requests, and message sending.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import random
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("linkedin.browser")
 
 from playwright.async_api import (
     Browser,
@@ -323,13 +326,11 @@ class LinkedInBrowser:
         if page is not None:
             self._page       = page
             self._owned_page = False   # we reused it — don't close on exit
-            print(f"[browser] Attached to Chrome at {self.cdp_url} "
-                  f"(reusing tab: {page.url!r})")
+            logger.info("Attached to Chrome at %s (reusing tab: %r)", self.cdp_url, page.url)
         else:
             self._page       = await self._ctx.new_page()
             self._owned_page = True    # we opened it — close on exit
-            print(f"[browser] Attached to Chrome at {self.cdp_url} "
-                  f"(opened new tab)")
+            logger.info("Attached to Chrome at %s (opened new tab)", self.cdp_url)
 
     @staticmethod
     def _pick_tab(pages: list[Page]) -> Page | None:
@@ -358,7 +359,7 @@ class LinkedInBrowser:
             # Close only the tab we opened — leave the rest of the browser alone.
             if self._owned_page and self._page and not self._page.is_closed():
                 await self._page.close()
-            print("[browser] Detaching from Chrome (browser stays open).")
+            logger.info("Detaching from Chrome (browser stays open).")
             if self._pw:
                 await self._pw.stop()
             return
@@ -447,7 +448,7 @@ class LinkedInBrowser:
                 posts.append({"text": text.strip(), "timestamp": "", "likes": 0})
                 await _human_pause(0.3, 0.8)   # brief read pause between posts
         except Exception as exc:
-            print(f"[browser] Could not scrape activity feed: {exc}")
+            logger.warning("Could not scrape activity feed: %s", exc)
 
         return {
             "linkedin_url":      profile_url,
@@ -494,7 +495,7 @@ class LinkedInBrowser:
         if not await connect_btn.count():
             more_btn = self._page.get_by_role("button", name=re.compile(r"^More$", re.I))
             if not await more_btn.count():
-                print("[browser] No Connect / More button found.")
+                logger.warning("No Connect / More button found.")
                 return False
             await _human_click(self._page, more_btn)
             connect_btn = self._page.get_by_role("menuitem", name=re.compile(r"Connect", re.I))
@@ -518,12 +519,12 @@ class LinkedInBrowser:
         # Submit.
         send_btn = self._page.get_by_role("button", name=re.compile(r"^Send$|^Send invitation$", re.I))
         if not await send_btn.count():
-            print("[browser] Send button not found after filling note.")
+            logger.warning("Send button not found after filling note.")
             return False
 
         await _human_click(self._page, send_btn)
         await _human_pause(1.0, 2.0)
-        print(f"[browser] Connection request sent to {profile_url}")
+        logger.info("Connection request sent to %s", profile_url)
         return True
 
     # ── Messaging ─────────────────────────────────────────────────────────────
@@ -547,7 +548,7 @@ class LinkedInBrowser:
 
         msg_btn = self._page.get_by_role("button", name=re.compile(r"^Message$", re.I))
         if not await msg_btn.count():
-            print("[browser] Message button not found — is this a 1st-degree connection?")
+            logger.warning("Message button not found — is this a 1st-degree connection?")
             return False
 
         await _human_click(self._page, msg_btn)
@@ -569,7 +570,7 @@ class LinkedInBrowser:
         send_btn = self._page.locator("button.msg-form__send-button").first
         await _human_click(self._page, send_btn)
         await _human_pause(1.0, 2.0)
-        print(f"[browser] Message sent to {profile_url}")
+        logger.info("Message sent to %s", profile_url)
         return True
 
     # ── Social engagement ─────────────────────────────────────────────────────
@@ -593,7 +594,7 @@ class LinkedInBrowser:
 
         like_btn = self._page.locator('button[aria-label*="Reaction button"]').first
         if not await like_btn.count():
-            print("[browser] Like button not found.")
+            logger.warning("Like button not found.")
             return False
 
         if reaction == "Like":
@@ -611,12 +612,12 @@ class LinkedInBrowser:
             await _human_pause(0.8, 1.4)   # hold hover long enough for picker to appear
             reaction_btn = self._page.get_by_label(reaction)
             if not await reaction_btn.count():
-                print(f"[browser] Reaction '{reaction}' not found.")
+                logger.warning("Reaction %r not found.", reaction)
                 return False
             await _human_click(self._page, reaction_btn)
 
         await _human_pause(0.5, 1.2)
-        print(f"[browser] Reacted '{reaction}' to {post_url}")
+        logger.info("Reacted %r to %s", reaction, post_url)
         return True
 
     async def comment_on_post(self, post_url: str, comment: str) -> bool:
@@ -628,7 +629,7 @@ class LinkedInBrowser:
 
         comment_btn = self._page.get_by_role("button", name=re.compile(r"Comment", re.I)).first
         if not await comment_btn.count():
-            print("[browser] Comment button not found.")
+            logger.warning("Comment button not found.")
             return False
 
         await _human_click(self._page, comment_btn)
@@ -645,7 +646,7 @@ class LinkedInBrowser:
         post_btn = self._page.get_by_role("button", name=re.compile(r"^Post$", re.I)).first
         await _human_click(self._page, post_btn)
         await _human_pause(1.0, 2.0)
-        print(f"[browser] Comment posted on {post_url}")
+        logger.info("Comment posted on %s", post_url)
         return True
 
     # ── Continuous browsing session ───────────────────────────────────────────
@@ -653,7 +654,6 @@ class LinkedInBrowser:
     async def browse_forever(
         self,
         *,
-        react_urls: list[str] | None = None,
         reaction: str = "Like",
     ) -> None:
         """
@@ -663,19 +663,20 @@ class LinkedInBrowser:
           1. Navigate to the feed (or stay there if already on it).
           2. Read through several posts with realistic per-post dwell times.
           3. Occasionally click into a post for a deeper read, then go back.
-          4. If react_urls is provided, visit one post per round and react to it.
+          4. With ~20 % probability after reading each post, react to it inline
+             (no navigation away from the feed — uses the visible reaction button).
           5. Take a longer "idle" break between browsing rounds (2–6 minutes).
 
         Timing is intentionally human-scale:
-          - Post dwell:      8 – 35 s   (reading time)
-          - Between scrolls: 2 – 8 s
+          - Post dwell:       8 – 35 s   (reading time)
+          - Between scrolls:  2 – 8 s
           - Post click dwell: 15 – 45 s
-          - Round break:     2 – 6 min
+          - Round break:      2 – 6 min
 
         Parameters
         ----------
-        react_urls : list of post URLs to react to (cycled through each round).
-        reaction   : reaction type — Like, Celebrate, Support, Love, Insightful.
+        reaction : reaction type — Like, Celebrate, Support, Love, Insightful.
+                   Applied randomly while scrolling the feed (~20 % of posts).
         """
         import signal as _signal
 
@@ -683,18 +684,17 @@ class LinkedInBrowser:
 
         def _stop(*_):
             nonlocal _running
-            print("\n[browse] Stopping after this round (Ctrl-C received).")
+            logger.info("Stopping after this round (Ctrl-C received).")
             _running = False
 
         _signal.signal(_signal.SIGINT,  _stop)
         _signal.signal(_signal.SIGTERM, _stop)
 
-        round_num   = 0
-        react_index = 0
+        round_num = 0
 
         while _running:
             round_num += 1
-            print(f"\n[browse] ── Round {round_num} ──────────────────────────────")
+            logger.info("── Round %d ──────────────────────────────", round_num)
 
             # ── 1. Land on the feed ───────────────────────────────────────────
             if "linkedin.com/feed" not in self._page.url:
@@ -703,7 +703,7 @@ class LinkedInBrowser:
 
             # ── 2. Read through the feed ──────────────────────────────────────
             posts_to_read = random.randint(3, 7)
-            print(f"[browse] Reading {posts_to_read} posts…")
+            logger.info("Reading %d posts…", posts_to_read)
 
             for post_n in range(posts_to_read):
                 if not _running:
@@ -719,12 +719,50 @@ class LinkedInBrowser:
 
                 # Dwell on this post — simulate reading time.
                 dwell = random.uniform(8, 35)
-                print(f"[browse]   post {post_n + 1}/{posts_to_read}  "
-                      f"(reading {dwell:.0f}s)")
+                logger.info("  post %d/%d  (reading %.0fs)", post_n + 1, posts_to_read, dwell)
                 await asyncio.sleep(dwell)
 
-                # ~20 % chance: click into the post for a deeper read.
+                # ── 3. Random inline reaction (~20 % chance per post) ─────────
                 if random.random() < 0.20:
+                    try:
+                        # Find a reaction trigger visible in the current viewport.
+                        # LinkedIn renders feed Like buttons as:
+                        #   button[aria-label*="React Like"] or .react-button__trigger
+                        react_btn = self._page.locator(
+                            "button[aria-label*='React Like'], "
+                            "button.react-button__trigger"
+                        ).first
+
+                        if await react_btn.count():
+                            if reaction == "Like":
+                                await _human_click(self._page, react_btn)
+                                logger.info("  → reacted Like to post %d", post_n + 1)
+                            else:
+                                # Hover to open the reaction picker, then choose.
+                                box = await react_btn.bounding_box()
+                                if box:
+                                    await self._page.mouse.move(
+                                        box["x"] + box["width"] / 2,
+                                        box["y"] + box["height"] / 2,
+                                        steps=random.randint(6, 12),
+                                    )
+                                await _human_pause(0.8, 1.4)
+                                reaction_btn = self._page.get_by_label(reaction)
+                                if await reaction_btn.count():
+                                    await _human_click(self._page, reaction_btn)
+                                    logger.info(
+                                        "  → reacted %r to post %d", reaction, post_n + 1
+                                    )
+                                else:
+                                    logger.warning(
+                                        "  reaction %r not found in picker for post %d",
+                                        reaction, post_n + 1,
+                                    )
+                    except Exception as exc:
+                        logger.warning("  inline react failed on post %d: %s", post_n + 1, exc)
+
+                # ~20 % chance: click into the post for a deeper read.
+                elif random.random() < 0.20:
                     post_links = self._page.locator(
                         "a[href*='/posts/'], a[href*='/pulse/'], "
                         "span.feed-shared-inline-show-more-text"
@@ -734,28 +772,18 @@ class LinkedInBrowser:
                         link = post_links.nth(random.randint(0, min(count - 1, 3)))
                         await _human_click(self._page, link)
                         deep_dwell = random.uniform(15, 45)
-                        print(f"[browse]   → clicked into post (reading {deep_dwell:.0f}s)")
+                        logger.info("  → clicked into post (reading %.0fs)", deep_dwell)
                         await asyncio.sleep(deep_dwell)
                         await _human_scroll(self._page, "down")
                         await asyncio.sleep(random.uniform(5, 15))
                         await self._page.go_back(timeout=NAV_TIMEOUT)
                         await _human_pause(1.5, 3.0)
 
-            # ── 3. React to a post (if URLs provided) ─────────────────────────
-            if react_urls and _running:
-                url = react_urls[react_index % len(react_urls)]
-                react_index += 1
-                print(f"[browse] Reacting to post ({reaction}): {url}")
-                try:
-                    await self.react_to_post(url, reaction=reaction)
-                except Exception as exc:
-                    print(f"[browse] React failed: {exc}")
-
             # ── 4. Idle break before next round ───────────────────────────────
             if _running:
                 break_min  = random.uniform(2, 6)
                 break_secs = break_min * 60
-                print(f"[browse] Idle break {break_min:.1f} min before next round…")
+                logger.info("Idle break %.1f min before next round…", break_min)
                 # Sleep in short chunks so Ctrl-C is responsive.
                 elapsed = 0.0
                 while elapsed < break_secs and _running:
@@ -763,7 +791,7 @@ class LinkedInBrowser:
                     await asyncio.sleep(chunk)
                     elapsed += chunk
 
-        print("[browse] Session ended.")
+        logger.info("Session ended.")
 
     # ── Resume download ───────────────────────────────────────────────────────
 
@@ -793,7 +821,7 @@ class LinkedInBrowser:
         ).first
 
         if not await attachment.count():
-            print("[browser] No attachment found in conversation.")
+            logger.warning("No attachment found in conversation.")
             return None
 
         async with self._page.expect_download() as dl_info:
@@ -803,7 +831,7 @@ class LinkedInBrowser:
         suggested = download.suggested_filename or "resume.pdf"
         dest = save_path / suggested
         await download.save_as(str(dest))
-        print(f"[browser] Résumé saved to {dest}")
+        logger.info("Résumé saved to %s", dest)
         return dest
 
     # ── Evidence capture ──────────────────────────────────────────────────────

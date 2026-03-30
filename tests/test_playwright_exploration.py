@@ -220,11 +220,9 @@ async def test_human_behavior() -> None:
         async with LinkedInBrowser(mode="attach", cdp_url=CDP_URL) as li:
             await li.assert_logged_in()
 
-            react_urls = [u for u in [os.environ.get("LINKEDIN_POST_URL", "")] if u]
-
             if forever:
                 print("  [human_behavior] Running forever — Ctrl-C to stop.\n")
-                await li.browse_forever(react_urls=react_urls, reaction="Like")
+                await li.browse_forever(reaction="Like")
                 record(name, True, "session ended by user")
                 return
 

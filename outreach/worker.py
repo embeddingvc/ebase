@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import signal
 import sys
@@ -46,6 +47,8 @@ PID_FILE   = BASE_DIR / "outreach" / "storage" / "worker.pid"
 
 CDP_URL       = os.environ.get("CDP_URL", "http://localhost:9222")
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "5"))
+
+logger = logging.getLogger("linkedin.worker")
 
 
 def _chrome_running(cdp_url: str = CDP_URL) -> bool:
@@ -210,10 +213,10 @@ async def execute_job(job: dict, li: LinkedInBrowser) -> None:
     if not handler:
         raise ValueError(f"Unknown action: {action!r}")
 
-    print(f"[worker] Running job: {action} → {pid_str}")
+    logger.info("Running job: %s → %s", action, pid_str)
     note = await handler(job, li)
     record_result(job, success=True, note=note)
-    print(f"[worker] ✅  {action} → {pid_str}  ({note})")
+    logger.info("✅  %s → %s  (%s)", action, pid_str, note)
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -223,7 +226,7 @@ _running = True
 
 def _handle_sigterm(*_) -> None:
     global _running
-    print("\n[worker] SIGTERM received — shutting down after current job.")
+    logger.warning("SIGTERM received — shutting down after current job.")
     _running = False
 
 
@@ -237,14 +240,14 @@ async def run_worker() -> None:
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(str(os.getpid()))
 
-    print(f"[worker] Started (pid={os.getpid()})  CDP={CDP_URL}  poll={POLL_INTERVAL}s")
-    print(f"[worker] Queue:  {PENDING}")
-    print(f"[worker] Press Ctrl-C to stop.\n")
+    logger.info("Started (pid=%d)  CDP=%s  poll=%ss", os.getpid(), CDP_URL, POLL_INTERVAL)
+    logger.info("Queue:  %s", PENDING)
+    logger.info("Press Ctrl-C to stop.")
 
     if not _chrome_running():
-        print(
-            f"[worker] ❌  Chrome not reachable at {CDP_URL}\n"
-            f"         Run `make browser` first, then re-run `make server`."
+        logger.error(
+            "Chrome not reachable at %s — run `make browser` first, then re-run `make server`.",
+            CDP_URL,
         )
         PID_FILE.unlink(missing_ok=True)
         return
@@ -263,14 +266,24 @@ async def run_worker() -> None:
             except Exception as exc:
                 note = str(exc)
                 record_result(job, success=False, note=note)
-                print(f"[worker] ❌  {job.get('action')} → {job.get('prospect_id')}  ({note})")
+                logger.error("❌  %s → %s  (%s)", job.get("action"), job.get("prospect_id"), note)
 
             # Brief pause between jobs to avoid hammering LinkedIn.
             await asyncio.sleep(2)
 
     PID_FILE.unlink(missing_ok=True)
-    print("[worker] Stopped.")
+    logger.info("Stopped.")
 
 
 if __name__ == "__main__":
+    _log_dir = BASE_DIR / "logs"
+    _log_dir.mkdir(exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+        handlers=[
+            logging.FileHandler(_log_dir / "worker.log", encoding="utf-8"),
+            logging.StreamHandler(sys.stderr),
+        ],
+    )
     asyncio.run(run_worker())
