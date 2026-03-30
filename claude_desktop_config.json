@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "linkedin": {
+      "command": "/Users/ruoqihuang/Library/Python/3.8/bin/uv",
+      "args": [
+        "run",
+        "--project",
+        "/Users/ruoqihuang/Claude/Projects/LinkedIn Outreach",
+        "/Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/tools/server.py"
+      ]
+    }
+  },
+  "preferences": {
+    "coworkScheduledTasksEnabled": true,
+    "ccdScheduledTasksEnabled": true,
+    "sidebarMode": "task",
+    "coworkWebSearchEnabled": true
+  }
+}
