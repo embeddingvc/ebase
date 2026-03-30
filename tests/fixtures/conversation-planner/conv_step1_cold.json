@@ -1,0 +1,21 @@
+{
+  "prospect_id": "alex_chen_softeng",
+  "outreach_stage": "cold",
+  "messages": [],
+  "last_action": null,
+  "last_action_timestamp": null,
+  "next_action": "send_connection_request",
+  "next_action_after": null,
+  "planned_message": null,
+  "connection_note": null,
+  "resume_path": null,
+  "email": null,
+  "meeting_link": null,
+  "ended_at": null,
+  "ended_reason": null,
+  "report_path": null,
+  "sequence_step": null,
+  "stage_history": [
+    { "stage": "cold", "entered_at": "2026-03-24T00:00:00Z", "reason": "prospect added to queue" }
+  ]
+}

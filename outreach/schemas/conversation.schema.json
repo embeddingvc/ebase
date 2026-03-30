@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "conversation.schema.json",
+  "title": "Conversation",
+  "description": "Canonical schema for a LinkedIn outreach conversation thread and its state machine. One file per prospect at outreach/conversations/<prospect_id>.json.",
+  "type": "object",
+  "required": ["prospect_id", "outreach_stage", "messages"],
+  "additionalProperties": false,
+
+  "properties": {
+    "prospect_id": {
+      "type": "string",
+      "description": "Must match the id field in the companion ProspectProfile file.",
+      "pattern": "^[a-z0-9_]+$"
+    },
+
+    "outreach_stage": {
+      "type": "string",
+      "enum": ["cold", "pending_connection", "engaged", "replied", "converted", "ended", "dead"],
+      "description": "Current stage of this conversation. The conversation-planner advances this field as the sequence progresses.",
+      "default": "cold"
+    },
+
+    "messages": {
+      "type": "array",
+      "description": "Ordered list of all messages in this thread, oldest first.",
+      "items": { "$ref": "#/$defs/ConversationMessage" },
+      "default": []
+    },
+
+    "last_action": {
+      "type": ["string", "null"],
+      "enum": [
+        "send_connection_request",
+        "send_followup_message",
+        "download_resume",
+        "confirm_meeting",
+        "mark_ended",
+        "mark_dead",
+        null
+      ],
+      "description": "The most recently executed action. Set by the automation layer after delivery.",
+      "default": null
+    },
+
+    "last_action_timestamp": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of the last completed action.",
+      "default": null
+    },
+
+    "next_action": {
+      "type": ["string", "null"],
+      "enum": [
+        "send_connection_request",
+        "send_followup_message",
+        "download_resume",
+        "confirm_meeting",
+        "mark_ended",
+        "mark_dead",
+        null
+      ],
+      "description": "Action that should be executed next. Set by conversation-planner; cleared to null by the automation layer after execution.",
+      "default": null
+    },
+
+    "next_action_after": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "If set, the automation layer must not dispatch next_action before this UTC timestamp (rate-limiting / follow-up delays).",
+      "default": null
+    },
+
+    "planned_message": {
+      "type": ["string", "null"],
+      "description": "The exact message text output by conversation-planner. Passed verbatim to the automation layer for delivery. Cleared after successful send.",
+      "default": null
+    },
+
+    "connection_note": {
+      "type": ["string", "null"],
+      "maxLength": 300,
+      "description": "The note included with the LinkedIn connection request (≤300 chars). Populated during the cold → pending_connection transition.",
+      "default": null
+    },
+
+    "resume_path": {
+      "type": ["string", "null"],
+      "description": "Relative path to the saved resume file, e.g. 'outreach/storage/resumes/alex_chen_softeng.pdf'. Set by the download-resume automation skill.",
+      "default": null
+    },
+
+    "email": {
+      "type": ["string", "null"],
+      "format": "email",
+      "description": "Prospect's email address if shared during the conversation.",
+      "default": null
+    },
+
+    "meeting_link": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Calendar or video call link for a scheduled meeting.",
+      "default": null
+    },
+
+    "ended_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp when the conversation was marked ended or dead.",
+      "default": null
+    },
+
+    "ended_reason": {
+      "type": ["string", "null"],
+      "enum": [
+        "resume_received",
+        "call_scheduled",
+        "not_interested",
+        "no_response",
+        "opted_out",
+        null
+      ],
+      "description": "Terminal reason code set when outreach_stage becomes 'ended' or 'dead'.",
+      "default": null
+    },
+
+    "report_path": {
+      "type": ["string", "null"],
+      "description": "Relative path to the end-of-sequence report file, e.g. 'outreach/storage/reports/alex_chen_softeng.md'. Written by conversation-planner at sequence close.",
+      "default": null
+    },
+
+    "sequence_step": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Which step of the 5-step outreach sequence was last sent (1=intro, 2=career-dive, 3=career-plan, 4=ask, 5=close). null before any message is sent.",
+      "default": null
+    },
+
+    "stage_history": {
+      "type": "array",
+      "description": "Append-only log of every stage transition. Useful for debugging and analytics.",
+      "items": {
+        "type": "object",
+        "required": ["stage", "entered_at"],
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "type": "string",
+            "enum": ["cold", "pending_connection", "engaged", "replied", "converted", "ended", "dead"]
+          },
+          "entered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "description": "Optional human-readable reason for this transition.",
+            "default": null
+          }
+        }
+      },
+      "default": []
+    }
+  },
+
+  "$defs": {
+    "ConversationMessage": {
+      "type": "object",
+      "required": ["sender", "text", "timestamp"],
+      "additionalProperties": false,
+      "properties": {
+        "sender": {
+          "type": "string",
+          "enum": ["operator", "prospect"],
+          "description": "'operator' = the outreach account (Nova); 'prospect' = the LinkedIn target."
+        },
+        "text": {
+          "type": "string",
+          "description": "Full message text."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of the message."
+        },
+        "sequence_step": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 5,
+          "description": "For operator messages: which sequence step this message corresponds to.",
+          "default": null
+        },
+        "attachments": {
+          "type": "array",
+          "description": "Files or links shared in this message.",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["resume", "image", "link", "document"]
+              },
+              "url": {
+                "type": ["string", "null"],
+                "format": "uri",
+                "default": null
+              },
+              "filename": {
+                "type": ["string", "null"],
+                "default": null
+              }
+            }
+          },
+          "default": []
+        }
+      }
+    }
+  }
+}

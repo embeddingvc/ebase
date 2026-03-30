@@ -1,0 +1,39 @@
+{
+  "prospect_id": "alex_chen_softeng",
+  "outreach_stage": "replied",
+  "messages": [
+    {
+      "sender": "operator",
+      "text": "Hey Alex — your post on event-driven architecture at Stripe was great. I'm Nova from Embedding VC, we back early-stage AI startups and connect top talent. Open to exploring?",
+      "timestamp": "2026-03-24T10:00:00Z",
+      "sequence_step": 1,
+      "attachments": []
+    },
+    {
+      "sender": "prospect",
+      "text": "Hey Nova, thanks for reaching out but I'm not looking for anything new right now. Happy at Stripe and plan to stay for a while. Best of luck!",
+      "timestamp": "2026-03-25T11:00:00Z",
+      "sequence_step": null,
+      "attachments": []
+    }
+  ],
+  "last_action": "send_connection_request",
+  "last_action_timestamp": "2026-03-24T10:00:00Z",
+  "next_action": "send_followup_message",
+  "next_action_after": null,
+  "planned_message": null,
+  "connection_note": "Hey Alex — your post on event-driven architecture at Stripe was great. I'm Nova from Embedding VC, we back early-stage AI startups and connect top talent. Open to exploring?",
+  "resume_path": null,
+  "email": null,
+  "meeting_link": null,
+  "ended_at": null,
+  "ended_reason": null,
+  "report_path": null,
+  "sequence_step": 1,
+  "stage_history": [
+    { "stage": "cold", "entered_at": "2026-03-24T00:00:00Z", "reason": "prospect added to queue" },
+    { "stage": "pending_connection", "entered_at": "2026-03-24T10:00:00Z", "reason": "connection request sent" },
+    { "stage": "engaged", "entered_at": "2026-03-24T10:01:00Z", "reason": "connection accepted" },
+    { "stage": "replied", "entered_at": "2026-03-25T11:00:00Z", "reason": "prospect replied" }
+  ]
+}
