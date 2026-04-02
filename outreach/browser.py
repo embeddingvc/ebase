@@ -407,24 +407,121 @@ class LinkedInBrowser:
         Returns a dict that matches (or extends) the prospect schema used by
         outreach/planner.py.
         """
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT)
+        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
         await _human_pause(1.5, 2.5)
         await _human_scroll(self._page, "down")   # read down the page like a human
 
+        # ── Wait for page content ──
+        # LinkedIn's new SDUI renders content into <main id="workspace">.
+        # Wait for that rather than a specific heading tag so we don't burn the
+        # full NAV_TIMEOUT on each absent selector.
+        try:
+            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+            await _human_pause(0.5, 1.0)  # extra settle for JS-rendered content
+        except Exception:
+            logger.warning("scrape_profile: page did not reach expected state for %s", profile_url)
+
         # ── Name ──
-        name = await self._page.locator("h1").first.inner_text(timeout=EL_TIMEOUT)
+        # LinkedIn's SDUI (as of 2025+) uses <h2> for the profile name instead
+        # of the old <h1>.  We try each selector with a short timeout so we don't
+        # block 30 s per absent selector.
+        _SECTION_HEADERS = {"Experience", "Education", "Skills", "Activity", "About",
+                            "Featured", "Recommendations", "Courses", "Projects"}
+        name = ""
+        _name_selectors = [
+            "h1.text-heading-xlarge",          # legacy LinkedIn class-based layout
+            ".pv-text-details__left-panel h1", # older layout variant
+            "h1",                              # generic h1 fallback
+            # New SDUI layout: name is an h2, but scoped to <main> so we skip the
+            # nav bar's "0 notifications" heading that also uses h2 at page level.
+            "main h2",
+            "#workspace h2",
+        ]
+        for _sel in _name_selectors:
+            try:
+                _el = self._page.locator(_sel).first
+                if await _el.count():
+                    _text = (await _el.inner_text(timeout=EL_TIMEOUT)).strip()
+                    # Section headers ("Experience", "Activity", …) are also h2 —
+                    # skip them so we don't accidentally return a header as the name.
+                    if _text and _text not in _SECTION_HEADERS:
+                        name = _text
+                        break
+            except Exception:
+                continue
+
+        # Last resort: LinkedIn page titles follow "Name | LinkedIn" format.
+        if not name:
+            try:
+                title = await self._page.title()
+                if " | LinkedIn" in title:
+                    name = title.split(" | LinkedIn")[0].split(" - ")[0].strip()
+            except Exception:
+                pass
+
+        if not name:
+            logger.warning("scrape_profile: could not locate profile name on %s", profile_url)
 
         # ── Headline / title ──
-        headline_el = self._page.locator(".text-body-medium.break-words").first
-        headline = await headline_el.inner_text(timeout=EL_TIMEOUT) if await headline_el.count() else ""
+        # Try the legacy class first, then fall back to the second <p> in the
+        # SDUI topcard (which sits right after the name heading).
+        headline = ""
+        _headline_selectors = [
+            ".text-body-medium.break-words",                    # legacy layout
+            ".pv-text-details__left-panel .text-body-medium",  # older variant
+        ]
+        for _sel in _headline_selectors:
+            try:
+                _el = self._page.locator(_sel).first
+                if await _el.count():
+                    headline = (await _el.inner_text(timeout=EL_TIMEOUT)).strip()
+                    if headline:
+                        break
+            except Exception:
+                continue
 
         # ── Location ──
-        location_el = self._page.locator(".text-body-small.inline.t-black--light.break-words").first
-        location = await location_el.inner_text(timeout=EL_TIMEOUT) if await location_el.count() else ""
+        location = ""
+        _location_selectors = [
+            ".text-body-small.inline.t-black--light.break-words",  # legacy layout
+            ".pv-text-details__left-panel .t-black--light",        # older variant
+        ]
+        for _sel in _location_selectors:
+            try:
+                _el = self._page.locator(_sel).first
+                if await _el.count():
+                    location = (await _el.inner_text(timeout=EL_TIMEOUT)).strip()
+                    if location:
+                        break
+            except Exception:
+                continue
 
         # ── Connection degree ──
-        degree_el = self._page.locator(".dist-value").first
-        degree_text = await degree_el.inner_text(timeout=EL_TIMEOUT) if await degree_el.count() else ""
+        # Legacy selector first; new SDUI shows "· 1st" / "· 2nd" inline in a <p>.
+        connection_degree = None
+        degree_text = ""
+        _degree_selectors = [
+            ".dist-value",                                # legacy layout
+            "[aria-label*='degree connection']",          # aria fallback
+        ]
+        for _sel in _degree_selectors:
+            try:
+                _el = self._page.locator(_sel).first
+                if await _el.count():
+                    degree_text = (await _el.inner_text(timeout=EL_TIMEOUT)).strip()
+                    if degree_text:
+                        break
+            except Exception:
+                continue
+        # Also scan visible text for "· 1st" / "· 2nd" / "· 3rd+" patterns
+        if not degree_text:
+            try:
+                body_text = await self._page.locator("main, body").first.inner_text(timeout=EL_TIMEOUT)
+                _m = re.search(r"·\s*(\d+(?:st|nd|rd|th)\+?)", body_text)
+                if _m:
+                    degree_text = _m.group(1)
+            except Exception:
+                pass
         connection_degree = int(re.search(r"\d", degree_text).group()) if re.search(r"\d", degree_text) else None
 
         await _human_scroll(self._page, "down")   # scroll further to reveal About / Experience
@@ -432,6 +529,22 @@ class LinkedInBrowser:
         # ── About section ──
         about_el = self._page.locator("section#about ~ div, div[data-generated-suggestion-target='urn:li:fs_aboutPrompt']").first
         about = await about_el.inner_text(timeout=EL_TIMEOUT) if await about_el.count() else ""
+
+        # ── Raw visible text (profile page) ──
+        # Grab everything visible inside <main> before we navigate away.
+        # This acts as a catch-all for fields that structured selectors miss
+        # (About text, Skills, Education, etc.) and lets the skill summarise
+        # whatever LinkedIn happens to render on the day.
+        raw_text = ""
+        try:
+            main_el = self._page.locator("main, #workspace").first
+            if await main_el.count():
+                _raw = await main_el.inner_text(timeout=EL_TIMEOUT)
+                # Collapse runs of blank lines into a single blank line so the
+                # text stays readable without being padded with dozens of newlines.
+                raw_text = re.sub(r"\n{3,}", "\n\n", _raw).strip()
+        except Exception as exc:
+            logger.warning("Could not capture raw page text: %s", exc)
 
         # ── Recent posts (activity feed) ──
         posts: list[dict] = []
@@ -458,6 +571,7 @@ class LinkedInBrowser:
             "connection_degree": connection_degree,
             "about":             about.strip(),
             "recent_posts":      posts,
+            "raw_text":          raw_text,
             "scraped_at":        datetime.now(timezone.utc).isoformat(),
         }
 

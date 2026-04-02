@@ -36,6 +36,7 @@ can drive the browser directly.
 ── Tools exposed ──────────────────────────────────────────────────────────────
 
   browse_forever   Start a background human-like browsing session.
+  scrape_profile   Scrape a LinkedIn profile URL and return structured data.
 
 ── Adding more tools ──────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ can drive the browser directly.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 from pathlib import Path
@@ -172,6 +174,42 @@ async def browse_forever(
         "The session runs in the background. "
         "It will stop when the MCP server process exits."
     )
+
+
+@mcp.tool()
+async def scrape_profile(
+    profile_url: str,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Scrape a LinkedIn profile and return structured data as JSON.
+
+    Navigates to the given LinkedIn profile URL, extracts key fields (name,
+    headline, location, connection degree, about section, recent posts), then
+    returns them as a JSON string matching the prospect schema used by the
+    outreach planner.
+
+    Parameters
+    ----------
+    profile_url
+        Full LinkedIn profile URL, e.g. "https://www.linkedin.com/in/username/".
+    cdp_url
+        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
+        Defaults to "http://localhost:9222".
+
+    Returns
+    -------
+    str
+        JSON-encoded dict with keys:
+          linkedin_url, name, title, location, connection_degree,
+          about, recent_posts, scraped_at.
+    """
+    logger.info("scrape_profile called  url=%s  cdp=%s", profile_url, cdp_url)
+    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+        await li.assert_logged_in()
+        profile = await li.scrape_profile(profile_url)
+    logger.info("scrape_profile finished  name=%s", profile.get("name"))
+    return json.dumps(profile, ensure_ascii=False, indent=2)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

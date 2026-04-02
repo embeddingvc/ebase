@@ -20,3 +20,30 @@
 2026-03-30 11:22:34,013  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
 2026-03-30 11:22:34,014  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
 2026-03-30 11:22:34,018  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-01 21:25:20,838  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-01 21:36:29,180  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-01 21:36:29,180  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-01 21:36:29,181  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-01 21:36:40,463  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-01 21:36:56,219  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-01 21:36:56,221  INFO      linkedin.server  scrape_profile called  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/  cdp=http://localhost:9222
+2026-04-01 21:36:57,023  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/feed')
+2026-04-01 21:37:13,313  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-01 21:44:32,669  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-01 21:44:32,669  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-01 21:44:32,670  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-01 21:44:41,115  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-01 21:44:47,098  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-01 21:44:47,099  INFO      linkedin.server  scrape_profile called  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/  cdp=http://localhost:9222
+2026-04-01 21:44:47,556  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/mynetwork/network-manager/people-follow/following/')
+2026-04-01 21:44:58,788  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-01 21:44:58,797  INFO      linkedin.server  scrape_profile finished  name=0 notifications
+2026-04-01 21:52:46,679  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-01 21:52:46,680  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-01 21:52:46,680  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-01 21:52:59,019  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-01 21:53:09,674  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-01 21:53:09,675  INFO      linkedin.server  scrape_profile called  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/  cdp=http://localhost:9222
+2026-04-01 21:53:10,114  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/ruoqi-huang-b8757b21a/')
+2026-04-01 21:53:22,291  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-01 21:53:22,296  INFO      linkedin.server  scrape_profile finished  name=Ruoqi Huang
