@@ -35,12 +35,14 @@ can drive the browser directly.
 
 ── Tools exposed ──────────────────────────────────────────────────────────────
 
-  browse_forever   Start a background human-like browsing session.
-  scrape_profile   Scrape a LinkedIn profile URL and return structured data.
+  browse_forever            Start a background human-like browsing session.
+  scrape_profile            Scrape a LinkedIn profile URL and return structured data.
+  send_connection_request   Send a connection request, with an optional note.
+  send_message              Send a direct message to a 1st-degree connection.
+  reply_to_post             Leave a comment (reply) on a LinkedIn post.
 
 ── Adding more tools ──────────────────────────────────────────────────────────
 
-  This file intentionally wraps only browse_forever for now.
   Add new @mcp.tool() functions here as additional LinkedIn actions are needed.
 """
 
@@ -210,6 +212,136 @@ async def scrape_profile(
         profile = await li.scrape_profile(profile_url)
     logger.info("scrape_profile finished  name=%s", profile.get("name"))
     return json.dumps(profile, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+async def send_connection_request(
+    profile_url: str,
+    note: str = "",
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Send a connection request to a LinkedIn profile, with an optional note.
+
+    Navigates to the given profile, clicks the Connect button (or opens the
+    More overflow menu if Connect is not directly visible), optionally adds a
+    personalised note (≤300 chars), and submits the invitation.
+
+    Parameters
+    ----------
+    profile_url
+        Full LinkedIn profile URL, e.g. "https://www.linkedin.com/in/username/".
+    note
+        Personalised connection note (LinkedIn limit: 300 chars).
+        Pass an empty string to send without a note.
+    cdp_url
+        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
+        Defaults to "http://localhost:9222".
+
+    Returns
+    -------
+    str
+        "ok" on success, or an error description if the request could not be sent.
+    """
+    if len(note) > 300:
+        return f"Note too long: {len(note)} chars (LinkedIn limit: 300). Please shorten and retry."
+
+    logger.info(
+        "send_connection_request called  url=%s  note_len=%d  cdp=%s",
+        profile_url, len(note), cdp_url,
+    )
+    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+        await li.assert_logged_in()
+        success = await li.send_connection_request(profile_url, note=note)
+    if success:
+        logger.info("send_connection_request finished  url=%s", profile_url)
+        return "ok"
+    return (
+        "Connection request could not be sent. "
+        "The Connect button was not found — the profile may already be a connection, "
+        "have a pending request, or the button is hidden behind the More menu."
+    )
+
+
+@mcp.tool()
+async def send_message(
+    profile_url: str,
+    message: str,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Send a direct message to an existing 1st-degree LinkedIn connection.
+
+    Navigates to the given profile, clicks the Message button, types the
+    message at human-like speed, and submits it.
+
+    Parameters
+    ----------
+    profile_url
+        Full LinkedIn profile URL, e.g. "https://www.linkedin.com/in/username/".
+    message
+        Message body to send (LinkedIn limit: ~8 000 chars).
+    cdp_url
+        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
+        Defaults to "http://localhost:9222".
+
+    Returns
+    -------
+    str
+        "ok" on success, or an error description if the message could not be sent.
+    """
+    logger.info("send_message called  url=%s  cdp=%s", profile_url, cdp_url)
+    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+        await li.assert_logged_in()
+        success = await li.send_message(profile_url, message)
+    if success:
+        logger.info("send_message finished  url=%s", profile_url)
+        return "ok"
+    return (
+        "Message could not be sent. "
+        "The profile may not be a 1st-degree connection, "
+        "or the Message button was not found."
+    )
+
+
+@mcp.tool()
+async def reply_to_post(
+    post_url: str,
+    comment: str,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Leave a comment (reply) on a LinkedIn post.
+
+    Navigates to the post URL, opens the comment composer, types the comment
+    at human-like speed, and submits it.
+
+    Parameters
+    ----------
+    post_url
+        Direct URL of the LinkedIn post or activity item.
+    comment
+        Comment text to post.
+    cdp_url
+        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
+        Defaults to "http://localhost:9222".
+
+    Returns
+    -------
+    str
+        "ok" on success, or an error description if the comment could not be posted.
+    """
+    logger.info("reply_to_post called  url=%s  cdp=%s", post_url, cdp_url)
+    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+        await li.assert_logged_in()
+        success = await li.comment_on_post(post_url, comment)
+    if success:
+        logger.info("reply_to_post finished  url=%s", post_url)
+        return "ok"
+    return (
+        "Comment could not be posted. "
+        "The Comment button was not found on the post page."
+    )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

@@ -597,24 +597,63 @@ class LinkedInBrowser:
         if len(note) > 300:
             raise ValueError(f"Connection note too long: {len(note)} chars (LinkedIn limit: 300)")
 
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT)
+        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
         await _human_pause(1.5, 2.5)
-        await _human_scroll(self._page, "down", ticks=300)   # skim the profile before acting
+        try:
+            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+            await _human_pause(0.4, 0.9)
+        except Exception:
+            logger.warning("send_connection_request: main/workspace not ready for %s", profile_url)
+
+        # Keep the top-card action row in view — scrolling down first often hides Connect.
+        await self._page.evaluate("window.scrollTo(0, 0)")
         await _human_mouse_move(self._page)
 
-        # Try the prominent "Connect" button first.
-        connect_btn = self._page.get_by_role("button", name=re.compile(r"^Connect$", re.I))
+        workspace = self._page.locator("main, #workspace")
 
-        # Fall back to the "More" overflow menu.
+        # SDUI invite CTA: <a href="/preload/custom-invite/?vanityName=..." aria-label="Invite … to connect">
+        # Prefer href (stable) scoped to the profile body; .first matches header before any sidebar dupes.
+        connect_btn = workspace.locator(
+            "a[href*='custom-invite']:has-text('Connect')"
+        ).first
         if not await connect_btn.count():
-            more_btn = self._page.get_by_role("button", name=re.compile(r"^More$", re.I))
+            connect_btn = workspace.locator("a[href*='custom-invite']").first
+        if not await connect_btn.count():
+            connect_btn = self._page.get_by_role(
+                "link",
+                name=re.compile(r"Invite .+ to connect", re.I),
+            ).first
+        if not await connect_btn.count():
+            connect_btn = workspace.get_by_role("button", name=re.compile(r"^Connect$", re.I)).first
+        if not await connect_btn.count():
+            connect_btn = workspace.get_by_role("link", name=re.compile(r"^Connect$", re.I)).first
+
+        # Fall back to the profile-level "More" overflow → Connect.
+        if not await connect_btn.count():
+            more_btn = workspace.get_by_role("button", name=re.compile(r"^More$", re.I)).first
+            if not await more_btn.count():
+                more_btn = self._page.get_by_role("button", name=re.compile(r"^More$", re.I)).last
             if not await more_btn.count():
                 logger.warning("No Connect / More button found.")
                 return False
             await _human_click(self._page, more_btn)
-            connect_btn = self._page.get_by_role("menuitem", name=re.compile(r"Connect", re.I))
+            await _human_pause(0.2, 0.4)
+            connect_btn = self._page.get_by_role("menuitem", name=re.compile(r"Connect", re.I)).first
+
+        try:
+            await expect(connect_btn).to_be_visible(timeout=EL_TIMEOUT)
+        except Exception:
+            logger.warning("Connect control not visible on %s", profile_url)
+            return False
 
         await _human_click(self._page, connect_btn)
+
+        # Click may open an overlay or navigate to the /preload/custom-invite/ route; wait for UI to settle.
+        await _human_pause(0.6, 1.2)
+        try:
+            await self._page.wait_for_load_state("networkidle", timeout=8_000)
+        except Exception:
+            pass
 
         # LinkedIn may show "How do you know X?" modal — pick "Other".
         how_know_other = self._page.get_by_role("radio", name="Other")
@@ -626,17 +665,74 @@ class LinkedInBrowser:
             add_note_btn = self._page.get_by_role("button", name=re.compile(r"Add a note", re.I))
             if await add_note_btn.count():
                 await _human_click(self._page, add_note_btn)
-                note_area = self._page.locator("textarea[name='message']")
                 await _human_type(self._page, "textarea[name='message']", note)
                 await _human_pause()
 
-        # Submit.
-        send_btn = self._page.get_by_role("button", name=re.compile(r"^Send$|^Send invitation$", re.I))
-        if not await send_btn.count():
-            logger.warning("Send button not found after filling note.")
-            return False
+        # Submit — LinkedIn often shows two CTAs: primary "Add a note" / "Send"
+        # and a separate "Send without a note" control (button, link, or role=button div).
+        invite_roots = (
+            self._page.locator("[role='dialog']:visible"),
+            self._page.locator("[aria-modal='true']:visible"),
+            self._page.locator(".artdeco-modal:visible"),
+        )
+        _without_note = re.compile(r"send\s+without(\s+a\s+note)?", re.I)
+        _without_note_text = re.compile(r"Send without a note", re.I)
 
-        await _human_click(self._page, send_btn)
+        submitted = False
+        if not note:
+            _no_note_candidates: list = [
+                self._page.get_by_role("button", name=_without_note),
+                self._page.get_by_role("link", name=_without_note),
+                self._page.locator("[role='button']").filter(has_text=_without_note_text),
+                self._page.locator("button, a").filter(has_text=_without_note_text),
+            ]
+            for root in invite_roots:
+                _no_note_candidates.extend(
+                    [
+                        root.get_by_role("button", name=_without_note),
+                        root.get_by_role("link", name=_without_note),
+                        root.locator("button, a, [role='button']").filter(
+                            has_text=_without_note_text
+                        ),
+                    ]
+                )
+            for cand in _no_note_candidates:
+                if await cand.count():
+                    btn = cand.first
+                    try:
+                        await expect(btn).to_be_visible(timeout=EL_TIMEOUT)
+                        await _human_click(self._page, btn)
+                        submitted = True
+                        break
+                    except Exception:
+                        continue
+
+        if not submitted:
+            dialog = self._page.locator(
+                "[role='dialog'], [data-test-modal], .artdeco-modal, "
+                "div[class*='invite']"
+            ).first
+            _send_name = re.compile(
+                r"^(Send(\s+invitation)?|Send\s+without\s+a\s+note|Done)$",
+                re.I,
+            )
+            send_btn = dialog.get_by_role("button", name=_send_name)
+            if not await send_btn.count():
+                send_btn = self._page.get_by_role("button", name=_send_name)
+            if not await send_btn.count():
+                send_btn = dialog.locator("button").filter(
+                    has=self._page.get_by_text(re.compile(r"^Send", re.I))
+                )
+            if not await send_btn.count():
+                send_btn = self._page.locator("button").filter(
+                    has=self._page.get_by_text(re.compile(r"^Send", re.I))
+                )
+            if not await send_btn.count():
+                logger.warning("Send button not found after opening invite flow.")
+                return False
+
+            await expect(send_btn.first).to_be_visible(timeout=EL_TIMEOUT)
+            await _human_click(self._page, send_btn.first)
         await _human_pause(1.0, 2.0)
         logger.info("Connection request sent to %s", profile_url)
         return True
@@ -682,7 +778,7 @@ class LinkedInBrowser:
         await _human_pause()
 
         send_btn = self._page.locator("button.msg-form__send-button").first
-        await _human_click(self._page, send_btn)
+        # await _human_click(self._page, send_btn)
         await _human_pause(1.0, 2.0)
         logger.info("Message sent to %s", profile_url)
         return True
