@@ -47,6 +47,7 @@ connection requests, and message sending.
     async with LinkedInBrowser(mode="attach", cdp_url="http://localhost:9222") as li:
         profile = await li.scrape_profile("https://www.linkedin.com/in/alex-chen-softeng/")
         await li.send_message(profile["url"], "Quick follow-up ...")
+        await li.create_new_post("Short update from automation …")
 
 ── Design notes ───────────────────────────────────────────────────────────────
 
@@ -177,8 +178,8 @@ async def _human_type(page: Page, selector: str, text: str) -> None:
         await page.keyboard.type(char)
         delay = random.gauss(0.10, 0.04)          # ~100 ms ± noise
         delay = max(0.04, min(delay, 0.35))        # clamp to [40 ms, 350 ms]
-        if random.random() < 0.05:                 # 5 % chance of a short thinking pause
-            delay += random.uniform(0.3, 0.8)
+        if random.random() < 0.1:                 # 10 % chance of a short thinking pause
+            delay += random.uniform(0.5, 1.2)
         await asyncio.sleep(delay)
 
 
@@ -751,36 +752,179 @@ class LinkedInBrowser:
         if len(message) > 8_000:
             raise ValueError("Message too long (LinkedIn limit: ~8 000 chars)")
 
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT)
+        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
         await _human_pause(1.5, 2.5)
-        await _human_scroll(self._page, "down", ticks=200)
+        try:
+            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+            await _human_pause(0.4, 0.9)
+        except Exception:
+            logger.warning("send_message: main/workspace not ready for %s", profile_url)
+
+        await self._page.evaluate("window.scrollTo(0, 0)")
         await _human_mouse_move(self._page)
 
-        msg_btn = self._page.get_by_role("button", name=re.compile(r"^Message$", re.I))
+        workspace = self._page.locator("main, #workspace")
+
+        # SDUI: Message is an <a href="/messaging/compose/?..."> with label "Message", not <button>.
+        msg_btn = workspace.locator(
+            "a[href*='/messaging/compose/']:has-text('Message')"
+        ).first
+        if not await msg_btn.count():
+            msg_btn = workspace.locator("a[href*='messaging/compose']").first
+        if not await msg_btn.count():
+            msg_btn = workspace.get_by_role("link", name=re.compile(r"^Message$", re.I)).first
+        if not await msg_btn.count():
+            msg_btn = workspace.get_by_role("button", name=re.compile(r"^Message$", re.I)).first
+
+        if not await msg_btn.count():
+            more_btn = workspace.get_by_role("button", name=re.compile(r"^More$", re.I)).first
+            if not await more_btn.count():
+                more_btn = self._page.get_by_role("button", name=re.compile(r"^More$", re.I)).last
+            if await more_btn.count():
+                await _human_click(self._page, more_btn)
+                await _human_pause(0.2, 0.4)
+                msg_btn = self._page.get_by_role("menuitem", name=re.compile(r"^Message$", re.I)).first
+
         if not await msg_btn.count():
             logger.warning("Message button not found — is this a 1st-degree connection?")
             return False
 
+        try:
+            await expect(msg_btn).to_be_visible(timeout=EL_TIMEOUT)
+        except Exception:
+            logger.warning("Message control not visible on %s", profile_url)
+            return False
+
         await _human_click(self._page, msg_btn)
+        await _human_pause(0.5, 1.0)
 
-        compose = self._page.locator(
-            "div[role='textbox'][aria-label*='Write a message'], "
-            "div.msg-form__contenteditable"
-        ).first
-        await expect(compose).to_be_visible(timeout=EL_TIMEOUT)
-
-        # Type at human speed rather than pasting the whole string at once.
         compose_selector = (
             "div[role='textbox'][aria-label*='Write a message'], "
-            "div.msg-form__contenteditable"
+            "div[role='textbox'][aria-label*='message' i], "
+            "div.msg-form__contenteditable, "
+            "[contenteditable='true'][data-placeholder*='Write' i]"
         )
+        compose = self._page.locator(compose_selector).first
+        await expect(compose).to_be_visible(timeout=EL_TIMEOUT)
+
         await _human_type(self._page, compose_selector, message)
         await _human_pause()
 
         send_btn = self._page.locator("button.msg-form__send-button").first
-        # await _human_click(self._page, send_btn)
+        if not await send_btn.count():
+            send_btn = self._page.get_by_role("button", name=re.compile(r"^Send$", re.I)).first
+        if not await send_btn.count():
+            send_btn = self._page.locator("button[aria-label*='Send' i]").first
+        if not await send_btn.count():
+            logger.warning("Message compose send control not found.")
+            return False
+
+        await expect(send_btn).to_be_visible(timeout=EL_TIMEOUT)
+        await _human_click(self._page, send_btn)
         await _human_pause(1.0, 2.0)
         logger.info("Message sent to %s", profile_url)
+        return True
+
+    # ── Feed posts ────────────────────────────────────────────────────────────
+
+    async def create_new_post(self, content: str) -> bool:
+        """
+        Open the home-feed composer, enter text, and publish a new post.
+
+        Expects the classic share-box modal (Quill editor + Post button). Starts
+        from the feed by clicking “Start a post” (``/preload/sharebox/`` link).
+
+        Returns True on success.
+        """
+        text = (content or "").strip()
+        if not text:
+            raise ValueError("Post content cannot be empty.")
+        if len(text) > 10_000:
+            raise ValueError("Post content too long (keep under ~10 000 chars).")
+
+        await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+        await _human_pause(1.2, 2.0)
+        try:
+            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+            await _human_pause(0.4, 0.9)
+        except Exception:
+            logger.warning("create_new_post: main/workspace not ready on feed")
+
+        await self._page.evaluate("window.scrollTo(0, 0)")
+        await _human_mouse_move(self._page)
+
+        workspace = self._page.locator("main, #workspace")
+
+        start_btn = workspace.locator(
+            "a[href*='/preload/sharebox/']:has-text('Start a post')"
+        ).first
+        if not await start_btn.count():
+            start_btn = workspace.locator("a[href*='preload/sharebox']").first
+        if not await start_btn.count():
+            start_btn = workspace.get_by_role(
+                "link",
+                name=re.compile(r"start a post", re.I),
+            ).first
+        if not await start_btn.count():
+            start_btn = workspace.locator(
+                "a[aria-label*='Start a post' i]"
+            ).first
+
+        if not await start_btn.count():
+            logger.warning("create_new_post: Start a post control not found on feed.")
+            return False
+
+        try:
+            await expect(start_btn).to_be_visible(timeout=EL_TIMEOUT)
+        except Exception:
+            logger.warning("create_new_post: Start a post not visible.")
+            return False
+
+        await _human_click(self._page, start_btn)
+        await _human_pause(0.5, 1.0)
+
+        modal = self._page.locator(
+            "[role='dialog'][data-test-modal], .share-box-v2__modal"
+        ).first
+        try:
+            await expect(modal).to_be_visible(timeout=EL_TIMEOUT)
+        except Exception:
+            logger.warning("create_new_post: share composer modal did not open.")
+            return False
+
+        editor_selector = (
+            "[role='dialog'] [data-test-ql-editor-contenteditable='true'], "
+            "[role='dialog'] div.ql-editor[contenteditable='true'], "
+            "[role='dialog'] div[role='textbox'][aria-label*='Text editor' i]"
+        )
+        editor = self._page.locator(editor_selector).first
+        try:
+            await expect(editor).to_be_visible(timeout=EL_TIMEOUT)
+        except Exception:
+            logger.warning("create_new_post: post editor not found in modal.")
+            return False
+
+        await _human_type(self._page, editor_selector, text)
+        await _human_pause(0.4, 0.9)
+
+        post_btn = modal.locator("button.share-actions__primary-action").filter(
+            has_text=re.compile(r"^Post$", re.I)
+        ).first
+        if not await post_btn.count():
+            post_btn = modal.get_by_role("button", name=re.compile(r"^Post$", re.I)).first
+        if not await post_btn.count():
+            logger.warning("create_new_post: Post button not found.")
+            return False
+
+        try:
+            await expect(post_btn).to_be_enabled(timeout=EL_TIMEOUT)
+        except Exception:
+            logger.warning("create_new_post: Post stayed disabled — content may not have registered.")
+            return False
+
+        await _human_click(self._page, post_btn)
+        await _human_pause(1.2, 2.0)
+        logger.info("create_new_post: published to feed.")
         return True
 
     # ── Social engagement ─────────────────────────────────────────────────────

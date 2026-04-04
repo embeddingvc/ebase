@@ -160,3 +160,37 @@
 2026-04-03 16:11:36,128  INFO      linkedin.browser  Idle break 5.2 min before next round…
 2026-04-03 16:13:13,845  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
 2026-04-03 16:13:15,833  INFO      linkedin.browser  Stopping after this round (Ctrl-C received).
+2026-04-04 11:04:03,522  INFO      linkedin.server  send_connection_request called  url=https://www.linkedin.com/in/jarvis-huang-08868a3b5/  note_len=0  cdp=http://localhost:9222
+2026-04-04 11:04:04,453  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/jarvis-huang-08868a3b5/')
+2026-04-04 11:04:22,967  INFO      linkedin.browser  Connection request sent to https://www.linkedin.com/in/jarvis-huang-08868a3b5/
+2026-04-04 11:04:22,968  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-04 11:04:22,983  INFO      linkedin.server  send_connection_request finished  url=https://www.linkedin.com/in/jarvis-huang-08868a3b5/
+2026-04-04 11:05:23,280  INFO      linkedin.server  send_connection_request called  url=https://www.linkedin.com/in/epagomenal-undefined-64711a3b6/  note_len=0  cdp=http://localhost:9222
+2026-04-04 11:05:23,929  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/epagomenal-undefined-64711a3b6/')
+2026-04-04 11:05:43,875  INFO      linkedin.browser  Connection request sent to https://www.linkedin.com/in/epagomenal-undefined-64711a3b6/
+2026-04-04 11:05:43,877  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-04 11:05:43,898  INFO      linkedin.server  send_connection_request finished  url=https://www.linkedin.com/in/epagomenal-undefined-64711a3b6/
+2026-04-04 11:06:20,298  INFO      linkedin.server  send_connection_request called  url=https://www.linkedin.com/in/c-s-453b7a360/  note_len=0  cdp=http://localhost:9222
+2026-04-04 11:06:20,948  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/c-s-453b7a360/')
+2026-04-04 11:06:39,566  INFO      linkedin.browser  Connection request sent to https://www.linkedin.com/in/c-s-453b7a360/
+2026-04-04 11:06:39,567  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-04 11:06:39,578  INFO      linkedin.server  send_connection_request finished  url=https://www.linkedin.com/in/c-s-453b7a360/
+2026-04-04 11:16:02,219  INFO      linkedin.server  send_message called  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/  cdp=http://localhost:9222
+2026-04-04 11:16:02,888  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/ruoqi-huang-b8757b21a/')
+2026-04-04 11:16:07,866  WARNING   linkedin.browser  Message button not found — is this a 1st-degree connection?
+2026-04-04 11:16:07,866  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-04 11:22:30,910  INFO      linkedin.server  send_message called  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/  cdp=http://localhost:9222
+2026-04-04 11:22:31,571  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/ruoqi-huang-b8757b21a/')
+2026-04-04 11:22:44,316  INFO      linkedin.browser  Message sent to https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-04 11:22:44,318  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-04 11:22:44,336  INFO      linkedin.server  send_message finished  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-04 11:23:24,776  INFO      linkedin.server  send_message called  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/  cdp=http://localhost:9222
+2026-04-04 11:23:25,402  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/ruoqi-huang-b8757b21a/')
+2026-04-04 11:23:45,351  INFO      linkedin.browser  Message sent to https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-04 11:23:45,352  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-04 11:23:45,364  INFO      linkedin.server  send_message finished  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-04 11:25:53,844  INFO      linkedin.server  send_message called  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/  cdp=http://localhost:9222
+2026-04-04 11:25:54,495  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/ruoqi-huang-b8757b21a/')
+2026-04-04 11:26:17,960  INFO      linkedin.browser  Message sent to https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-04 11:26:17,962  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-04 11:26:17,972  INFO      linkedin.server  send_message finished  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/

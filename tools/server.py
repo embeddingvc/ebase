@@ -39,6 +39,7 @@ can drive the browser directly.
   scrape_profile            Scrape a LinkedIn profile URL and return structured data.
   send_connection_request   Send a connection request, with an optional note.
   send_message              Send a direct message to a 1st-degree connection.
+  create_new_post           Publish a new post from the home feed composer.
   reply_to_post             Leave a comment (reply) on a LinkedIn post.
 
 ── Adding more tools ──────────────────────────────────────────────────────────
@@ -301,6 +302,51 @@ async def send_message(
         "Message could not be sent. "
         "The profile may not be a 1st-degree connection, "
         "or the Message button was not found."
+    )
+
+
+@mcp.tool()
+async def create_new_post(
+    content: str,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Create and publish a new LinkedIn post from the home feed.
+
+    Navigates to the feed, opens “Start a post”, types the body in the composer
+    modal, and clicks Post.
+
+    Parameters
+    ----------
+    content
+        Text to publish (non-empty; keep within typical LinkedIn length limits).
+    cdp_url
+        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
+        Defaults to "http://localhost:9222".
+
+    Returns
+    -------
+    str
+        "ok" on success, or an error description if the post could not be published.
+    """
+    logger.info(
+        "create_new_post called  content_len=%d  cdp=%s",
+        len(content or ""),
+        cdp_url,
+    )
+    try:
+        async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+            await li.assert_logged_in()
+            success = await li.create_new_post(content)
+    except ValueError as exc:
+        return str(exc)
+    if success:
+        logger.info("create_new_post finished")
+        return "ok"
+    return (
+        "Post could not be published. "
+        "Open the LinkedIn feed in Chrome and ensure “Start a post” and the "
+        "composer modal load correctly."
     )
 
 
