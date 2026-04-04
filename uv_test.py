@@ -1,5 +1,5 @@
 from asyncio import run
-from tools.server import send_message
+from tools.server import send_message, create_new_post
 
-
+run(create_new_post('Lobster is great...🦞'))
 run(send_message('https://www.linkedin.com/in/ruoqi-huang-b8757b21a/', 'bruh, not doing anything this week, you got any plans?'))

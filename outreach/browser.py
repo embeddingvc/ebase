@@ -843,34 +843,63 @@ class LinkedInBrowser:
             raise ValueError("Post content too long (keep under ~10 000 chars).")
 
         await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
-        await _human_pause(1.2, 2.0)
+        await _human_pause(1.5, 2.5)
+
+        # Composer often sits outside <main>; wait for any sharebox affordance on the full page.
         try:
-            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
-            await _human_pause(0.4, 0.9)
+            await self._page.wait_for_selector(
+                "a[href*='sharebox'], a[href*='preload/share'], "
+                "[aria-label*='Start a post' i], [aria-label*='start a post' i]",
+                timeout=NAV_TIMEOUT,
+            )
         except Exception:
-            logger.warning("create_new_post: main/workspace not ready on feed")
+            logger.warning(
+                "create_new_post: sharebox selectors not seen yet — feed may still be loading."
+            )
 
         await self._page.evaluate("window.scrollTo(0, 0)")
         await _human_mouse_move(self._page)
+        await _human_pause(0.4, 0.8)
 
-        workspace = self._page.locator("main, #workspace")
+        # Page-wide: SDUI may not nest the share row under main/#workspace.
+        pg = self._page
+        _start_name = re.compile(r"(start|create) a post", re.I)
+        start_candidates = [
+            pg.locator("a[href*='/preload/sharebox/']:has-text('Start a post')").first,
+            pg.locator("a[href*='sharebox']").filter(
+                has_text=re.compile(r"start|create", re.I)
+            ).first,
+            pg.locator("a[href*='preload/sharebox']").first,
+            pg.locator("a[href*='sharebox']").first,
+            pg.get_by_role("link", name=_start_name).first,
+            pg.locator("a:has([aria-label*='Start a post' i])").first,
+            pg.get_by_role("button", name=_start_name).first,
+            pg.locator("[aria-label='Start a post'], [aria-label*='Start a post' i]").first,
+        ]
 
-        start_btn = workspace.locator(
-            "a[href*='/preload/sharebox/']:has-text('Start a post')"
-        ).first
-        if not await start_btn.count():
-            start_btn = workspace.locator("a[href*='preload/sharebox']").first
-        if not await start_btn.count():
-            start_btn = workspace.get_by_role(
-                "link",
-                name=re.compile(r"start a post", re.I),
-            ).first
-        if not await start_btn.count():
-            start_btn = workspace.locator(
-                "a[aria-label*='Start a post' i]"
-            ).first
+        start_btn = None
+        for cand in start_candidates:
+            try:
+                if await cand.count() and await cand.is_visible():
+                    start_btn = cand
+                    break
+            except Exception:
+                continue
 
-        if not await start_btn.count():
+        if start_btn is None:
+            await _human_scroll(self._page, "down", ticks=500)
+            await _human_pause(0.5, 1.0)
+            await self._page.evaluate("window.scrollTo(0, 0)")
+            await _human_pause(0.3, 0.6)
+            for cand in start_candidates:
+                try:
+                    if await cand.count() and await cand.is_visible():
+                        start_btn = cand
+                        break
+                except Exception:
+                    continue
+
+        if start_btn is None:
             logger.warning("create_new_post: Start a post control not found on feed.")
             return False
 

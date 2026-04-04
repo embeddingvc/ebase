@@ -194,3 +194,12 @@
 2026-04-04 11:26:17,960  INFO      linkedin.browser  Message sent to https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
 2026-04-04 11:26:17,962  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
 2026-04-04 11:26:17,972  INFO      linkedin.server  send_message finished  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-04 11:33:46,787  INFO      linkedin.server  create_new_post called  content_len=20  cdp=http://localhost:9222
+2026-04-04 11:33:47,485  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/feed/')
+2026-04-04 11:33:54,147  WARNING   linkedin.browser  create_new_post: Start a post control not found on feed.
+2026-04-04 11:33:54,147  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-04 11:35:05,690  INFO      linkedin.server  create_new_post called  content_len=20  cdp=http://localhost:9222
+2026-04-04 11:35:06,355  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/feed/')
+2026-04-04 11:35:22,638  INFO      linkedin.browser  create_new_post: published to feed.
+2026-04-04 11:35:22,639  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-04 11:35:22,657  INFO      linkedin.server  create_new_post finished
