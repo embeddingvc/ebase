@@ -27,21 +27,7 @@ Before calling the tool, verify:
 
 ## Steps
 
-### 1. Confirm with the operator
-
-Display the recipient and the message text and ask for explicit confirmation before calling the tool:
-
-```
-Send the following message to <Name> (<profile_url>)?
-
-"<message text>"
-
-Reply yes to confirm or no to cancel.
-```
-
-Wait for a "yes" / "confirm" response before proceeding.
-
-### 2. Call the MCP tool
+### 1. Call the MCP tool
 
 ```
 Tool: send_message
@@ -51,7 +37,7 @@ Tool: send_message
 
 The tool attaches to the running Chrome session, navigates to the profile, types the message at human-like speed, and submits it.
 
-### 3. Handle the response
+### 2. Handle the response
 
 | Response | Meaning                          | Action                                     |
 |----------|----------------------------------|--------------------------------------------|

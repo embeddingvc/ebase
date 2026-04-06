@@ -740,25 +740,21 @@ class LinkedInBrowser:
 
     # ── Messaging ─────────────────────────────────────────────────────────────
 
-    async def send_message(self, profile_url: str, message: str) -> bool:
+    async def _open_message_ui_from_profile(self, profile_url: str) -> bool:
         """
-        Send a direct message to an existing connection.
-
-        The prospect must already be a 1st-degree connection — LinkedIn does not
-        allow direct messages to non-connections unless InMail credits are used.
-
-        Returns True on success.
+        Open the messaging overlay / thread from a member profile (same entry
+        points as :meth:`send_message`).
         """
-        if len(message) > 8_000:
-            raise ValueError("Message too long (LinkedIn limit: ~8 000 chars)")
-
         await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
         await _human_pause(1.5, 2.5)
         try:
             await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
             await _human_pause(0.4, 0.9)
         except Exception:
-            logger.warning("send_message: main/workspace not ready for %s", profile_url)
+            logger.warning(
+                "_open_message_ui_from_profile: main/workspace not ready for %s",
+                profile_url,
+            )
 
         await self._page.evaluate("window.scrollTo(0, 0)")
         await _human_mouse_move(self._page)
@@ -797,6 +793,22 @@ class LinkedInBrowser:
 
         await _human_click(self._page, msg_btn)
         await _human_pause(0.5, 1.0)
+        return True
+
+    async def send_message(self, profile_url: str, message: str) -> bool:
+        """
+        Send a direct message to an existing connection.
+
+        The prospect must already be a 1st-degree connection — LinkedIn does not
+        allow direct messages to non-connections unless InMail credits are used.
+
+        Returns True on success.
+        """
+        if len(message) > 8_000:
+            raise ValueError("Message too long (LinkedIn limit: ~8 000 chars)")
+
+        if not await self._open_message_ui_from_profile(profile_url):
+            return False
 
         compose_selector = (
             "div[role='textbox'][aria-label*='Write a message'], "
@@ -824,6 +836,67 @@ class LinkedInBrowser:
         await _human_pause(1.0, 2.0)
         logger.info("Message sent to %s", profile_url)
         return True
+
+    async def fetch_chat_history(self, profile_url: str) -> list[dict[str, Any]]:
+        """
+        Read the visible DM thread for a 1st-degree connection (same profile →
+        Message flow as :meth:`send_message`).
+
+        Returns a list of dicts serializable as JSON:
+        ``[{"message": str, "self": bool}, ...]`` — ``self`` is True for the
+        logged-in user's outgoing messages. Older messages not scrolled into
+        view are not included.
+        """
+        if not await self._open_message_ui_from_profile(profile_url):
+            return []
+
+        try:
+            await self._page.wait_for_selector(
+                ".msg-s-message-list, li.msg-s-message-list__event",
+                timeout=EL_TIMEOUT,
+            )
+        except Exception:
+            logger.info(
+                "fetch_chat_history: no message list yet for %s (empty or still loading)",
+                profile_url,
+            )
+
+        await _human_pause(0.3, 0.6)
+
+        items: list[dict[str, Any]] = await self._page.evaluate(
+            """
+            () => {
+              const out = [];
+              const events = document.querySelectorAll('li.msg-s-message-list__event');
+              for (const el of events) {
+                const cls = typeof el.className === 'string' ? el.className : '';
+                let fromSelf = cls.includes('msg-s-message-list__event--self');
+                if (!fromSelf && el.querySelector('.msg-s-message-group--outgoing')) {
+                  fromSelf = true;
+                }
+                if (cls.includes('msg-s-message-list__event--incoming')) {
+                  fromSelf = false;
+                }
+                const bubble = el.querySelector(
+                  '.msg-s-event-listitem__body, .msg-s-message-group__content, '
+                  + '.msg-s-event-listitem__message-bubble'
+                );
+                let text = bubble ? (bubble.innerText || '') : (el.innerText || '');
+                text = text.replace(/\\r/g, '').replace(/[ \\t]+/g, ' ').trim();
+                if (!text) {
+                  continue;
+                }
+                out.push({ message: text, self: fromSelf });
+              }
+              return out;
+            }
+            """
+        )
+        if not isinstance(items, list):
+            return []
+
+        logger.info("fetch_chat_history: %d messages for %s", len(items), profile_url)
+        return items
 
     # ── Feed posts ────────────────────────────────────────────────────────────
 
