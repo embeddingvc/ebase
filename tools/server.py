@@ -19,7 +19,13 @@ can drive the browser directly.
 
   3. Start the MCP server:
 
-         uv run mcp/server.py
+         uv run tools/server.py
+
+     Mock mode (no Chrome / LinkedIn — for testing MCP skill flows only):
+        set _mock_mcp_enabled to return True
+        uv run tools/server.py
+
+     You can also set env in claude_desktop_config.json under the server entry.
 
   4. Register with Claude Desktop by adding to ~/Library/Application Support/Claude/claude_desktop_config.json:
 
@@ -27,7 +33,7 @@ can drive the browser directly.
            "mcpServers": {
              "linkedin": {
                "command": "uv",
-               "args": ["run", "mcp/server.py"],
+               "args": ["run", "tools/server.py"],
                "cwd": "/path/to/LinkedIn Outreach"
              }
            }
@@ -52,7 +58,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Append the project root so the installed `mcp` PyPI package takes priority
@@ -97,6 +105,27 @@ _browse_task: asyncio.Task | None = None
 _browse_lock = asyncio.Lock()
 
 
+def _mock_mcp_enabled() -> bool:
+    return True
+
+
+def _mock_scrape_profile_json(profile_url: str) -> str:
+    profile = {
+        "linkedin_url": profile_url,
+        "name": "Mock User",
+        "title": "Software Engineer · Mock Corp",
+        "location": "San Francisco Bay Area",
+        "connection_degree": 2,
+        "about": "Mock profile for MCP testing (LINKEDIN_MCP_MOCK).",
+        "recent_posts": [
+            {"text": "Mock recent post snippet.", "timestamp": "", "likes": 0},
+        ],
+        "raw_text": "Mock raw main text from the profile page.",
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return json.dumps(profile, ensure_ascii=False, indent=2)
+
+
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -135,6 +164,16 @@ async def browse_forever(
         already running.
     """
     global _browse_task
+
+    if _mock_mcp_enabled():
+        logger.info(
+            "browse_forever MOCK (no browser)  cdp=%s  reaction=%s", cdp_url, reaction
+        )
+        return (
+            "[MOCK] browse_forever — no background session started. "
+            f"reaction={reaction!r}, cdp={cdp_url}. "
+            "Unset LINKEDIN_MCP_MOCK for real browsing."
+        )
 
     async with _browse_lock:
         # Guard against starting a second session while one is live.
@@ -207,6 +246,10 @@ async def scrape_profile(
           linkedin_url, name, title, location, connection_degree,
           about, recent_posts, scraped_at.
     """
+    if _mock_mcp_enabled():
+        logger.info("scrape_profile MOCK  url=%s", profile_url)
+        return _mock_scrape_profile_json(profile_url)
+
     logger.info("scrape_profile called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
@@ -246,6 +289,10 @@ async def send_connection_request(
     """
     if len(note) > 300:
         return f"Note too long: {len(note)} chars (LinkedIn limit: 300). Please shorten and retry."
+
+    if _mock_mcp_enabled():
+        logger.info("send_connection_request MOCK  url=%s", profile_url)
+        return "[MOCK] ok"
 
     logger.info(
         "send_connection_request called  url=%s  note_len=%d  cdp=%s",
@@ -291,6 +338,10 @@ async def send_message(
     str
         "ok" on success, or an error description if the message could not be sent.
     """
+    if _mock_mcp_enabled():
+        logger.info("send_message MOCK  url=%s", profile_url)
+        return "[MOCK] ok"
+
     logger.info("send_message called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
@@ -334,6 +385,15 @@ async def create_new_post(
         len(content or ""),
         cdp_url,
     )
+    if _mock_mcp_enabled():
+        text = (content or "").strip()
+        if not text:
+            return "Post content cannot be empty."
+        if len(text) > 10_000:
+            return "Post content too long (keep under ~10 000 chars)."
+        logger.info("create_new_post MOCK  content_len=%d", len(text))
+        return "[MOCK] ok"
+
     try:
         async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
             await li.assert_logged_in()
@@ -377,6 +437,10 @@ async def reply_to_post(
     str
         "ok" on success, or an error description if the comment could not be posted.
     """
+    if _mock_mcp_enabled():
+        logger.info("reply_to_post MOCK  url=%s", post_url)
+        return "[MOCK] ok"
+
     logger.info("reply_to_post called  url=%s  cdp=%s", post_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
@@ -393,4 +457,9 @@ async def reply_to_post(
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    if _mock_mcp_enabled():
+        logger.warning(
+            "LinkedIn MCP running in MOCK mode — tools return fake data; "
+            "no browser actions are performed."
+        )
     mcp.run(transport="stdio")

@@ -203,3 +203,19 @@
 2026-04-04 11:35:22,638  INFO      linkedin.browser  create_new_post: published to feed.
 2026-04-04 11:35:22,639  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
 2026-04-04 11:35:22,657  INFO      linkedin.server  create_new_post finished
+2026-04-05 18:39:19,135  INFO      linkedin.server  scrape_profile MOCK  url=https://www.linkedin.com/in/x/
+2026-04-05 18:39:19,136  INFO      linkedin.server  send_message MOCK  url=https://example.com/in/x
+2026-04-05 18:39:19,136  INFO      linkedin.server  browse_forever MOCK (no browser)  cdp=http://localhost:9222  reaction=Like
+2026-04-05 18:39:19,136  INFO      linkedin.server  browse_forever MOCK (no browser)  cdp=http://localhost:9222  reaction=Like
+2026-04-05 18:39:19,137  INFO      linkedin.server  browse_forever MOCK (no browser)  cdp=http://localhost:9222  reaction=Like
+2026-04-05 18:42:18,118  WARNING   linkedin.server  LinkedIn MCP running in MOCK mode — tools return fake data; no browser actions are performed.
+2026-04-05 18:42:18,642  WARNING   linkedin.server  LinkedIn MCP running in MOCK mode — tools return fake data; no browser actions are performed.
+2026-04-05 18:42:18,726  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-05 18:42:18,727  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-05 18:42:18,727  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-05 18:42:48,942  WARNING   linkedin.server  LinkedIn MCP running in MOCK mode — tools return fake data; no browser actions are performed.
+2026-04-05 18:42:48,947  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-05 18:42:54,701  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-05 18:42:54,702  INFO      linkedin.server  scrape_profile MOCK  url=https://www.linkedin.com/in/cameron-maycumber-5201223b8/
+2026-04-05 18:42:57,697  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-05 18:42:57,698  INFO      linkedin.server  send_connection_request MOCK  url=https://www.linkedin.com/in/cameron-maycumber-5201223b8/
