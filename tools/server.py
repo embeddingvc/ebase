@@ -45,6 +45,7 @@ can drive the browser directly.
   scrape_profile            Scrape a LinkedIn profile URL and return structured data.
   send_connection_request   Send a connection request, with an optional note.
   send_message              Send a direct message to a 1st-degree connection.
+  fetch_chat_history        Read the visible DM thread for a 1st-degree connection.
   create_new_post           Publish a new post from the home feed composer.
   reply_to_post             Leave a comment (reply) on a LinkedIn post.
 
@@ -354,6 +355,51 @@ async def send_message(
         "The profile may not be a 1st-degree connection, "
         "or the Message button was not found."
     )
+
+
+@mcp.tool()
+async def fetch_chat_history(
+    profile_url: str,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Load the visible direct-message thread for a 1st-degree connection via their profile.
+
+    Opens the same Message flow as ``send_message`` and returns message bubbles
+    currently in the DOM (older history may require scrolling in the UI — not
+    done here).
+
+    Parameters
+    ----------
+    profile_url
+        Full LinkedIn profile URL, e.g. "https://www.linkedin.com/in/username/".
+    cdp_url
+        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
+        Defaults to "http://localhost:9222".
+
+    Returns
+    -------
+    str
+        JSON array of objects: ``[{"message": str, "self": bool}, ...]`` where
+        ``self`` is true for the logged-in user's outgoing messages.
+    """
+    if _mock_mcp_enabled():
+        logger.info("fetch_chat_history MOCK  url=%s", profile_url)
+        return json.dumps(
+            [
+                {"message": "[MOCK] Thanks for connecting!", "self": False},
+                {"message": "[MOCK] Great to connect — excited to stay in touch.", "self": True},
+            ],
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    logger.info("fetch_chat_history called  url=%s  cdp=%s", profile_url, cdp_url)
+    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+        await li.assert_logged_in()
+        items = await li.fetch_chat_history(profile_url)
+    logger.info("fetch_chat_history finished  url=%s  count=%d", profile_url, len(items))
+    return json.dumps(items, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()
