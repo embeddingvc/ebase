@@ -1,57 +1,51 @@
 """
 LinkedIn MCP server.
 
-Exposes LinkedIn browser automation as MCP tools so Claude (or any MCP host)
-can drive the browser directly.
+Exposes LinkedIn browser automation (and a full mock backend for testing)
+as MCP tools so Claude — or any MCP host — can drive outreach workflows.
 
-── Quick start ────────────────────────────────────────────────────────────────
+── Modes ─────────────────────────────────────────────────────────────────────
 
-  1. Make sure Chrome is running with remote-debugging enabled:
+  MOCK MODE  (default; _mock_mcp_enabled() returns True)
+    No browser required.  All tool calls are handled by tools/mock.py, which
+    simulates complete conversations from connection request to end state.
 
-         make browser
-     or:
-         open -a "Google Chrome" --args \\
-           --remote-debugging-port=9222 \\
-           --user-data-dir=$HOME/.linkedin-chrome-profile \\
-           --no-first-run
+    Workflow:
+      1. list_test_cases()                    — see available scenarios
+      2. load_test_case(id, profile_url)      — reset and configure a session
+      3. send_connection_request(url, note)   — opens the conversation
+      4. [conversation-planner skill loop]    — fetch → plan → send, repeat
+      5. get_mock_state(url)                  — inspect progress at any point
 
-  2. Log in to LinkedIn manually in that window (one-time).
+  LIVE MODE  (_mock_mcp_enabled() returns False)
+    Drives a real Chrome browser via Playwright CDP.
+    Chrome must be running with --remote-debugging-port=9222 and the user
+    must be logged in to LinkedIn manually.
 
-  3. Start the MCP server:
+    Quick start:
+      make browser          # or launch Chrome with the flags above
+      uv run tools/server.py
 
-         uv run tools/server.py
+── Tools ─────────────────────────────────────────────────────────────────────
 
-     Mock mode (no Chrome / LinkedIn — for testing MCP skill flows only):
-        set _mock_mcp_enabled to return True
-        uv run tools/server.py
+  [mock-only management]
+    list_test_cases           List built-in test cases with descriptions.
+    load_test_case            Load / reset a test case for a profile URL.
+    get_mock_state            Inspect current session state for debugging.
 
-     You can also set env in claude_desktop_config.json under the server entry.
+  [all modes — LinkedIn actions]
+    scrape_profile            Scrape a profile → structured JSON.
+    send_connection_request   Send a connection request with an optional note.
+    send_message              Send a DM to a 1st-degree connection.
+    fetch_chat_history        Read the DM thread for a connection.
+    create_new_post           Publish a new post from the home feed.
+    reply_to_post             Leave a comment on a LinkedIn post.
+    browse_forever            Start a background human-like browsing session.
 
-  4. Register with Claude Desktop by adding to ~/Library/Application Support/Claude/claude_desktop_config.json:
+── Mock logic ────────────────────────────────────────────────────────────────
 
-         {
-           "mcpServers": {
-             "linkedin": {
-               "command": "uv",
-               "args": ["run", "tools/server.py"],
-               "cwd": "/path/to/LinkedIn Outreach"
-             }
-           }
-         }
-
-── Tools exposed ──────────────────────────────────────────────────────────────
-
-  browse_forever            Start a background human-like browsing session.
-  scrape_profile            Scrape a LinkedIn profile URL and return structured data.
-  send_connection_request   Send a connection request, with an optional note.
-  send_message              Send a direct message to a 1st-degree connection.
-  fetch_chat_history        Read the visible DM thread for a 1st-degree connection.
-  create_new_post           Publish a new post from the home feed composer.
-  reply_to_post             Leave a comment (reply) on a LinkedIn post.
-
-── Adding more tools ──────────────────────────────────────────────────────────
-
-  Add new @mcp.tool() functions here as additional LinkedIn actions are needed.
+  All mock data, state, and handler functions live in tools/mock.py.
+  This file only wires them up to the MCP framework.
 """
 
 from __future__ import annotations
@@ -59,18 +53,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
-# Append the project root so the installed `mcp` PyPI package takes priority
-# over the local mcp/ directory, while still making `outreach` importable.
-sys.path.append(str(Path(__file__).parent.parent))
+# Make the project root importable (outreach package, tools/mock.py, etc.).
+_ROOT = Path(__file__).parent.parent
+sys.path.append(str(_ROOT))
+# Also ensure the tools/ directory itself is on the path so `import mock` works.
+sys.path.append(str(Path(__file__).parent))
 
-# ── Logging setup ─────────────────────────────────────────────────────────────
+# ── Logging ───────────────────────────────────────────────────────────────────
 
-_LOG_DIR = Path(__file__).parent.parent / "logs"
+_LOG_DIR = _ROOT / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(
@@ -81,143 +75,118 @@ logging.basicConfig(
         logging.StreamHandler(sys.stderr),
     ],
 )
-
 logger = logging.getLogger("linkedin.server")
 
 from mcp.server.fastmcp import FastMCP
 
+import mock as _mock                    # tools/mock.py
 from outreach.browser import LinkedInBrowser
 
-# ── MCP server instance ───────────────────────────────────────────────────────
+# ── MCP server ────────────────────────────────────────────────────────────────
 
 mcp = FastMCP(
     "linkedin",
     instructions=(
         "Controls a LinkedIn browser session via Playwright CDP. "
-        "Chrome must already be running with --remote-debugging-port=9222 "
-        "and the user must be logged in to LinkedIn manually."
+        "In mock mode, call load_test_case(id, profile_url) before "
+        "send_connection_request to simulate a full end-to-end conversation."
     ),
 )
 
-# ── Internal state ────────────────────────────────────────────────────────────
+# ── Background task handle (live mode only) ───────────────────────────────────
 
-# Holds the running browse_forever background task (at most one at a time).
 _browse_task: asyncio.Task | None = None
 _browse_lock = asyncio.Lock()
 
 
+# ── Mock mode flag ────────────────────────────────────────────────────────────
+
 def _mock_mcp_enabled() -> bool:
+    """Return True to run in mock mode (no browser, scripted responses)."""
     return True
 
 
-def _mock_scrape_profile_json(profile_url: str) -> str:
-    profile = {
-        "linkedin_url": profile_url,
-        "name": "Mock User",
-        "title": "Software Engineer · Mock Corp",
-        "location": "San Francisco Bay Area",
-        "connection_degree": 2,
-        "about": "Mock profile for MCP testing (LINKEDIN_MCP_MOCK).",
-        "recent_posts": [
-            {"text": "Mock recent post snippet.", "timestamp": "", "likes": 0},
-        ],
-        "raw_text": "Mock raw main text from the profile page.",
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-    }
-    return json.dumps(profile, ensure_ascii=False, indent=2)
-
-
-# ── Tools ─────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# MOCK-ONLY MANAGEMENT TOOLS
+# ═════════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
-async def browse_forever(
-    reaction: str = "Like",
-    cdp_url: str = "http://localhost:9222",
-) -> str:
+async def list_test_cases() -> str:
     """
-    Start a human-like LinkedIn browsing session that runs indefinitely in the
-    background until the MCP server process exits or receives SIGINT/SIGTERM.
+    [MOCK ONLY] Return all available built-in test cases.
 
-    Each round the session will:
-      - Navigate to (or stay on) the LinkedIn feed.
-      - Read through 3–7 posts with realistic per-post dwell times (8–35 s).
-      - Occasionally click into a post for a deeper read, then go back.
-      - React randomly to ~20 % of feed posts inline (no URL needed).
-      - Take a 2–6 minute idle break before the next round.
-
-    The browsing connects to an already-running Chrome via CDP so LinkedIn sees
-    a warm, authenticated session — no login flow is triggered.
-
-    Parameters
-    ----------
-    reaction
-        Reaction type applied randomly while scrolling the feed (~20 % of posts).
-        One of: Like, Celebrate, Support, Funny, Love, Insightful.
-        Defaults to "Like".
-    cdp_url
-        Chrome DevTools Protocol endpoint to attach to.
-        Defaults to "http://localhost:9222".
+    Each entry includes the test case ID, a plain-English description of the
+    scenario, the expected end condition (resume_shared / not_interested /
+    timeout), and the number of scripted prospect replies.
 
     Returns
     -------
     str
-        Confirmation that the session was started, or a notice that one is
-        already running.
+        JSON array of test case summaries.
     """
-    global _browse_task
+    return await _mock.handle_list_test_cases()
 
-    if _mock_mcp_enabled():
-        logger.info(
-            "browse_forever MOCK (no browser)  cdp=%s  reaction=%s", cdp_url, reaction
-        )
-        return (
-            "[MOCK] browse_forever — no background session started. "
-            f"reaction={reaction!r}, cdp={cdp_url}. "
-            "Unset LINKEDIN_MCP_MOCK for real browsing."
-        )
 
-    async with _browse_lock:
-        # Guard against starting a second session while one is live.
-        if _browse_task is not None and not _browse_task.done():
-            logger.warning("browse_forever called but a session is already running")
-            return (
-                "A browse_forever session is already running. "
-                "It will stop automatically when the server process exits "
-                "or receives SIGINT/SIGTERM."
-            )
+@mcp.tool()
+async def load_test_case(
+    test_case_id: str,
+    profile_url: str,
+) -> str:
+    """
+    [MOCK ONLY] Load (or reset) a predefined test case for a profile URL.
 
-        async def _run() -> None:
-            logger.info(
-                "browse_forever session started  cdp=%s  reaction=%s",
-                cdp_url,
-                reaction,
-            )
-            try:
-                async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-                    await li.assert_logged_in()
-                    await li.browse_forever(reaction=reaction)
-            except Exception:
-                logger.exception("browse_forever session ended with an error")
-                raise
-            else:
-                logger.info("browse_forever session finished cleanly")
+    Must be called before send_connection_request when running in mock mode.
+    Calling it again on the same URL resets the session from scratch.
 
-        loop = asyncio.get_event_loop()
-        _browse_task = loop.create_task(_run())
+    Available test case IDs
+    -----------------------
+    happy_path      4-turn conversation; prospect shares resume at the end.
+    not_interested  Prospect declines politely after the connection note.
+    no_reply        Prospect replies once then goes silent (timeout scenario).
+    ghosted_cold    Prospect never accepts the connection request.
+    eager_referral  Prospect is actively job-seeking; shares resume by turn 2.
 
-    logger.info(
-        "browse_forever task created  cdp=%s  reaction=%s",
-        cdp_url,
-        reaction,
-    )
-    return (
-        f"browse_forever started — "
-        f"reaction={reaction!r}, "
-        f"cdp={cdp_url}. "
-        "The session runs in the background. "
-        "It will stop when the MCP server process exits."
-    )
+    Call list_test_cases() for full descriptions and reply counts.
 
+    Parameters
+    ----------
+    test_case_id : str
+        One of the IDs listed above.
+    profile_url : str
+        The LinkedIn profile URL to associate with this session.
+
+    Returns
+    -------
+    str
+        Confirmation with a human-readable summary of the loaded scenario.
+    """
+    return await _mock.handle_load_test_case(test_case_id, profile_url)
+
+
+@mcp.tool()
+async def get_mock_state(profile_url: str) -> str:
+    """
+    [MOCK ONLY] Inspect the current conversation state for a profile URL.
+
+    Returns session metadata: test case ID, messages sent, history length,
+    remaining scripted replies, and a preview of the full conversation so far.
+
+    Parameters
+    ----------
+    profile_url : str
+        The LinkedIn profile URL to inspect.
+
+    Returns
+    -------
+    str
+        JSON object with session state and history preview.
+    """
+    return await _mock.handle_get_mock_state(profile_url)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# LINKEDIN TOOLS (mock delegates to mock.py; live drives the browser)
+# ═════════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 async def scrape_profile(
@@ -232,24 +201,25 @@ async def scrape_profile(
     returns them as a JSON string matching the prospect schema used by the
     outreach planner.
 
+    In mock mode: returns the prospect data from the loaded test case (if any),
+    otherwise returns a generic placeholder profile.
+
     Parameters
     ----------
-    profile_url
+    profile_url : str
         Full LinkedIn profile URL, e.g. "https://www.linkedin.com/in/username/".
-    cdp_url
-        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
-        Defaults to "http://localhost:9222".
+    cdp_url : str
+        Chrome DevTools Protocol endpoint. Defaults to "http://localhost:9222".
 
     Returns
     -------
     str
-        JSON-encoded dict with keys:
-          linkedin_url, name, title, location, connection_degree,
-          about, recent_posts, scraped_at.
+        JSON-encoded prospect dict with keys:
+        linkedin_url, name, title, location, connection_degree,
+        about, recent_posts, scraped_at.
     """
     if _mock_mcp_enabled():
-        logger.info("scrape_profile MOCK  url=%s", profile_url)
-        return _mock_scrape_profile_json(profile_url)
+        return await _mock.handle_scrape_profile(profile_url)
 
     logger.info("scrape_profile called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
@@ -272,28 +242,33 @@ async def send_connection_request(
     More overflow menu if Connect is not directly visible), optionally adds a
     personalised note (≤300 chars), and submits the invitation.
 
+    In mock mode: records the note as operator message 0 and appends the first
+    scripted prospect reply.  If the test case has connection_accepted=False,
+    the connection stays pending and fetch_chat_history returns an empty thread.
+
     Parameters
     ----------
-    profile_url
-        Full LinkedIn profile URL, e.g. "https://www.linkedin.com/in/username/".
-    note
+    profile_url : str
+        Full LinkedIn profile URL.
+    note : str
         Personalised connection note (LinkedIn limit: 300 chars).
         Pass an empty string to send without a note.
-    cdp_url
-        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
-        Defaults to "http://localhost:9222".
+    cdp_url : str
+        Chrome DevTools Protocol endpoint. Defaults to "http://localhost:9222".
 
     Returns
     -------
     str
-        "ok" on success, or an error description if the request could not be sent.
+        "ok" on success, or an error description.
     """
     if len(note) > 300:
-        return f"Note too long: {len(note)} chars (LinkedIn limit: 300). Please shorten and retry."
+        return (
+            f"Note too long: {len(note)} chars (LinkedIn limit: 300). "
+            "Please shorten and retry."
+        )
 
     if _mock_mcp_enabled():
-        logger.info("send_connection_request MOCK  url=%s", profile_url)
-        return "[MOCK] ok"
+        return await _mock.handle_send_connection_request(profile_url, note)
 
     logger.info(
         "send_connection_request called  url=%s  note_len=%d  cdp=%s",
@@ -307,8 +282,9 @@ async def send_connection_request(
         return "ok"
     return (
         "Connection request could not be sent. "
-        "The Connect button was not found — the profile may already be a connection, "
-        "have a pending request, or the button is hidden behind the More menu."
+        "The Connect button was not found — the profile may already be a "
+        "connection, have a pending request, or the button is hidden behind "
+        "the More menu."
     )
 
 
@@ -324,24 +300,26 @@ async def send_message(
     Navigates to the given profile, clicks the Message button, types the
     message at human-like speed, and submits it.
 
+    In mock mode: appends the operator message to history, then appends the
+    next scripted prospect reply (if any).  Silence is simulated when all
+    scripted replies are exhausted.
+
     Parameters
     ----------
-    profile_url
-        Full LinkedIn profile URL, e.g. "https://www.linkedin.com/in/username/".
-    message
+    profile_url : str
+        Full LinkedIn profile URL.
+    message : str
         Message body to send (LinkedIn limit: ~8 000 chars).
-    cdp_url
-        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
-        Defaults to "http://localhost:9222".
+    cdp_url : str
+        Chrome DevTools Protocol endpoint. Defaults to "http://localhost:9222".
 
     Returns
     -------
     str
-        "ok" on success, or an error description if the message could not be sent.
+        "ok" on success, or an error description.
     """
     if _mock_mcp_enabled():
-        logger.info("send_message MOCK  url=%s", profile_url)
-        return "[MOCK] ok"
+        return await _mock.handle_send_message(profile_url, message)
 
     logger.info("send_message called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
@@ -363,42 +341,39 @@ async def fetch_chat_history(
     cdp_url: str = "http://localhost:9222",
 ) -> str:
     """
-    Load the visible direct-message thread for a 1st-degree connection via their profile.
+    Load the visible direct-message thread for a 1st-degree connection.
 
-    Opens the same Message flow as ``send_message`` and returns message bubbles
-    currently in the DOM (older history may require scrolling in the UI — not
-    done here).
+    Opens the same Message flow as send_message and returns message bubbles
+    currently in the DOM (older history may require scrolling in the UI).
+
+    In mock mode: returns the accumulated conversation history built up by
+    prior send_connection_request and send_message calls, including all
+    scripted prospect replies received so far.
 
     Parameters
     ----------
-    profile_url
-        Full LinkedIn profile URL, e.g. "https://www.linkedin.com/in/username/".
-    cdp_url
-        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
-        Defaults to "http://localhost:9222".
+    profile_url : str
+        Full LinkedIn profile URL.
+    cdp_url : str
+        Chrome DevTools Protocol endpoint. Defaults to "http://localhost:9222".
 
     Returns
     -------
     str
-        JSON array of objects: ``[{"message": str, "self": bool}, ...]`` where
-        ``self`` is true for the logged-in user's outgoing messages.
+        JSON array: [{"message": str, "self": bool}, …]
+        "self": true  = sent by operator (us)
+        "self": false = sent by prospect
     """
     if _mock_mcp_enabled():
-        logger.info("fetch_chat_history MOCK  url=%s", profile_url)
-        return json.dumps(
-            [
-                {"message": "[MOCK] Thanks for connecting!", "self": False},
-                {"message": "[MOCK] Great to connect — excited to stay in touch.", "self": True},
-            ],
-            ensure_ascii=False,
-            indent=2,
-        )
+        return await _mock.handle_fetch_chat_history(profile_url)
 
     logger.info("fetch_chat_history called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
         items = await li.fetch_chat_history(profile_url)
-    logger.info("fetch_chat_history finished  url=%s  count=%d", profile_url, len(items))
+    logger.info(
+        "fetch_chat_history finished  url=%s  count=%d", profile_url, len(items)
+    )
     return json.dumps(items, ensure_ascii=False, indent=2)
 
 
@@ -410,40 +385,30 @@ async def create_new_post(
     """
     Create and publish a new LinkedIn post from the home feed.
 
-    Navigates to the feed, opens “Start a post”, types the body in the composer
-    modal, and clicks Post.
+    Navigates to the feed, opens "Start a post", types the body in the
+    composer modal, and clicks Post.
 
     Parameters
     ----------
-    content
-        Text to publish (non-empty; keep within typical LinkedIn length limits).
-    cdp_url
-        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
-        Defaults to "http://localhost:9222".
+    content : str
+        Text to publish (non-empty; keep within LinkedIn length limits).
+    cdp_url : str
+        Chrome DevTools Protocol endpoint. Defaults to "http://localhost:9222".
 
     Returns
     -------
     str
-        "ok" on success, or an error description if the post could not be published.
+        "ok" on success, or an error description.
     """
-    logger.info(
-        "create_new_post called  content_len=%d  cdp=%s",
-        len(content or ""),
-        cdp_url,
-    )
     if _mock_mcp_enabled():
-        text = (content or "").strip()
-        if not text:
-            return "Post content cannot be empty."
-        if len(text) > 10_000:
-            return "Post content too long (keep under ~10 000 chars)."
-        logger.info("create_new_post MOCK  content_len=%d", len(text))
-        return "[MOCK] ok"
+        return await _mock.handle_create_new_post(content)
 
+    text = (content or "").strip()
+    logger.info("create_new_post called  content_len=%d  cdp=%s", len(text), cdp_url)
     try:
         async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
             await li.assert_logged_in()
-            success = await li.create_new_post(content)
+            success = await li.create_new_post(text)
     except ValueError as exc:
         return str(exc)
     if success:
@@ -451,7 +416,7 @@ async def create_new_post(
         return "ok"
     return (
         "Post could not be published. "
-        "Open the LinkedIn feed in Chrome and ensure “Start a post” and the "
+        'Open the LinkedIn feed in Chrome and ensure "Start a post" and the '
         "composer modal load correctly."
     )
 
@@ -470,22 +435,20 @@ async def reply_to_post(
 
     Parameters
     ----------
-    post_url
+    post_url : str
         Direct URL of the LinkedIn post or activity item.
-    comment
+    comment : str
         Comment text to post.
-    cdp_url
-        Chrome DevTools Protocol endpoint of the already-running Chrome instance.
-        Defaults to "http://localhost:9222".
+    cdp_url : str
+        Chrome DevTools Protocol endpoint. Defaults to "http://localhost:9222".
 
     Returns
     -------
     str
-        "ok" on success, or an error description if the comment could not be posted.
+        "ok" on success, or an error description.
     """
     if _mock_mcp_enabled():
-        logger.info("reply_to_post MOCK  url=%s", post_url)
-        return "[MOCK] ok"
+        return await _mock.handle_reply_to_post(post_url, comment)
 
     logger.info("reply_to_post called  url=%s  cdp=%s", post_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
@@ -500,12 +463,87 @@ async def reply_to_post(
     )
 
 
+@mcp.tool()
+async def browse_forever(
+    reaction: str = "Like",
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Start a human-like LinkedIn browsing session that runs indefinitely in the
+    background until the MCP server process exits or receives SIGINT/SIGTERM.
+
+    Each round the session will:
+      - Navigate to (or stay on) the LinkedIn feed.
+      - Read through 3–7 posts with realistic per-post dwell times (8–35 s).
+      - Occasionally click into a post for a deeper read, then go back.
+      - React randomly to ~20 % of feed posts inline (no URL needed).
+      - Take a 2–6 minute idle break before the next round.
+
+    Parameters
+    ----------
+    reaction : str
+        Reaction type applied randomly while scrolling the feed (~20 % of posts).
+        One of: Like, Celebrate, Support, Funny, Love, Insightful.
+    cdp_url : str
+        Chrome DevTools Protocol endpoint. Defaults to "http://localhost:9222".
+
+    Returns
+    -------
+    str
+        Confirmation that the session was started, or a notice that one is
+        already running.
+    """
+    global _browse_task
+
+    if _mock_mcp_enabled():
+        return await _mock.handle_browse_forever(reaction, cdp_url)
+
+    async with _browse_lock:
+        if _browse_task is not None and not _browse_task.done():
+            logger.warning("browse_forever: session already running")
+            return (
+                "A browse_forever session is already running. "
+                "It will stop when the server process exits or receives SIGINT/SIGTERM."
+            )
+
+        async def _run() -> None:
+            logger.info(
+                "browse_forever session started  cdp=%s  reaction=%s",
+                cdp_url, reaction,
+            )
+            try:
+                async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+                    await li.assert_logged_in()
+                    await li.browse_forever(reaction=reaction)
+            except Exception:
+                logger.exception("browse_forever session ended with an error")
+                raise
+            else:
+                logger.info("browse_forever session finished cleanly")
+
+        loop = asyncio.get_event_loop()
+        _browse_task = loop.create_task(_run())
+
+    logger.info(
+        "browse_forever task created  cdp=%s  reaction=%s", cdp_url, reaction
+    )
+    return (
+        f"browse_forever started — reaction={reaction!r}, cdp={cdp_url}. "
+        "The session runs in the background until the server process exits."
+    )
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     if _mock_mcp_enabled():
         logger.warning(
-            "LinkedIn MCP running in MOCK mode — tools return fake data; "
-            "no browser actions are performed."
+            "LinkedIn MCP server starting in MOCK MODE — "
+            "no browser actions are performed; responses are scripted.\n"
+            "  • list_test_cases()              — view available scenarios\n"
+            "  • load_test_case(id, url)        — configure a session\n"
+            "  • send_connection_request(url)   — begin the conversation\n"
+            "  • [conversation-planner loop]    — fetch → plan → send\n"
+            "  • get_mock_state(url)            — inspect progress at any time"
         )
     mcp.run(transport="stdio")

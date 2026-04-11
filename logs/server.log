@@ -219,3 +219,73 @@
 2026-04-05 18:42:54,702  INFO      linkedin.server  scrape_profile MOCK  url=https://www.linkedin.com/in/cameron-maycumber-5201223b8/
 2026-04-05 18:42:57,697  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
 2026-04-05 18:42:57,698  INFO      linkedin.server  send_connection_request MOCK  url=https://www.linkedin.com/in/cameron-maycumber-5201223b8/
+2026-04-10 17:51:35,550  WARNING   linkedin.server  LinkedIn MCP running in MOCK mode — tools return fake data; no browser actions are performed.
+2026-04-10 17:51:35,559  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-10 17:51:35,560  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-10 17:51:35,560  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-10 17:51:51,656  WARNING   linkedin.server  LinkedIn MCP running in MOCK mode — tools return fake data; no browser actions are performed.
+2026-04-10 17:51:52,027  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-10 17:51:52,028  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-10 17:51:52,028  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-11 11:00:28,948  WARNING   linkedin.server  LinkedIn MCP running in MOCK mode — tools return fake data; no browser actions are performed.
+2026-04-11 11:00:28,954  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-11 18:06:40,187  INFO      linkedin.server  load_test_case  test_case=happy_path  profile=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,188  INFO      linkedin.server  scrape_profile MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,188  INFO      linkedin.server  send_connection_request MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  note_len=96
+2026-04-11 18:06:40,189  INFO      linkedin.server  mock: prospect reply appended  index=0  chars=99  attachments=0
+2026-04-11 18:06:40,189  INFO      linkedin.server  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=2
+2026-04-11 18:06:40,189  INFO      linkedin.server  mock: prospect reply appended  index=1  chars=205  attachments=0
+2026-04-11 18:06:40,189  INFO      linkedin.server  send_message MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=1  history_len=4
+2026-04-11 18:06:40,190  INFO      linkedin.server  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=4
+2026-04-11 18:06:40,190  INFO      linkedin.server  mock: prospect reply appended  index=2  chars=203  attachments=0
+2026-04-11 18:06:40,190  INFO      linkedin.server  send_message MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=2  history_len=6
+2026-04-11 18:06:40,191  INFO      linkedin.server  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=6
+2026-04-11 18:06:40,191  INFO      linkedin.server  mock: prospect reply appended  index=3  chars=18  attachments=1
+2026-04-11 18:06:40,191  INFO      linkedin.server  send_message MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=3  history_len=8
+2026-04-11 18:06:40,191  INFO      linkedin.server  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=8
+2026-04-11 18:06:40,192  INFO      linkedin.server  send_message MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=4  history_len=9
+2026-04-11 18:06:40,192  INFO      linkedin.server  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=9
+2026-04-11 18:06:40,192  INFO      linkedin.server  load_test_case  test_case=not_interested  profile=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,193  INFO      linkedin.server  scrape_profile MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,193  INFO      linkedin.server  send_connection_request MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  note_len=96
+2026-04-11 18:06:40,193  INFO      linkedin.server  mock: prospect reply appended  index=0  chars=141  attachments=0
+2026-04-11 18:06:40,193  INFO      linkedin.server  fetch_chat_history MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=2
+2026-04-11 18:06:40,194  INFO      linkedin.server  send_message MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=1  history_len=3
+2026-04-11 18:06:40,194  INFO      linkedin.server  fetch_chat_history MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=3
+2026-04-11 18:06:40,195  INFO      linkedin.server  send_message MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=2  history_len=4
+2026-04-11 18:06:40,195  INFO      linkedin.server  fetch_chat_history MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=4
+2026-04-11 18:06:40,195  INFO      linkedin.server  send_message MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=3  history_len=5
+2026-04-11 18:06:40,195  INFO      linkedin.server  fetch_chat_history MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=5
+2026-04-11 18:06:40,196  INFO      linkedin.server  send_message MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=4  history_len=6
+2026-04-11 18:06:40,196  INFO      linkedin.server  fetch_chat_history MOCK (test case: not_interested)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=6
+2026-04-11 18:06:40,196  INFO      linkedin.server  load_test_case  test_case=no_reply  profile=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,197  INFO      linkedin.server  scrape_profile MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,197  INFO      linkedin.server  send_connection_request MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  note_len=96
+2026-04-11 18:06:40,197  INFO      linkedin.server  mock: prospect reply appended  index=0  chars=54  attachments=0
+2026-04-11 18:06:40,197  INFO      linkedin.server  fetch_chat_history MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=2
+2026-04-11 18:06:40,198  INFO      linkedin.server  send_message MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=1  history_len=3
+2026-04-11 18:06:40,198  INFO      linkedin.server  fetch_chat_history MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=3
+2026-04-11 18:06:40,199  INFO      linkedin.server  send_message MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=2  history_len=4
+2026-04-11 18:06:40,199  INFO      linkedin.server  fetch_chat_history MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=4
+2026-04-11 18:06:40,200  INFO      linkedin.server  send_message MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=3  history_len=5
+2026-04-11 18:06:40,200  INFO      linkedin.server  fetch_chat_history MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=5
+2026-04-11 18:06:40,200  INFO      linkedin.server  send_message MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=4  history_len=6
+2026-04-11 18:06:40,200  INFO      linkedin.server  fetch_chat_history MOCK (test case: no_reply)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=6
+2026-04-11 18:06:40,201  INFO      linkedin.server  load_test_case  test_case=ghosted_cold  profile=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,201  INFO      linkedin.server  scrape_profile MOCK (test case: ghosted_cold)  url=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,201  INFO      linkedin.server  send_connection_request MOCK (test case: ghosted_cold)  url=https://www.linkedin.com/in/alex-chen-softeng/  note_len=96
+2026-04-11 18:06:40,202  INFO      linkedin.server  fetch_chat_history MOCK (test case: ghosted_cold)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=0
+2026-04-11 18:06:40,202  INFO      linkedin.server  load_test_case  test_case=eager_referral  profile=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,202  INFO      linkedin.server  scrape_profile MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-11 18:06:40,202  INFO      linkedin.server  send_connection_request MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  note_len=96
+2026-04-11 18:06:40,203  INFO      linkedin.server  mock: prospect reply appended  index=0  chars=126  attachments=0
+2026-04-11 18:06:40,203  INFO      linkedin.server  fetch_chat_history MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=2
+2026-04-11 18:06:40,203  INFO      linkedin.server  mock: prospect reply appended  index=1  chars=128  attachments=1
+2026-04-11 18:06:40,204  INFO      linkedin.server  send_message MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=1  history_len=4
+2026-04-11 18:06:40,204  INFO      linkedin.server  fetch_chat_history MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=4
+2026-04-11 18:06:40,204  INFO      linkedin.server  send_message MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=2  history_len=5
+2026-04-11 18:06:40,205  INFO      linkedin.server  fetch_chat_history MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=5
+2026-04-11 18:06:40,205  INFO      linkedin.server  send_message MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=3  history_len=6
+2026-04-11 18:06:40,205  INFO      linkedin.server  fetch_chat_history MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=6
+2026-04-11 18:06:40,206  INFO      linkedin.server  send_message MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=4  history_len=7
+2026-04-11 18:06:40,206  INFO      linkedin.server  fetch_chat_history MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=7
