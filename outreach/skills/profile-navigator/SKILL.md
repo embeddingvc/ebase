@@ -3,6 +3,12 @@
 ## Purpose
 Navigate to a LinkedIn profile URL and extract structured data into a prospect JSON file.
 
+## Test and fixture data (do not corrupt)
+
+- Do **not** write prospect or conversation data under `tests/` or `tests/fixtures/`.
+- Persist prospects only via MCP **`upsert_prospect`** (`tools/server.py`), not by constructing
+  `outreach/prospects/...` paths in the editor. Never overwrite fixture JSON used by `tests/test_*.py`.
+
 ## Inputs
 - `linkedin_url`: the full profile URL
 - `prospect_id`: short slug used as the output filename (e.g. `alex_chen_softeng`)
@@ -25,11 +31,15 @@ Navigate to a LinkedIn profile URL and extract structured data into a prospect J
    - "pending" if "Pending" is shown
    - "connected" if "Message" button is shown without "Connect"
 
-5. Write output to `outreach/prospects/<prospect_id>.json` using the prospect schema.
+5. Build a prospect object matching `outreach/schemas/prospect.schema.json`. Prefer **`scrape_profile`**
+   MCP where possible, then merge with manual fields (`connection_status`, etc.).
 
-6. If a prospect file already exists for this `prospect_id`, merge: update fields that changed, preserve `outreach_stage`, `notes`, and `target_action`.
+6. If **`get_prospect(prospect_id)`** succeeds, merge: update fields that changed, preserve `outreach_stage`,
+   `notes`, and `target_action`. If it returns an error, start from the new scrape only.
 
-7. Append to action log:
+7. **`upsert_prospect(prospect_id, json.dumps(prospect))`**
+
+8. **`append_action_log(entry=json.dumps({...}))`**:
 ```json
 { "action": "profile_navigated", "prospect_id": "<id>", "timestamp": "<ISO>", "url": "<url>" }
 ```

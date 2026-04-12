@@ -7,6 +7,12 @@ description: Leave a comment (reply) on a LinkedIn post via the MCP reply_to_pos
 
 Leave a comment on a LinkedIn post by calling the `reply_to_post` MCP tool.
 
+## Test and fixture data (do not corrupt)
+
+- Do **not** edit or write under `tests/` or `tests/fixtures/` when logging or updating pipeline state.
+- Use **`append_action_log`** (and optional **`get_conversation`** / **`upsert_conversation`**) from
+  `tools/server.py` — never hand-edit JSON that lives next to test fixtures.
+
 ## When to Use
 
 - User asks to comment on, reply to, or engage with a specific LinkedIn post
@@ -71,13 +77,16 @@ Preview:  "<first 80 chars of comment> …"
 
 ### 5. Log the action (if using outreach pipeline)
 
-Append to `outreach/logs/actions.jsonl`:
+**Always** log via MCP **`append_action_log`** (include `post_url` here — not inside `messages`):
+
 ```json
-{ "action": "comment_posted", "post_url": "<url>", "timestamp": "<ISO>", "char_count": <n> }
+{ "action": "comment_posted", "post_url": "<url>", "timestamp": "<ISO>", "char_count": <n>, "prospect_id": "<id or omit>" }
 ```
 
-If this comment is part of a prospect's outreach sequence, update their conversation file:
-- Append to `messages`: `{ "sender": "operator", "text": "<comment>", "timestamp": "<ISO>", "context": "post_comment", "post_url": "<url>" }`
+If this comment belongs to a tracked prospect and you have `prospect_id`: **`get_conversation`** → append
+one schema-valid operator row to `messages` (`sender`, `text`, `timestamp` only — use the comment body
+as `text`) → **`upsert_conversation`**. Put the post URL only in the action log entry above, not in
+`messages` (conversation schema has no `post_url` field).
 
 ## Example
 

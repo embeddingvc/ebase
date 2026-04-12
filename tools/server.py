@@ -42,6 +42,18 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     reply_to_post             Leave a comment on a LinkedIn post.
     browse_forever            Start a background human-like browsing session.
 
+  [all modes — outreach filesystem; paths are resolved inside the server]
+    get_connections           Return outreach/connections.json as JSON text.
+    get_prospect              Return outreach/prospects/<id>.json as text.
+    get_conversation          Return outreach/conversations/<id>.json as text.
+    upsert_prospect           Write outreach/prospects/<id>.json from JSON string.
+    save_connection           Upsert one row in outreach/connections.json.
+    upsert_conversation       Write outreach/conversations/<id>.json from JSON string.
+    append_action_log         Append one JSON line to outreach/logs/actions.jsonl.
+    append_planned_message_log Append one JSON line to planned_messages.jsonl.
+    save_outreach_report      Write outreach/storage/reports/<id>.md.
+    remove_pending_queue_entry Remove a prospect from outreach/queue/pending.json.
+
 ── Mock logic ────────────────────────────────────────────────────────────────
 
   All mock data, state, and handler functions live in tools/mock.py.
@@ -565,6 +577,48 @@ def _atomic_write_json(path: Path, data: object) -> None:
 
 
 @mcp.tool()
+async def get_connections() -> str:
+    """
+    Read outreach/connections.json from the project root (the folder that contains
+    tools/server.py). Skills must use this instead of constructing paths.
+    """
+    path = _ROOT / "outreach" / "connections.json"
+    try:
+        if not path.exists():
+            return json.dumps({"connections": []}, indent=2, ensure_ascii=False) + "\n"
+        return path.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.exception("get_connections failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def get_prospect(prospect_id: str) -> str:
+    """Read outreach/prospects/<prospect_id>.json as UTF-8 text."""
+    path = _ROOT / "outreach" / "prospects" / f"{prospect_id}.json"
+    try:
+        if not path.exists():
+            return f"error: prospect not found: {prospect_id}"
+        return path.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.exception("get_prospect failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def get_conversation(prospect_id: str) -> str:
+    """Read outreach/conversations/<prospect_id>.json as UTF-8 text."""
+    path = _ROOT / "outreach" / "conversations" / f"{prospect_id}.json"
+    try:
+        if not path.exists():
+            return f"error: conversation not found: {prospect_id}"
+        return path.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.exception("get_conversation failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
 async def save_connection(
     profile_url: str,
     name: str,
@@ -666,6 +720,32 @@ async def upsert_conversation(
 
 
 @mcp.tool()
+async def upsert_prospect(
+    prospect_id: str,
+    prospect: str,
+) -> str:
+    """
+    Write (create or overwrite) outreach/prospects/<prospect_id>.json.
+
+    Parameters
+    ----------
+    prospect_id : str
+        Filename stem; should match the ``id`` field inside ``prospect`` JSON.
+    prospect : str
+        Full JSON string of the prospect object (prospect.schema.json).
+    """
+    path = _ROOT / "outreach" / "prospects" / f"{prospect_id}.json"
+    try:
+        data = json.loads(prospect)
+        _atomic_write_json(path, data)
+        logger.info("upsert_prospect: wrote %s", path)
+        return f"ok — wrote {path}"
+    except Exception as exc:
+        logger.exception("upsert_prospect failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
 async def append_action_log(
     entry: str,
 ) -> str:
@@ -754,6 +834,36 @@ async def save_outreach_report(
         return f"ok — saved {path}"
     except Exception as exc:
         logger.exception("save_outreach_report failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def remove_pending_queue_entry(prospect_id: str) -> str:
+    """
+    Remove every queue item with matching ``prospect_id`` from outreach/queue/pending.json.
+    No-op if the file is missing or the id is not present.
+    """
+    path = _ROOT / "outreach" / "queue" / "pending.json"
+    try:
+        if not path.exists():
+            return "ok — no pending queue file"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        queue = data.get("queue")
+        if not isinstance(queue, list):
+            return "error: pending.json missing a list at key 'queue'"
+        before = len(queue)
+        data["queue"] = [
+            item
+            for item in queue
+            if not (isinstance(item, dict) and item.get("prospect_id") == prospect_id)
+        ]
+        if len(data["queue"]) == before:
+            return "ok — prospect not in queue (no change)"
+        _atomic_write_json(path, data)
+        logger.info("remove_pending_queue_entry: removed %s", prospect_id)
+        return "ok"
+    except Exception as exc:
+        logger.exception("remove_pending_queue_entry failed")
         return f"error: {exc}"
 
 

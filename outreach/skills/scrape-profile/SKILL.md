@@ -7,6 +7,11 @@ description: Scrape a LinkedIn profile via the MCP scrape_profile tool and print
 
 Fetch structured data from a LinkedIn profile by calling the `scrape_profile` MCP tool and printing the result to the operator.
 
+## Test and fixture data (do not corrupt)
+
+- This tool is **read-only** on the repo. Do not save scrape output into `tests/fixtures/` or overwrite
+  fixture files unless the user explicitly asked you to **update test data** for a test change.
+
 ## When to Use
 
 - User provides a LinkedIn profile URL and asks to scrape or look up the profile

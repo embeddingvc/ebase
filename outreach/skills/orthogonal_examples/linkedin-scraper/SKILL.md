@@ -7,6 +7,8 @@ description: Get LinkedIn profiles, company pages, and posts
 
 Scrape public LinkedIn data including profiles, company pages, and posts.
 
+**Test data:** Do not save API responses into `tests/fixtures/` or overwrite committed test JSON unless the user explicitly asked to refresh fixtures for a test.
+
 ## When to Use
 
 - User asks about someone's LinkedIn profile

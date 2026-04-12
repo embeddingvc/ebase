@@ -4,8 +4,9 @@ description: >
   Orchestrates the LinkedIn DM sequence workflow: sync the live thread via MCP
   fetch_chat_history, merge state per state-updater rules, plan the next step
   and message copy, deliver with MCP send_message or send_connection_request,
-  then persist outcomes (conversation JSON, logs, reports). Combines browser
-  tools with filesystem side effects and structured PlannedMessage output.
+  then persist outcomes via MCP outreach tools (get_* / upsert_* / append_* /
+  save_outreach_report) so no workspace paths are hardcoded. Emits PlannedMessage
+  through append_planned_message_log.
 ---
 
 # Conversation Planner
@@ -17,6 +18,12 @@ You **plan and compose** every outbound touch, and you **drive delivery** throug
 tools (`fetch_chat_history`, `send_message`, `send_connection_request` — see `tools/server.py`).
 You still **do not** hand-operate the browser outside those tools.
 
+**Filesystem rule:** Never read or write `outreach/` data with raw paths, `read_file`, or shell
+commands. The MCP host’s cwd is unknown — always use the **outreach filesystem tools** in
+`tools/server.py` (`get_connections`, `get_prospect`, `get_conversation`, `upsert_conversation`,
+`upsert_prospect`, `save_connection`, `append_action_log`, `append_planned_message_log`,
+`save_outreach_report`, `remove_pending_queue_entry`).
+
 For each prospect run, treat this skill as the **conductor**: run the phases below in order unless
 the user asks for a read-only sync or plan-only mode.
 
@@ -24,12 +31,29 @@ the user asks for a read-only sync or plan-only mode.
 
 ## Schemas
 
-All input and output files must conform to the canonical schemas:
+All prospect and conversation payloads must conform to the canonical schemas (for validation and
+field meanings). The agent does **not** open schema files by path unless the operator explicitly
+allows it; rely on documented fields below and MCP-returned JSON.
 
-| File | Schema |
-|------|--------|
-| `outreach/prospects/<id>.json` | `outreach/schemas/prospect.schema.json` |
-| `outreach/conversations/<id>.json` | `outreach/schemas/conversation.schema.json` |
+| Record | Schema (reference) |
+|--------|-------------------|
+| Prospect | `outreach/schemas/prospect.schema.json` |
+| Conversation | `outreach/schemas/conversation.schema.json` |
+
+### Outreach filesystem MCP tools (authoritative I/O)
+
+| Tool | Use |
+|------|-----|
+| `get_connections` | Load the connections list (returns JSON text; parse `connections` array). |
+| `get_prospect` | Load one prospect by `prospect_id`. On `error: prospect not found`, stop or branch per operator. |
+| `get_conversation` | Load one conversation by `prospect_id`. If missing, initialise a new object in memory that matches the conversation schema, then `upsert_conversation` when persisting. |
+| `upsert_conversation` | Persist the full conversation object: pass `prospect_id` and `conversation` = **stringified JSON** of the whole document. |
+| `upsert_prospect` | Persist the full prospect object the same way when `outreach_stage` (or other fields) must change. |
+| `save_connection` | Upsert one row in the connections list (used heavily by send-connection-request; planner may use after intros). |
+| `append_action_log` | Append one JSON object line to the actions log (`entry` = stringified JSON). |
+| `append_planned_message_log` | Append one PlannedMessage object (`entry` = stringified JSON). |
+| `save_outreach_report` | Write markdown body for end-of-sequence reports (`prospect_id`, `content`). |
+| `remove_pending_queue_entry` | Remove a prospect from `pending.json` when the pipeline uses the queue. |
 
 ---
 
@@ -37,19 +61,19 @@ All input and output files must conform to the canonical schemas:
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `prospect_id` | string | no | Run for a single prospect. Locate `outreach/prospects/<id>.json` and `outreach/conversations/<id>.json`. **Omit to run batch mode over all connections.** |
-| `output_path` | string | no | Where to write the PlannedMessage JSON. Defaults to stdout if omitted. Ignored in batch mode. |
+| `prospect_id` | string | no | Single-prospect run. **Omit to run batch mode** over all connections from `get_connections`. |
+| (echo) | — | — | Surface PlannedMessage JSON to the user if helpful; **persistence** is always `append_planned_message_log`. |
 
-### Reading the inputs
+### Loading records (MCP only)
 
 **Single-prospect mode** (`prospect_id` provided):
 
-1. Read `outreach/prospects/<prospect_id>.json` → `prospect`
-2. Read `outreach/conversations/<prospect_id>.json` → `conversation`
+1. `get_prospect(prospect_id)` → parse JSON → `prospect` (abort if tool returns `error: ...`).
+2. `get_conversation(prospect_id)` → if success, parse → `conversation`; if `error: conversation not found`, build a minimal valid in-memory `conversation` with `prospect_id`, `outreach_stage`, `messages: []`, etc., then persist with `upsert_conversation` when appropriate.
 
 **Batch mode** (`prospect_id` omitted — see [Batch Mode](#batch-mode) below):
 
-1. Read `outreach/connections.json` → load `connections` array.
+1. `get_connections()` → parse → `connections` array.
 2. For each entry, derive `prospect_id` and run the full single-prospect workflow.
 
 ---
@@ -67,7 +91,9 @@ Use this as the default end-to-end runbook. **Phases A–D** map to MCP calls an
 3. Apply **state-updater** step 2: map `self: true` → `sender: "operator"`, `self: false` →
    `sender: "prospect"`, `text` = `message`; assign stable ISO timestamps for new rows; merge into
    `conversation.messages` without duplicating existing lines.
-4. Optionally run intent classification and `next_action` **hints** from state-updater steps 3–6 when
+4. Persist merged thread: **`upsert_conversation(prospect_id, json.dumps(conversation))`** so local
+   state matches LinkedIn before planning.
+5. Optionally run intent classification and `next_action` **hints** from state-updater steps 3–6 when
    they help (disinterest, conversion). The **5-step sequence state machine below remains authoritative**
    for what to send next; reconcile conflicts in favour of terminal outcomes (`not_interested`,
    `mark_dead`, resume/email captured) when the thread clearly demands it.
@@ -75,12 +101,14 @@ Use this as the default end-to-end runbook. **Phases A–D** map to MCP calls an
 
 ### Phase B — Plan (this skill’s core)
 
-1. Re-read `prospect` and updated `conversation` from disk (or from memory after Phase A writes).
+1. Ensure `prospect` and `conversation` are current (after Phase A, use in-memory objects or call
+   `get_prospect` / `get_conversation` again if another tool may have changed files).
 2. Apply **Inputs → The Outreach Sequence**, **State Machine**, and **Composing the Message** below.
-3. Perform **Side Effects**: update `outreach/conversations/<prospect_id>.json` (`planned_message`,
-   `next_action`, `sequence_step`, `stage_history`, `outreach_stage`, etc.) and any **End-of-sequence**
-   artifacts when ending.
-4. Emit **PlannedMessage** JSON and append to `outreach/logs/planned_messages.jsonl`.
+3. Perform **Side Effects** (below): build the updated `conversation` object, then
+   **`upsert_conversation`**. For end-of-sequence, **`save_outreach_report`** then upsert conversation
+   with `report_path` set to the canonical relative string `outreach/storage/reports/<prospect_id>.md`.
+4. Emit **PlannedMessage** JSON: **`append_planned_message_log(entry=json.dumps(...))`** and echo to
+   the user if useful.
 
 ### Phase C — Deliver (MCP)
 
@@ -101,15 +129,16 @@ directs otherwise.
 
 After a **successful** send:
 
-1. Set `last_action` to the action you executed (`send_followup_message` or `send_connection_request`).
-2. Set `last_action_timestamp` to ISO 8601 UTC **now**.
-3. Clear `planned_message` to `null` (and `connection_note` already set if applicable).
-4. Append a line to `outreach/logs/actions.jsonl`, e.g.
+1. Update the in-memory `conversation` object: set `last_action` to the action you executed
+   (`send_followup_message` or `send_connection_request`), `last_action_timestamp` to ISO 8601 UTC
+   **now**, and `planned_message` to `null` (and `connection_note` already set if applicable).
+2. **`upsert_conversation(prospect_id, json.dumps(conversation))`**.
+3. **`append_action_log(entry=json.dumps({...}))`** e.g.
    `{ "action": "message_sent", "prospect_id": "<id>", "last_action": "<action>", "timestamp": "<ISO>" }`.
-
-Keep `outreach/prospects/<id>.json` **`outreach_stage`** aligned with `conversation.outreach_stage` —
-either update the prospect file in this same run or run state-updater / a small sync step afterward
-(see state-updater step 5).
+4. If `conversation.outreach_stage` changed, merge the same `outreach_stage` into `prospect` and call
+   **`upsert_prospect(prospect_id, json.dumps(prospect))`**.
+5. If the pipeline uses the pending queue, **`remove_pending_queue_entry(prospect_id)`** when
+   appropriate.
 
 ### Modes
 
@@ -237,41 +266,40 @@ Character limits:
 
 ---
 
-## Side Effects (planner file writes; then MCP in Phase C)
+## Side Effects (in-memory object → MCP persist; then Phase C send)
 
-Perform conversation JSON updates **after** Phase A sync and **before or after** emitting PlannedMessage,
-consistent with your run mode. In a **full workflow**, apply the updates below once the plan is final,
-then run **Phase C–D** (MCP send + `last_action` / `planned_message` cleanup).
+Mutate a single **`conversation`** dict in memory, then persist with **`upsert_conversation`** — never
+by writing a path yourself. In a **full workflow**, apply the updates once the plan is final, emit
+PlannedMessage via **`append_planned_message_log`**, then run **Phase C–D**.
 
-### 1. Update the conversation file
+### 1. Update the conversation record
 
-After composing the message, update `outreach/conversations/<prospect_id>.json`:
+After composing the message, set on **`conversation`**:
 
-- Set `planned_message` to the composed message text.
-- Set `next_action` to the appropriate action value:
+- `planned_message` → composed message text.
+- `next_action` → appropriate action:
   - Step 1, `connection_status == "none"` → `"send_connection_request"`
   - Step 1, already connected → `"send_followup_message"`
   - Steps 2–4 → `"send_followup_message"`
   - Step 5 (close) → `"send_followup_message"`
   - End without sending → `"mark_ended"` or `"mark_dead"`
-- Set `next_action_after` to `null` (immediate) unless there is a deliberate delay.
-- If Step 1 and it is a connection note: populate `connection_note` with the message text.
-- Advance `outreach_stage` to the new stage (see state machine above).
+- `next_action_after` → `null` unless a deliberate delay.
+- Step 1 + connection note → `connection_note` = message text.
+- Advance `outreach_stage` (see state machine).
 - Append to `stage_history`: `{ "stage": "<new_stage>", "entered_at": "<ISO UTC now>", "reason": "<brief reason>" }`.
-- Update `sequence_step` to the step just planned.
+- `sequence_step` → step just planned.
+
+Then: **`upsert_conversation(prospect_id, json.dumps(conversation))`**.
 
 ### 2. End-of-sequence side effects (only when ending)
 
 When the sequence ends (`ended_reason` is set):
 
-a. **Set terminal fields** in the conversation file:
-   - `ended_at` → ISO 8601 UTC now
-   - `ended_reason` → the reason code
-   - `outreach_stage` → `"ended"` (or `"dead"` for no-response / opted-out)
-   - `next_action` → `null`
-   - `planned_message` → `null`
+a. **Terminal fields** on **`conversation`**:
+   - `ended_at`, `ended_reason`, `outreach_stage` → `"ended"` or `"dead"`, `next_action` → `null`,
+     `planned_message` → `null`
 
-b. **Save the end-of-sequence report** to `outreach/storage/reports/<prospect_id>.md`:
+b. **`save_outreach_report(prospect_id, content)`** with markdown body:
 
 ```
 # LinkedIn Outreach Report: <Full Name>
@@ -301,19 +329,22 @@ Sequence reached: Step <n>
 <Any additional context useful for future outreach or handoff>
 ```
 
-   - Set `report_path` in the conversation file to `"outreach/storage/reports/<prospect_id>.md"`.
+   - Set `report_path` on **`conversation`** to `outreach/storage/reports/<prospect_id>.md` (schema-relative string).
+   - **`upsert_conversation`** again with the updated object.
 
-c. **Append to `outreach/logs/actions.jsonl`**:
+c. **`append_action_log(entry=json.dumps({...}))`**:
 ```json
 { "action": "conversation_ended", "prospect_id": "<id>", "ended_reason": "<reason>", "sequence_step": <n>, "timestamp": "<ISO UTC>" }
 ```
+
+d. Sync **`prospect.outreach_stage`** with **`upsert_prospect`** if needed.
 
 ---
 
 ## Output — PlannedMessage
 
-Emit a single JSON object to `output_path` (or stdout).
-Append this object as one line to `outreach/logs/planned_messages.jsonl` regardless of `output_path`.
+Build the PlannedMessage object, then **`append_planned_message_log(entry=json.dumps(planned_message))`**.
+Optionally print the same JSON for the operator; file logging must go through the MCP tool.
 
 ```json
 {
@@ -366,19 +397,18 @@ Expected: `end_conversation = true`, `ended_reason = "no_response"`, `message = 
 
 ## Batch Mode
 
-When `prospect_id` is **not** provided, run planning for every connection in `outreach/connections.json`.
+When `prospect_id` is **not** provided, run planning for every connection returned by **`get_connections()`**.
 
 ### Steps
 
-1. **Load the connections list.**  
-   Read `outreach/connections.json`. If the file is missing or `connections` is empty, stop and report:  
-   `"No connections found in outreach/connections.json. Add connections by sending connection requests first."`
+1. **`get_connections()`** → parse JSON. If `connections` is missing or empty, stop and report:  
+   `"No connections in project data. Add connections (e.g. send connection requests) first."`
 
 2. **Filter actionable connections.**  
    Skip entries where any of the following is true:
    - `connection_status` is `"pending"` — invitation not yet accepted; nothing to plan.
-   - A conversation file exists and `outreach_stage` is `"ended"` or `"dead"` — sequence is complete.
-   - A conversation file exists and `next_action` is `"mark_ended"` or `"mark_dead"`.
+   - **`get_conversation(prospect_id)`** shows `outreach_stage` is `"ended"` or `"dead"` — sequence is complete.
+   - Same conversation has `next_action` `"mark_ended"` or `"mark_dead"`.
 
 3. **For each remaining connection, run the full single-prospect workflow** (Phases A → B → C → D):
    - Derive `prospect_id` from the connection entry's `prospect_id` field.
@@ -401,7 +431,7 @@ Processed: <N>
 ─────────────────────────────────────────────────────────────
 ```
 
-5. **Append a batch summary line to `outreach/logs/actions.jsonl`**:
+5. **`append_action_log`** with a batch summary object, e.g.:
 ```json
 { "action": "batch_plan_run", "timestamp": "<ISO UTC>", "total": <N>, "sent": <N>, "errors": <N>, "ended": <N> }
 ```
@@ -414,13 +444,28 @@ Processed: <N>
 
 ---
 
+## Test and fixture data (do not corrupt)
+
+- **`tests/` is off-limits for outreach writes.** Under `tests/` — especially `tests/fixtures/` (e.g.
+  `tests/fixtures/conversation-planner/`) — files exist for automated tests. Do **not** edit, delete,
+  move, or overwrite them while running this skill unless the user explicitly asked you to change
+  **test code or fixtures**.
+- **Do not import fixtures into the live pipeline.** Never copy JSON from `tests/fixtures/` into
+  `upsert_conversation`, `upsert_prospect`, or browser sends. MCP persistence targets the operational
+  `outreach/` tree only; fixtures are outside that tree and are not loaded by `get_*` tools.
+- **Prospect IDs:** If an id matches a fixture basename used only in tests, confirm with the operator
+  before writing production pipeline data under that id.
+
+---
+
 ## Important constraints
 
 - **MCP only for LinkedIn automation.** Use `fetch_chat_history`, `send_message`, and
-  `send_connection_request` from the linkedin MCP server — no ad-hoc scraping or undocumented APIs.
+  `send_connection_request` — no ad-hoc scraping or undocumented APIs.
+- **MCP only for outreach data I/O.** Use `get_*`, `upsert_*`, `append_*`, `save_outreach_report`,
+  `save_connection`, `remove_pending_queue_entry` — **never** construct `outreach/...` paths or use
+  workspace file tools for these records.
 - **One outbound touch per run.** Never compose or send two sequence steps in a single execution.
 - **Never skip a step.** Do not jump from Step 1 to Step 3.
 - **Never retry automatically** after an MCP failure; report the error and stop or wait for operator input.
-- **Prospect file:** Prefer updating `outreach_stage` on the prospect when you change conversation
-  stage (Phase D / state-updater alignment). If the operator forbids prospect edits, note the drift
-  and defer to a state-updater run.
+- **Prospect stage:** When `conversation.outreach_stage` changes, update `prospect` and **`upsert_prospect`** unless the operator forbids it.

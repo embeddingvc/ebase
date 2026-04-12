@@ -7,6 +7,8 @@ description: Find LinkedIn profiles of a specific team or department at a compan
 
 Find everyone on a specific team/department at a company and return their LinkedIn profiles.
 
+**Test data:** Do not write or replace files under `tests/` or `tests/fixtures/` when saving search results unless the user explicitly asked to edit tests.
+
 ## Workflow
 
 ### 1. Parse the Request

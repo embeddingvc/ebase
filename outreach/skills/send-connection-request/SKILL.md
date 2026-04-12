@@ -1,11 +1,18 @@
 ---
 name: send-connection-request
-description: Send a LinkedIn connection request (with an optional personalised note) via the MCP send_connection_request tool. Use when the user asks to connect with, invite, or add a LinkedIn profile.
+description: Send a LinkedIn connection request (with an optional personalised note) via the MCP send_connection_request tool, then persist pipeline state with save_connection, upsert_conversation, append_action_log, and remove_pending_queue_entry — never raw outreach/ paths. Use when the user asks to connect with, invite, or add a LinkedIn profile.
 ---
 
 # Send Connection Request
 
 Scrape a LinkedIn profile, then immediately send a connection request — no confirmation step needed.
+
+**Filesystem rule:** Do not read or write `outreach/` files via workspace paths. Use MCP tools from
+`tools/server.py`: **`save_connection`**, **`get_conversation`**, **`upsert_conversation`**,
+**`append_action_log`**, **`remove_pending_queue_entry`**.
+
+**Test / fixtures:** Never read, edit, or overwrite `tests/fixtures/` or other `tests/` files during
+connection flows. Do not seed MCP upserts from fixture JSON unless the user is explicitly maintaining tests.
 
 ## When to Use
 
@@ -69,43 +76,39 @@ Note:     "<note text>" (or "(none)")
 
 ### 5. Update conversation state (if using outreach pipeline)
 
-If a conversation file exists at `outreach/conversations/<prospect_id>.json`:
-- Append to `messages`: `{ "sender": "operator", "text": "<note>", "timestamp": "<ISO>", "context": "connection_note" }`
-- Set `last_action` → `"send_connection_request"`, `last_action_timestamp` → now
-- Set `next_action` → `null` (wait for acceptance before planning next step)
-- Set `outreach_stage` → `"invited"` (or advance as appropriate)
+When you have a `prospect_id` for the pipeline:
 
-Append to `outreach/logs/actions.jsonl`:
+1. **`get_conversation(prospect_id)`** — if the tool returns JSON text, parse it into `conversation`.
+   If it returns `error: conversation not found`, build a minimal valid `conversation` object (schema:
+   `prospect_id`, `outreach_stage`, `messages: []`, etc.) in memory.
+2. Append to `conversation.messages` (conversation schema — no extra keys):
+   `{ "sender": "operator", "text": "<note text or brief system line>", "timestamp": "<ISO UTC>", "sequence_step": 1 }`.
+   Use the real note when one was sent; if none, use a short line such as `(connection request sent, no note)`.
+3. Set `last_action` → `"send_connection_request"`, `last_action_timestamp` → now,
+   `next_action` → `null`, and advance `outreach_stage` / `stage_history` per your pipeline (e.g.
+   toward `pending_connection`).
+4. **`upsert_conversation(prospect_id, json.dumps(conversation))`**
+5. **`append_action_log(entry=json.dumps({...}))`**:
 ```json
 { "action": "connection_request_sent", "prospect_id": "<id>", "timestamp": "<ISO>", "note_char_count": <n> }
 ```
+6. If you use the pending queue: **`remove_pending_queue_entry(prospect_id)`**
 
-Remove prospect from `outreach/queue/pending.json`.
+### 6. Update the connections list (MCP)
 
-### 6. Update the connections list
+Call **`save_connection`** with:
 
-Read `outreach/connections.json` (create it with `{ "connections": [] }` if it does not exist).
+| Parameter | Value |
+|-----------|--------|
+| `profile_url` | same LinkedIn URL |
+| `name` | from scrape |
+| `title` | from scrape (headline) |
+| `prospect_id` | pipeline id or omit / `null` if none |
+| `note_sent` | note text, or `null` if sent without a note |
+| `connection_status` | `"pending"` |
 
-Add or update an entry for this prospect:
-
-```json
-{
-  "prospect_id": "<id or null if no pipeline file>",
-  "profile_url": "<profile_url>",
-  "name": "<name from scrape>",
-  "title": "<title from scrape>",
-  "connection_status": "pending",
-  "connected_at": "<ISO UTC now>",
-  "note_sent": "<note text, or null if no note>"
-}
-```
-
-Rules:
-- `prospect_id` — derive from the prospect file path if one exists; otherwise set to `null`.
-- `connection_status` — always starts as `"pending"` (LinkedIn must accept before it becomes `"accepted"`).
-- If an entry with the same `profile_url` already exists, **replace** it (do not duplicate).
-
-Write the updated object back to `outreach/connections.json`.
+`save_connection` upserts by `profile_url` inside the project’s `connections.json` — do **not** edit
+that file manually.
 
 ## Example
 

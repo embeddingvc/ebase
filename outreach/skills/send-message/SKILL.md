@@ -7,6 +7,12 @@ description: Send a direct LinkedIn message to a 1st-degree connection via the M
 
 Send a direct message to an existing 1st-degree LinkedIn connection by calling the `send_message` MCP tool.
 
+## Test and fixture data (do not corrupt)
+
+- Do **not** modify `tests/` or `tests/fixtures/` when sending messages or updating pipeline state.
+- Persist conversation updates only via MCP **`get_conversation`** / **`upsert_conversation`** and logs via
+  **`append_action_log`** — never copy fixture JSON into those calls unless the user asked to edit tests.
+
 ## When to Use
 
 - User asks to send a message, DM, or follow-up to a LinkedIn connection
@@ -44,7 +50,7 @@ The tool attaches to the running Chrome session, navigates to the profile, types
 | `"ok"`   | Message sent successfully        | Log the send; print confirmation (see below) |
 | anything else | Send failed (not a 1st-degree connection, button not found, etc.) | Report the error to the operator; do NOT retry automatically |
 
-### 4. Print confirmation
+### 3. Print confirmation
 
 On success:
 
@@ -56,14 +62,17 @@ Preview:  "<first 80 chars of message> …"
 ─────────────────────────────────────────────────────────────
 ```
 
-### 5. Update conversation state (if using outreach pipeline)
+### 4. Update conversation state (if using outreach pipeline)
 
-If a conversation file exists at `outreach/conversations/<prospect_id>.json`:
-- Append to `messages`: `{ "sender": "operator", "text": "<message>", "timestamp": "<ISO>" }`
-- Set `last_action` → `"send_message"`, `last_action_timestamp` → now
-- Set `next_action` → `null` (wait for reply before planning next step)
+When you have `prospect_id`:
 
-Append to `outreach/logs/actions.jsonl`:
+1. **`get_conversation(prospect_id)`** → parse `conversation` (skip this block if no pipeline id).
+2. Append to `conversation.messages`:
+   `{ "sender": "operator", "text": "<message>", "timestamp": "<ISO UTC>" }` (conversation schema only).
+3. Set `last_action` → `"send_followup_message"`, `last_action_timestamp` → now, `next_action` → `null`
+   until the planner sets a new one.
+4. **`upsert_conversation(prospect_id, json.dumps(conversation))`**
+5. **`append_action_log(entry=json.dumps({...}))`**:
 ```json
 { "action": "message_sent", "prospect_id": "<id>", "timestamp": "<ISO>", "char_count": <n> }
 ```
