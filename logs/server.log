@@ -289,3 +289,55 @@
 2026-04-11 18:06:40,205  INFO      linkedin.server  fetch_chat_history MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=6
 2026-04-11 18:06:40,206  INFO      linkedin.server  send_message MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  dm_index=4  history_len=7
 2026-04-11 18:06:40,206  INFO      linkedin.server  fetch_chat_history MOCK (test case: eager_referral)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=7
+2026-04-12 08:55:15,185  WARNING   linkedin.server  LinkedIn MCP server starting in MOCK MODE — no browser actions are performed; responses are scripted.
+  • list_test_cases()              — view available scenarios
+  • load_test_case(id, url)        — configure a session
+  • send_connection_request(url)   — begin the conversation
+  • [conversation-planner loop]    — fetch → plan → send
+  • get_mock_state(url)            — inspect progress at any time
+2026-04-12 08:55:15,263  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-12 08:55:15,264  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-12 08:55:15,265  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-12 08:57:26,465  WARNING   linkedin.server  LinkedIn MCP server starting in MOCK MODE — no browser actions are performed; responses are scripted.
+  • list_test_cases()              — view available scenarios
+  • load_test_case(id, url)        — configure a session
+  • send_connection_request(url)   — begin the conversation
+  • [conversation-planner loop]    — fetch → plan → send
+  • get_mock_state(url)            — inspect progress at any time
+2026-04-12 08:57:26,585  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-12 08:57:26,586  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-12 08:57:26,586  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-12 08:59:42,533  WARNING   linkedin.server  LinkedIn MCP server starting in MOCK MODE — no browser actions are performed; responses are scripted.
+  • list_test_cases()              — view available scenarios
+  • load_test_case(id, url)        — configure a session
+  • send_connection_request(url)   — begin the conversation
+  • [conversation-planner loop]    — fetch → plan → send
+  • get_mock_state(url)            — inspect progress at any time
+2026-04-12 08:59:42,645  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-12 08:59:42,647  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-12 08:59:42,649  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-12 09:01:02,957  WARNING   linkedin.server  LinkedIn MCP server starting in MOCK MODE — no browser actions are performed; responses are scripted.
+  • list_test_cases()              — view available scenarios
+  • load_test_case(id, url)        — configure a session
+  • send_connection_request(url)   — begin the conversation
+  • [conversation-planner loop]    — fetch → plan → send
+  • get_mock_state(url)            — inspect progress at any time
+2026-04-12 09:01:02,962  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-12 09:01:31,958  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 09:01:31,960  WARNING   linkedin.mock  fetch_chat_history MOCK: no test case loaded for https://www.linkedin.com/in/alex-chen-softeng/ — static fallback
+2026-04-12 09:02:25,843  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 09:02:25,843  WARNING   linkedin.mock  send_message MOCK: no test case loaded for https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-12 10:05:37,380  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 10:05:37,382  WARNING   linkedin.mock  fetch_chat_history MOCK: no test case loaded for https://www.linkedin.com/in/alex-chen-softeng/ — static fallback
+2026-04-12 10:17:01,096  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 10:17:01,097  WARNING   linkedin.mock  fetch_chat_history MOCK: no test case loaded for https://www.linkedin.com/in/alex-chen-softeng/ — static fallback
+2026-04-12 13:28:15,106  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 13:28:15,108  INFO      linkedin.mock  scrape_profile MOCK (generic fallback)  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-12 13:28:28,758  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 13:28:28,758  WARNING   linkedin.mock  send_connection_request MOCK: no test case loaded for https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-12 13:39:25,233  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 13:39:25,234  INFO      linkedin.mock  scrape_profile MOCK (generic fallback)  url=https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-12 13:39:30,596  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 13:39:30,597  WARNING   linkedin.mock  send_connection_request MOCK: no test case loaded for https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
+2026-04-12 13:43:49,123  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 13:43:49,123  WARNING   linkedin.mock  fetch_chat_history MOCK: no test case loaded for https://www.linkedin.com/in/alex-chen-softeng/ — static fallback

@@ -82,6 +82,31 @@ Append to `outreach/logs/actions.jsonl`:
 
 Remove prospect from `outreach/queue/pending.json`.
 
+### 6. Update the connections list
+
+Read `outreach/connections.json` (create it with `{ "connections": [] }` if it does not exist).
+
+Add or update an entry for this prospect:
+
+```json
+{
+  "prospect_id": "<id or null if no pipeline file>",
+  "profile_url": "<profile_url>",
+  "name": "<name from scrape>",
+  "title": "<title from scrape>",
+  "connection_status": "pending",
+  "connected_at": "<ISO UTC now>",
+  "note_sent": "<note text, or null if no note>"
+}
+```
+
+Rules:
+- `prospect_id` — derive from the prospect file path if one exists; otherwise set to `null`.
+- `connection_status` — always starts as `"pending"` (LinkedIn must accept before it becomes `"accepted"`).
+- If an entry with the same `profile_url` already exists, **replace** it (do not duplicate).
+
+Write the updated object back to `outreach/connections.json`.
+
 ## Example
 
 **User:** "Connect with https://www.linkedin.com/in/alexchen/ and say we met at NeurIPS"

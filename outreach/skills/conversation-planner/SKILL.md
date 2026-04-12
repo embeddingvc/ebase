@@ -37,13 +37,20 @@ All input and output files must conform to the canonical schemas:
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `prospect_id` | string | yes | Used to locate `outreach/prospects/<id>.json` and `outreach/conversations/<id>.json` |
-| `output_path` | string | no | Where to write the PlannedMessage JSON. Defaults to stdout if omitted. |
+| `prospect_id` | string | no | Run for a single prospect. Locate `outreach/prospects/<id>.json` and `outreach/conversations/<id>.json`. **Omit to run batch mode over all connections.** |
+| `output_path` | string | no | Where to write the PlannedMessage JSON. Defaults to stdout if omitted. Ignored in batch mode. |
 
 ### Reading the inputs
 
+**Single-prospect mode** (`prospect_id` provided):
+
 1. Read `outreach/prospects/<prospect_id>.json` → `prospect`
 2. Read `outreach/conversations/<prospect_id>.json` → `conversation`
+
+**Batch mode** (`prospect_id` omitted — see [Batch Mode](#batch-mode) below):
+
+1. Read `outreach/connections.json` → load `connections` array.
+2. For each entry, derive `prospect_id` and run the full single-prospect workflow.
 
 ---
 
@@ -354,6 +361,56 @@ Run conversation-planner with prospect_id = "alex_chen_softeng"
 ```
 
 Expected: `end_conversation = true`, `ended_reason = "no_response"`, `message = null`, report saved.
+
+---
+
+## Batch Mode
+
+When `prospect_id` is **not** provided, run planning for every connection in `outreach/connections.json`.
+
+### Steps
+
+1. **Load the connections list.**  
+   Read `outreach/connections.json`. If the file is missing or `connections` is empty, stop and report:  
+   `"No connections found in outreach/connections.json. Add connections by sending connection requests first."`
+
+2. **Filter actionable connections.**  
+   Skip entries where any of the following is true:
+   - `connection_status` is `"pending"` — invitation not yet accepted; nothing to plan.
+   - A conversation file exists and `outreach_stage` is `"ended"` or `"dead"` — sequence is complete.
+   - A conversation file exists and `next_action` is `"mark_ended"` or `"mark_dead"`.
+
+3. **For each remaining connection, run the full single-prospect workflow** (Phases A → B → C → D):
+   - Derive `prospect_id` from the connection entry's `prospect_id` field.
+   - If `prospect_id` is `null` (connection added outside the pipeline), skip and log a warning.
+   - Run the workflow exactly as described in [LinkedIn sequence workflow](#linkedin-sequence-workflow-mcp--state-updater--planner).
+   - **One outbound touch per prospect per run** — the single-touch constraint still applies per prospect.
+   - Collect the `PlannedMessage` result (or end-of-sequence outcome) for the summary.
+
+4. **Print a batch run summary** after all prospects are processed:
+
+```
+── Batch Planner Run ─────────────────────────────────────────
+Run at:    <ISO UTC timestamp>
+Total:     <N> connections loaded
+Skipped:   <N> (pending acceptance / already ended / no prospect_id)
+Processed: <N>
+  ✓ Sent:  <N>   (list of names + actions)
+  ✗ Error: <N>   (list of names + error reasons)
+  → Ended: <N>   (list of names + ended_reason)
+─────────────────────────────────────────────────────────────
+```
+
+5. **Append a batch summary line to `outreach/logs/actions.jsonl`**:
+```json
+{ "action": "batch_plan_run", "timestamp": "<ISO UTC>", "total": <N>, "sent": <N>, "errors": <N>, "ended": <N> }
+```
+
+### Batch mode notes
+
+- Process connections **sequentially**, not in parallel — LinkedIn rate limits apply.
+- If any single prospect run hits an MCP error (bot detection, Chrome offline, etc.), log it in the summary but **continue** to the next prospect rather than aborting the whole batch.
+- Batch mode honours all single-prospect constraints: one touch per prospect, never skip a step, no automatic retry on failure.
 
 ---
 

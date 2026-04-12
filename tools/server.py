@@ -533,6 +533,230 @@ async def browse_forever(
     )
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# OUTREACH FILE-MANAGEMENT TOOLS
+# These tools always write to the correct project folder (_ROOT) so skills
+# never need to guess paths or run bash scripts.
+# ═════════════════════════════════════════════════════════════════════════════
+
+import tempfile
+from datetime import datetime, timezone
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _atomic_write_json(path: Path, data: object) -> None:
+    """Write JSON atomically via temp-file + rename so a crash cannot corrupt the file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp_")
+    try:
+        with open(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        Path(tmp).replace(path)
+    except Exception:
+        try:
+            Path(tmp).unlink()
+        except OSError:
+            pass
+        raise
+
+
+@mcp.tool()
+async def save_connection(
+    profile_url: str,
+    name: str,
+    title: str = "",
+    prospect_id: str | None = None,
+    note_sent: str | None = None,
+    connection_status: str = "pending",
+) -> str:
+    """
+    Upsert a connection entry in outreach/connections.json inside the project folder.
+
+    Always writes to the correct project folder regardless of which directory the
+    skill or scheduled task runs from.  If an entry with the same profile_url already
+    exists it is replaced (never duplicated).
+
+    Parameters
+    ----------
+    profile_url : str
+        LinkedIn profile URL — used as the unique key.
+    name : str
+        Full name scraped from the profile.
+    title : str
+        Job title / headline scraped from the profile.
+    prospect_id : str | None
+        Pipeline prospect ID if this connection is tracked in outreach/prospects/.
+    note_sent : str | None
+        The connection note that was sent, or None if no note was included.
+    connection_status : str
+        "pending" (default) until LinkedIn accepts; then "accepted".
+
+    Returns
+    -------
+    str
+        Confirmation string on success, or an error description.
+    """
+    path = _ROOT / "outreach" / "connections.json"
+    try:
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if "connections" not in data or not isinstance(data["connections"], list):
+                data["connections"] = []
+        else:
+            data = {"connections": []}
+
+        entry = {
+            "prospect_id": prospect_id,
+            "profile_url": profile_url,
+            "name": name,
+            "title": title,
+            "connection_status": connection_status,
+            "connected_at": _iso_now(),
+            "note_sent": note_sent,
+        }
+
+        connections = data["connections"]
+        idx = next((i for i, c in enumerate(connections) if c.get("profile_url") == profile_url), None)
+        if idx is not None:
+            connections[idx] = entry
+        else:
+            connections.append(entry)
+
+        _atomic_write_json(path, data)
+        logger.info("save_connection: saved %s → %s", name, path)
+        return f"ok — saved {name} ({profile_url}) to {path}"
+    except Exception as exc:
+        logger.exception("save_connection failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def upsert_conversation(
+    prospect_id: str,
+    conversation: str,
+) -> str:
+    """
+    Write (create or overwrite) a conversation JSON file in outreach/conversations/.
+
+    Parameters
+    ----------
+    prospect_id : str
+        The prospect ID — file will be saved as outreach/conversations/<prospect_id>.json.
+    conversation : str
+        Full JSON string of the conversation object (must match conversation.schema.json).
+
+    Returns
+    -------
+    str
+        "ok" on success, or an error description.
+    """
+    path = _ROOT / "outreach" / "conversations" / f"{prospect_id}.json"
+    try:
+        data = json.loads(conversation)
+        _atomic_write_json(path, data)
+        logger.info("upsert_conversation: wrote %s", path)
+        return f"ok — wrote {path}"
+    except Exception as exc:
+        logger.exception("upsert_conversation failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def append_action_log(
+    entry: str,
+) -> str:
+    """
+    Append one JSON entry to outreach/logs/actions.jsonl in the project folder.
+
+    Parameters
+    ----------
+    entry : str
+        A JSON object string to append as a single line.
+        Should include at minimum: action, timestamp.
+
+    Returns
+    -------
+    str
+        "ok" on success, or an error description.
+    """
+    path = _ROOT / "outreach" / "logs" / "actions.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        parsed = json.loads(entry)  # validate it's real JSON before writing
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(parsed, ensure_ascii=False) + "\n")
+        logger.info("append_action_log: wrote to %s", path)
+        return "ok"
+    except Exception as exc:
+        logger.exception("append_action_log failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def append_planned_message_log(
+    entry: str,
+) -> str:
+    """
+    Append one JSON entry to outreach/logs/planned_messages.jsonl in the project folder.
+
+    Parameters
+    ----------
+    entry : str
+        A JSON object string to append as a single line (PlannedMessage schema).
+
+    Returns
+    -------
+    str
+        "ok" on success, or an error description.
+    """
+    path = _ROOT / "outreach" / "logs" / "planned_messages.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        parsed = json.loads(entry)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(parsed, ensure_ascii=False) + "\n")
+        logger.info("append_planned_message_log: wrote to %s", path)
+        return "ok"
+    except Exception as exc:
+        logger.exception("append_planned_message_log failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def save_outreach_report(
+    prospect_id: str,
+    content: str,
+) -> str:
+    """
+    Save an end-of-sequence outreach report to outreach/storage/reports/ in the project folder.
+
+    Parameters
+    ----------
+    prospect_id : str
+        Used as the filename: outreach/storage/reports/<prospect_id>.md
+    content : str
+        Full markdown content of the report.
+
+    Returns
+    -------
+    str
+        "ok — saved <path>" on success, or an error description.
+    """
+    path = _ROOT / "outreach" / "storage" / "reports" / f"{prospect_id}.md"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        logger.info("save_outreach_report: wrote %s", path)
+        return f"ok — saved {path}"
+    except Exception as exc:
+        logger.exception("save_outreach_report failed")
+        return f"error: {exc}"
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
