@@ -65,8 +65,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Make the project root importable (outreach package, tools/mock.py, etc.).
 _ROOT = Path(__file__).parent.parent
@@ -559,6 +561,29 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalize_prospect_id_slug(raw: str | None) -> str | None:
+    """Lowercase slug matching prospect.schema id pattern ^[a-z0-9_]+$."""
+    if raw is None or not isinstance(raw, str):
+        return None
+    s = raw.strip().lower().replace("-", "_")
+    s = re.sub(r"[^a-z0-9_]", "", s)
+    if not s or len(s) > 200:
+        return None
+    return s
+
+
+def _derive_prospect_id_from_profile_url(profile_url: str) -> str | None:
+    """Extract /in/<handle>/ from a LinkedIn profile URL and normalize to prospect_id."""
+    try:
+        path = urlparse(profile_url.strip()).path
+        m = re.search(r"/in/([^/?#]+)", path, re.I)
+        if not m:
+            return None
+        return _normalize_prospect_id_slug(m.group(1))
+    except Exception:
+        return None
+
+
 def _atomic_write_json(path: Path, data: object) -> None:
     """Write JSON atomically via temp-file + rename so a crash cannot corrupt the file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -643,7 +668,10 @@ async def save_connection(
     title : str
         Job title / headline scraped from the profile.
     prospect_id : str | None
-        Pipeline prospect ID if this connection is tracked in outreach/prospects/.
+        Pipeline prospect ID (must match outreach/prospects/<id>.json). If omitted or null, the id is
+        taken from an existing row for the same profile_url, else derived from the URL path
+        (``/in/handle/`` → ``handle`` with hyphens → underscores). This keeps batch conversation-planner
+        runs working after ad-hoc connection sends.
     note_sent : str | None
         The connection note that was sent, or None if no note was included.
     connection_status : str
@@ -663,8 +691,17 @@ async def save_connection(
         else:
             data = {"connections": []}
 
+        connections = data["connections"]
+        idx = next((i for i, c in enumerate(connections) if c.get("profile_url") == profile_url), None)
+        previous: dict | None = connections[idx] if idx is not None else None
+
+        explicit = _normalize_prospect_id_slug(prospect_id)
+        previous_pid = _normalize_prospect_id_slug((previous or {}).get("prospect_id"))
+        derived = _derive_prospect_id_from_profile_url(profile_url)
+        resolved_pid = explicit or previous_pid or derived
+
         entry = {
-            "prospect_id": prospect_id,
+            "prospect_id": resolved_pid,
             "profile_url": profile_url,
             "name": name,
             "title": title,
@@ -673,16 +710,21 @@ async def save_connection(
             "note_sent": note_sent,
         }
 
-        connections = data["connections"]
-        idx = next((i for i, c in enumerate(connections) if c.get("profile_url") == profile_url), None)
         if idx is not None:
             connections[idx] = entry
         else:
             connections.append(entry)
 
         _atomic_write_json(path, data)
-        logger.info("save_connection: saved %s → %s", name, path)
-        return f"ok — saved {name} ({profile_url}) to {path}"
+        logger.info(
+            "save_connection: saved %s prospect_id=%s → %s",
+            name,
+            resolved_pid,
+            path,
+        )
+        return (
+            f"ok — saved {name} ({profile_url}) prospect_id={resolved_pid!r} to {path}"
+        )
     except Exception as exc:
         logger.exception("save_connection failed")
         return f"error: {exc}"

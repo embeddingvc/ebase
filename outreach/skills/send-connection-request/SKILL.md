@@ -103,7 +103,7 @@ Call **`save_connection`** with:
 | `profile_url` | same LinkedIn URL |
 | `name` | from scrape |
 | `title` | from scrape (headline) |
-| `prospect_id` | pipeline id or omit / `null` if none |
+| `prospect_id` | pipeline id if you already have one; if omitted, **`save_connection` fills it** from the LinkedIn URL slug (so conversation-planner batch mode can resolve the prospect) |
 | `note_sent` | note text, or `null` if sent without a note |
 | `connection_status` | `"pending"` |
 
