@@ -102,8 +102,6 @@ mcp = FastMCP(
     "linkedin",
     instructions=(
         "Controls a LinkedIn browser session via Playwright CDP. "
-        "In mock mode, LinkedIn tools default to the Alex Chen happy_path fixture; "
-        "call load_test_case(id, profile_url) to switch scenario (not_interested, ghosted_cold, etc.)."
     ),
 )
 

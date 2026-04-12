@@ -341,3 +341,124 @@
 2026-04-12 13:39:30,597  WARNING   linkedin.mock  send_connection_request MOCK: no test case loaded for https://www.linkedin.com/in/ruoqi-huang-b8757b21a/
 2026-04-12 13:43:49,123  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
 2026-04-12 13:43:49,123  WARNING   linkedin.mock  fetch_chat_history MOCK: no test case loaded for https://www.linkedin.com/in/alex-chen-softeng/ — static fallback
+2026-04-12 14:25:51,183  WARNING   linkedin.server  LinkedIn MCP server starting in MOCK MODE — no browser actions are performed; responses use the Alex Chen happy_path fixture by default.
+  • list_test_cases()              — view available scenarios
+  • load_test_case(id, url)        — optional; switch from default happy_path
+  • send_connection_request(url)   — begin the conversation
+  • [conversation-planner loop]    — fetch → plan → send
+  • get_mock_state(url)            — inspect progress at any time
+2026-04-12 14:25:51,199  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-12 14:25:51,200  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-12 14:25:51,201  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-12 14:26:30,547  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:26:30,548  INFO      linkedin.mock  mock: auto-initialized session  test_case=happy_path  profile=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-12 14:26:30,548  INFO      linkedin.mock  scrape_profile MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-12 14:26:35,220  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:26:35,220  INFO      linkedin.mock  send_connection_request MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  note_len=133
+2026-04-12 14:26:35,221  INFO      linkedin.mock  mock: prospect reply appended  index=0  chars=99  attachments=0
+2026-04-12 14:26:37,488  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:26:37,489  INFO      linkedin.server  save_connection: saved Alex Chen prospect_id=alex_chen_softeng → /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/connections.json
+2026-04-12 14:27:11,356  WARNING   linkedin.server  LinkedIn MCP server starting in MOCK MODE — no browser actions are performed; responses use the Alex Chen happy_path fixture by default.
+  • list_test_cases()              — view available scenarios
+  • load_test_case(id, url)        — optional; switch from default happy_path
+  • send_connection_request(url)   — begin the conversation
+  • [conversation-planner loop]    — fetch → plan → send
+  • get_mock_state(url)            — inspect progress at any time
+2026-04-12 14:27:11,362  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-12 14:27:19,846  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:27:25,298  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:27:25,309  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:27:28,625  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:27:28,626  INFO      linkedin.mock  mock: auto-initialized session  test_case=happy_path  profile=https://www.linkedin.com/in/alex-chen-softeng/
+2026-04-12 14:27:28,626  INFO      linkedin.mock  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=0
+2026-04-12 14:28:11,856  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:28:11,857  INFO      linkedin.server  upsert_prospect: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/prospects/alex_chen_softeng.json
+2026-04-12 14:28:15,966  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:28:15,966  INFO      linkedin.server  upsert_conversation: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/conversations/alex_chen_softeng.json
+2026-04-12 14:28:22,881  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:28:22,881  INFO      linkedin.server  append_planned_message_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/planned_messages.jsonl
+2026-04-12 14:28:26,511  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:28:26,512  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:29:13,253  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:29:18,329  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:29:18,347  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:29:27,707  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:29:27,707  INFO      linkedin.mock  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=0
+2026-04-12 14:29:38,713  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:29:38,713  INFO      linkedin.server  append_planned_message_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/planned_messages.jsonl
+2026-04-12 14:29:41,737  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:29:41,738  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:30:12,361  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:30:18,162  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:30:29,071  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:30:29,071  INFO      linkedin.mock  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=0
+2026-04-12 14:30:41,389  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:30:41,390  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:31:16,405  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:31:43,542  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:31:43,542  INFO      linkedin.mock  mock: prospect reply appended  index=1  chars=205  attachments=0
+2026-04-12 14:31:43,542  INFO      linkedin.mock  send_message MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  reply_index=1  history_len=2
+2026-04-12 14:31:45,621  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:31:51,216  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:31:51,217  INFO      linkedin.server  upsert_conversation: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/conversations/alex_chen_softeng.json
+2026-04-12 14:31:53,410  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:31:53,411  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:32:17,634  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:32:20,082  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:32:20,099  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:32:31,119  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:32:31,120  INFO      linkedin.mock  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=2
+2026-04-12 14:33:29,146  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:33:29,147  INFO      linkedin.server  upsert_conversation: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/conversations/alex_chen_softeng.json
+2026-04-12 14:33:33,422  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:33:33,423  INFO      linkedin.server  append_planned_message_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/planned_messages.jsonl
+2026-04-12 14:33:36,986  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:33:36,986  INFO      linkedin.mock  mock: prospect reply appended  index=2  chars=203  attachments=0
+2026-04-12 14:33:36,986  INFO      linkedin.mock  send_message MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  reply_index=2  history_len=4
+2026-04-12 14:33:46,331  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:33:46,332  INFO      linkedin.server  upsert_conversation: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/conversations/alex_chen_softeng.json
+2026-04-12 14:33:48,728  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:33:48,728  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:33:55,076  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:33:55,077  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:34:28,274  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:34:35,249  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:34:37,112  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:34:53,625  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:34:53,625  INFO      linkedin.mock  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=4
+2026-04-12 14:36:20,220  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:36:20,221  INFO      linkedin.server  upsert_conversation: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/conversations/alex_chen_softeng.json
+2026-04-12 14:36:24,461  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:36:24,461  INFO      linkedin.server  append_planned_message_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/planned_messages.jsonl
+2026-04-12 14:36:27,825  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:36:27,825  INFO      linkedin.mock  mock: prospect reply appended  index=3  chars=18  attachments=1
+2026-04-12 14:36:27,825  INFO      linkedin.mock  send_message MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  reply_index=3  history_len=6
+2026-04-12 14:36:42,871  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:36:42,872  INFO      linkedin.server  upsert_conversation: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/conversations/alex_chen_softeng.json
+2026-04-12 14:36:45,952  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:36:45,952  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:36:52,403  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:36:52,403  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:37:47,401  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:37:52,202  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:37:59,753  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:37:59,760  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:37:59,761  INFO      linkedin.mock  fetch_chat_history MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  history_len=6
+2026-04-12 14:39:26,290  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:39:26,292  INFO      linkedin.server  upsert_conversation: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/conversations/alex_chen_softeng.json
+2026-04-12 14:39:30,732  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:39:30,733  INFO      linkedin.server  append_planned_message_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/planned_messages.jsonl
+2026-04-12 14:39:39,468  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:39:39,469  INFO      linkedin.mock  send_message MOCK (test case: happy_path)  url=https://www.linkedin.com/in/alex-chen-softeng/  reply_index=4  history_len=7
+2026-04-12 14:40:05,160  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:40:05,161  INFO      linkedin.server  upsert_conversation: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/conversations/alex_chen_softeng.json
+2026-04-12 14:40:20,331  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:40:20,332  INFO      linkedin.server  save_outreach_report: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/storage/reports/alex_chen_softeng.md
+2026-04-12 14:40:23,173  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:40:23,173  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:40:25,909  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:40:25,910  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl
+2026-04-12 14:40:32,406  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:40:32,407  INFO      linkedin.server  upsert_prospect: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/prospects/alex_chen_softeng.json
+2026-04-12 14:40:36,874  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-12 14:40:36,875  INFO      linkedin.server  append_action_log: wrote to /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/logs/actions.jsonl

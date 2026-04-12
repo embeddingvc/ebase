@@ -41,6 +41,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 logger = logging.getLogger("linkedin.mock")
 
@@ -276,16 +277,21 @@ class MockSession:
         "self": False = prospect
 
     messages_sent
-        Number of operator messages placed in history so far.
-        Connection note = message 0; each send_message call increments this.
-        Used as the index into TEST_CASES[id]["replies"] to decide which
-        prospect reply (if any) to append after each operator turn.
+        Count of operator bubbles in ``history`` after each tool call (synced for
+        mock state previews).  The connection note counts as one operator message.
+
+    connection_note_posted
+        True after a successful mock ``send_connection_request`` added the note to
+        ``history``.  Used so a DM sent as the thread opener (no connection step)
+        maps to ``replies[1]``, not ``replies[0]`` (which is the scripted reply
+        to the connection note).
     """
     test_case_id: str
     profile_url: str
     connection_accepted: bool = False
     history: list[dict[str, Any]] = field(default_factory=list)
     messages_sent: int = 0
+    connection_note_posted: bool = False
     ended: bool = False
     ended_reason: str | None = None
     loaded_at: str = field(
@@ -302,8 +308,22 @@ sessions: dict[str, MockSession] = {}
 # ═════════════════════════════════════════════════════════════════════════════
 
 def normalise_url(url: str) -> str:
-    """Strip whitespace and trailing slash, then lowercase."""
-    return url.strip().rstrip("/").lower()
+    """
+    Canonical session key for one LinkedIn profile so www / non-www and trailing
+    slashes do not split state across two sessions.
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    if "://" not in raw:
+        raw = "https://" + raw
+    p = urlparse(raw)
+    scheme = (p.scheme or "https").lower()
+    host = (p.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = (p.path or "").rstrip("/").lower()
+    return f"{scheme}://{host}{path}"
 
 
 def get_session(profile_url: str) -> MockSession | None:
@@ -520,11 +540,13 @@ async def handle_send_connection_request(profile_url: str, note: str) -> str:
 
     if session.connection_accepted:
         session.history.append({"message": note, "self": True})
-        session.messages_sent = 1
+        session.connection_note_posted = True
+        session.messages_sent = sum(1 for h in session.history if h.get("self"))
         _append_prospect_reply(session, reply_index=0)
         return "ok"
 
     # Connection not accepted — note was sent but prospect ignores it.
+    session.connection_note_posted = False
     session.messages_sent = 1
     return (
         "ok — connection request sent. "
@@ -547,14 +569,23 @@ async def handle_send_message(profile_url: str, message: str) -> str:
             "This prospect never accepted the connection request."
         )
 
+    op_before = sum(1 for h in session.history if h.get("self"))
+    if session.connection_note_posted:
+        reply_index = op_before
+    else:
+        # DM as thread opener (already-connected flow): skip replies[0] (connection-note reply).
+        reply_index = op_before + 1
+
     session.history.append({"message": message, "self": True})
-    dm_index = session.messages_sent       # index into replies for this turn
-    session.messages_sent += 1
-    _append_prospect_reply(session, reply_index=dm_index)
+    session.messages_sent = sum(1 for h in session.history if h.get("self"))
+    _append_prospect_reply(session, reply_index=reply_index)
 
     logger.info(
-        "send_message MOCK (test case: %s)  url=%s  dm_index=%d  history_len=%d",
-        session.test_case_id, profile_url, dm_index, len(session.history),
+        "send_message MOCK (test case: %s)  url=%s  reply_index=%d  history_len=%d",
+        session.test_case_id,
+        profile_url,
+        reply_index,
+        len(session.history),
     )
     return "ok"
 
