@@ -5,6 +5,11 @@ All mock-mode logic lives here so server.py stays thin.  Nothing in this
 module depends on MCP or the browser layer; it is importable standalone and
 fully testable without starting the server.
 
+LinkedIn tool mocks (``scrape_profile``, ``send_connection_request``, ``send_message``,
+``fetch_chat_history``) always centre on the ``_ALEX_CHEN`` fixture: if ``load_test_case``
+was not called, a session is auto-created from ``happy_path``, which uses that prospect
+and its scripted replies. Other scenarios still require ``load_test_case`` first.
+
 Public surface
 ──────────────
   Data / state
@@ -86,6 +91,11 @@ _ALEX_CHEN: dict[str, Any] = {
     ),
     "scraped_at": "2026-03-24T00:00:00Z",
 }
+
+# Default mock persona for all LinkedIn tools when ``load_test_case`` was not called first.
+# ``happy_path`` uses ``_ALEX_CHEN`` as its prospect and scripted replies.
+_DEFAULT_MOCK_TEST_CASE_ID = "happy_path"
+
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -301,6 +311,29 @@ def get_session(profile_url: str) -> MockSession | None:
     return sessions.get(normalise_url(profile_url))
 
 
+def ensure_default_mock_session(profile_url: str) -> MockSession:
+    """
+    Return the session for profile_url, creating one from ``_DEFAULT_MOCK_TEST_CASE_ID``
+    (``happy_path`` → _ALEX_CHEN) if ``load_test_case`` was never called.
+    """
+    key = normalise_url(profile_url)
+    existing = sessions.get(key)
+    if existing is not None:
+        return existing
+    tc = TEST_CASES[_DEFAULT_MOCK_TEST_CASE_ID]
+    sessions[key] = MockSession(
+        test_case_id=_DEFAULT_MOCK_TEST_CASE_ID,
+        profile_url=profile_url,
+        connection_accepted=tc["connection_accepted"],
+    )
+    logger.info(
+        "mock: auto-initialized session  test_case=%s  profile=%s",
+        _DEFAULT_MOCK_TEST_CASE_ID,
+        profile_url,
+    )
+    return sessions[key]
+
+
 def _append_prospect_reply(session: MockSession, reply_index: int) -> None:
     """
     Look up replies[reply_index] for the session's test case and, if it is a
@@ -451,34 +484,19 @@ async def handle_get_mock_state(profile_url: str) -> str:
 
 async def handle_scrape_profile(profile_url: str) -> str:
     """
-    Return the prospect dict from the loaded test case, or a generic placeholder
-    if no session is active for this URL.
+    Return the prospect dict for the active or auto-created mock session
+    (always the ``_ALEX_CHEN``-based prospect from the session's test case).
     """
-    session = get_session(profile_url)
-    if session is not None:
-        tc = TEST_CASES[session.test_case_id]
-        profile = dict(tc["prospect"])
-        profile["scraped_at"] = datetime.now(timezone.utc).isoformat()
-        logger.info(
-            "scrape_profile MOCK (test case: %s)  url=%s",
-            session.test_case_id, profile_url,
-        )
-        return json.dumps(profile, ensure_ascii=False, indent=2)
-
-    # Generic fallback — no test case loaded.
-    logger.info("scrape_profile MOCK (generic fallback)  url=%s", profile_url)
-    profile = {
-        "linkedin_url": profile_url,
-        "name": "Mock User",
-        "title": "Software Engineer · Mock Corp",
-        "location": "San Francisco Bay Area",
-        "connection_degree": 2,
-        "about": "Mock profile for MCP testing.",
-        "recent_posts": [
-            {"text": "Mock recent post snippet.", "timestamp": "", "likes": 0},
-        ],
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-    }
+    session = ensure_default_mock_session(profile_url)
+    tc = TEST_CASES[session.test_case_id]
+    profile = dict(tc["prospect"])
+    profile["linkedin_url"] = profile_url
+    profile["scraped_at"] = datetime.now(timezone.utc).isoformat()
+    logger.info(
+        "scrape_profile MOCK (test case: %s)  url=%s",
+        session.test_case_id,
+        profile_url,
+    )
     return json.dumps(profile, ensure_ascii=False, indent=2)
 
 
@@ -487,12 +505,7 @@ async def handle_send_connection_request(profile_url: str, note: str) -> str:
     Record the connection note as operator message 0 and append the first
     scripted prospect reply (replies[0]) if the test case accepts the connection.
     """
-    session = get_session(profile_url)
-    if session is None:
-        logger.warning(
-            "send_connection_request MOCK: no test case loaded for %s", profile_url
-        )
-        return "[MOCK] ok — (no test case loaded; history not tracked)"
+    session = ensure_default_mock_session(profile_url)
 
     if session.messages_sent > 0:
         return (
@@ -525,12 +538,7 @@ async def handle_send_message(profile_url: str, message: str) -> str:
     Append the operator's DM to history, then append the next scripted
     prospect reply (if any).  Increments messages_sent.
     """
-    session = get_session(profile_url)
-    if session is None:
-        logger.warning(
-            "send_message MOCK: no test case loaded for %s", profile_url
-        )
-        return "[MOCK] ok — (no test case loaded; history not tracked)"
+    session = ensure_default_mock_session(profile_url)
 
     if not session.connection_accepted:
         return (
@@ -552,27 +560,8 @@ async def handle_send_message(profile_url: str, message: str) -> str:
 
 
 async def handle_fetch_chat_history(profile_url: str) -> str:
-    """
-    Return the current history for profile_url, or a static two-message
-    fallback if no session is loaded.
-    """
-    session = get_session(profile_url)
-    if session is None:
-        logger.warning(
-            "fetch_chat_history MOCK: no test case loaded for %s — static fallback",
-            profile_url,
-        )
-        return json.dumps(
-            [
-                {"message": "[MOCK] Thanks for connecting!", "self": False},
-                {
-                    "message": "[MOCK] Great to connect — excited to stay in touch.",
-                    "self": True,
-                },
-            ],
-            ensure_ascii=False,
-            indent=2,
-        )
+    """Return the current DM history for profile_url (Alex Chen session if not loaded yet)."""
+    session = ensure_default_mock_session(profile_url)
 
     logger.info(
         "fetch_chat_history MOCK (test case: %s)  url=%s  history_len=%d",

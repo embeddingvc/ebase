@@ -102,8 +102,8 @@ mcp = FastMCP(
     "linkedin",
     instructions=(
         "Controls a LinkedIn browser session via Playwright CDP. "
-        "In mock mode, call load_test_case(id, profile_url) before "
-        "send_connection_request to simulate a full end-to-end conversation."
+        "In mock mode, LinkedIn tools default to the Alex Chen happy_path fixture; "
+        "call load_test_case(id, profile_url) to switch scenario (not_interested, ghosted_cold, etc.)."
     ),
 )
 
@@ -149,8 +149,9 @@ async def load_test_case(
     """
     [MOCK ONLY] Load (or reset) a predefined test case for a profile URL.
 
-    Must be called before send_connection_request when running in mock mode.
-    Calling it again on the same URL resets the session from scratch.
+    Optional if you want the default Alex Chen ``happy_path`` scenario (auto-created on first
+    LinkedIn tool call for that URL).  Required to use any other scenario.  Calling it again
+    on the same URL resets the session from scratch.
 
     Available test case IDs
     -----------------------
@@ -215,8 +216,8 @@ async def scrape_profile(
     returns them as a JSON string matching the prospect schema used by the
     outreach planner.
 
-    In mock mode: returns the prospect data from the loaded test case (if any),
-    otherwise returns a generic placeholder profile.
+    In mock mode: returns the prospect from the active session's test case (Alex Chen /
+    ``happy_path`` if none was loaded yet).
 
     Parameters
     ----------
@@ -360,9 +361,9 @@ async def fetch_chat_history(
     Opens the same Message flow as send_message and returns message bubbles
     currently in the DOM (older history may require scrolling in the UI).
 
-    In mock mode: returns the accumulated conversation history built up by
-    prior send_connection_request and send_message calls, including all
-    scripted prospect replies received so far.
+    In mock mode: returns the accumulated conversation history for that URL (starts empty
+    until ``send_connection_request`` / ``send_message``).  Default session uses the Alex Chen
+    ``happy_path`` script unless ``load_test_case`` chose another scenario.
 
     Parameters
     ----------
@@ -915,9 +916,9 @@ if __name__ == "__main__":
     if _mock_mcp_enabled():
         logger.warning(
             "LinkedIn MCP server starting in MOCK MODE — "
-            "no browser actions are performed; responses are scripted.\n"
+            "no browser actions are performed; responses use the Alex Chen happy_path fixture by default.\n"
             "  • list_test_cases()              — view available scenarios\n"
-            "  • load_test_case(id, url)        — configure a session\n"
+            "  • load_test_case(id, url)        — optional; switch from default happy_path\n"
             "  • send_connection_request(url)   — begin the conversation\n"
             "  • [conversation-planner loop]    — fetch → plan → send\n"
             "  • get_mock_state(url)            — inspect progress at any time"
