@@ -2,6 +2,10 @@
 
 Automation and workflow tooling for LinkedIn outreach: a Python project with a **LinkedIn MCP server** (`tools/server.py`) that Claude can call for browser actions and filesystem-backed pipeline state under `outreach/`.
 
+## Architecture
+
+<img width="1411" height="665" alt="Screenshot 2026-04-16 at 4 40 22 PM" src="https://github.com/user-attachments/assets/bfc17624-055e-4539-9059-25ffb4ebfb7c" />
+
 ## Prerequisites
 
 - **Python** 3.10 or newer  
@@ -159,3 +163,7 @@ For scripted tests without a browser, `tools/server.py` can run in mock mode whe
 ---
 
 Reference Makefile targets: `make help` (browser, worker, tests, logs).
+
+## Detailed Workflow Diagram
+<img width="10827" height="13647" alt="mermaid-diagram-2026-04-16T23-44-46" src="https://github.com/user-attachments/assets/1fcaa5fd-0fd0-40fc-b2a0-c77136cf0364" />
+
