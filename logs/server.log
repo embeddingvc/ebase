@@ -477,3 +477,18 @@
 2026-04-15 21:04:20,525  WARNING   linkedin.browser  Message button not found — is this a 1st-degree connection?
 2026-04-15 21:04:20,525  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
 2026-04-15 21:04:20,532  INFO      linkedin.server  fetch_chat_history finished  url=https://www.linkedin.com/in/jay-sato-263a85270/  count=0
+2026-04-15 21:08:52,492  INFO      linkedin.server  fetch_chat_history called  url=https://www.linkedin.com/in/jay-sato-263a85270/  cdp=http://localhost:9222
+2026-04-15 21:08:53,293  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/jay-sato-263a85270/')
+2026-04-15 21:08:59,762  INFO      linkedin.browser  fetch_chat_history: 2 messages for https://www.linkedin.com/in/jay-sato-263a85270/
+2026-04-15 21:08:59,762  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-15 21:08:59,776  INFO      linkedin.server  fetch_chat_history finished  url=https://www.linkedin.com/in/jay-sato-263a85270/  count=2
+2026-04-15 21:12:41,565  INFO      linkedin.server  fetch_chat_history called  url=https://www.linkedin.com/in/jay-sato-263a85270/  cdp=http://localhost:9222
+2026-04-15 21:12:42,343  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/jay-sato-263a85270/')
+2026-04-15 21:12:49,181  INFO      linkedin.browser  fetch_chat_history: 2 messages for https://www.linkedin.com/in/jay-sato-263a85270/
+2026-04-15 21:12:49,181  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-15 21:12:49,189  INFO      linkedin.server  fetch_chat_history finished  url=https://www.linkedin.com/in/jay-sato-263a85270/  count=2
+2026-04-15 21:19:26,277  INFO      linkedin.server  fetch_chat_history called  url=https://www.linkedin.com/in/jay-sato-263a85270/  cdp=http://localhost:9222
+2026-04-15 21:19:27,232  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/jay-sato-263a85270/')
+2026-04-15 21:19:34,998  INFO      linkedin.browser  fetch_chat_history: 2 messages for https://www.linkedin.com/in/jay-sato-263a85270/
+2026-04-15 21:19:34,998  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-15 21:19:35,010  INFO      linkedin.server  fetch_chat_history finished  url=https://www.linkedin.com/in/jay-sato-263a85270/  count=2

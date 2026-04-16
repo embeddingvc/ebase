@@ -77,6 +77,7 @@ logger = logging.getLogger("linkedin.browser")
 from playwright.async_api import (
     Browser,
     BrowserContext,
+    Locator,
     Page,
     Playwright,
     async_playwright,
@@ -760,29 +761,71 @@ class LinkedInBrowser:
         await self._page.evaluate("window.scrollTo(0, 0)")
         await _human_mouse_move(self._page)
 
+        # Profile CTAs often hydrate after first paint; thread links may use
+        # /messaging/thread/… instead of /messaging/compose/… on newer UI.
+        try:
+            await self._page.wait_for_selector(
+                "a[href*='/messaging/'], "
+                "button[aria-label*='Message' i], "
+                "[role='button'][aria-label*='Message' i]",
+                timeout=min(15_000, NAV_TIMEOUT),
+            )
+        except Exception:
+            pass
+
         workspace = self._page.locator("main, #workspace")
+        main_el = self._page.locator("main").first
+        _msg_strict = re.compile(r"^Message$", re.I)
+        _msg_loose = re.compile(r"\bMessage\b", re.I)
 
-        # SDUI: Message is an <a href="/messaging/compose/?..."> with label "Message", not <button>.
-        msg_btn = workspace.locator(
-            "a[href*='/messaging/compose/']:has-text('Message')"
-        ).first
-        if not await msg_btn.count():
-            msg_btn = workspace.locator("a[href*='messaging/compose']").first
-        if not await msg_btn.count():
-            msg_btn = workspace.get_by_role("link", name=re.compile(r"^Message$", re.I)).first
-        if not await msg_btn.count():
-            msg_btn = workspace.get_by_role("button", name=re.compile(r"^Message$", re.I)).first
+        async def _first_visible(multi: Locator) -> Locator | None:
+            n = await multi.count()
+            for i in range(min(n, 40)):
+                el = multi.nth(i)
+                try:
+                    if await el.is_visible():
+                        return el
+                except Exception:
+                    continue
+            return None
 
-        if not await msg_btn.count():
+        async def _message_cta_in(root: Locator) -> Locator | None:
+            trials = [
+                root.locator("a[href*='/messaging/compose/']:has-text('Message')"),
+                root.locator("a[href*='messaging/compose']"),
+                root.locator("a[href*='/messaging/thread']"),
+                root.get_by_role("link", name=_msg_strict),
+                root.get_by_role("button", name=_msg_strict),
+                root.get_by_role("link", name=_msg_loose),
+                root.get_by_role("button", name=_msg_loose),
+                root.locator("button[aria-label*='Message' i]"),
+                root.locator("a[aria-label*='Message' i]"),
+                root.locator("[role='button'][aria-label*='Message' i]"),
+            ]
+            for trial in trials:
+                found = await _first_visible(trial)
+                if found is not None:
+                    return found
+            return await _first_visible(root.locator("a[href*='/messaging/']"))
+
+        msg_btn = await _message_cta_in(workspace)
+        if msg_btn is None:
+            msg_btn = await _message_cta_in(main_el)
+
+        if msg_btn is None:
             more_btn = workspace.get_by_role("button", name=re.compile(r"^More$", re.I)).first
+            if not await more_btn.count():
+                more_btn = main_el.get_by_role("button", name=re.compile(r"^More$", re.I)).first
             if not await more_btn.count():
                 more_btn = self._page.get_by_role("button", name=re.compile(r"^More$", re.I)).last
             if await more_btn.count():
                 await _human_click(self._page, more_btn)
                 await _human_pause(0.2, 0.4)
-                msg_btn = self._page.get_by_role("menuitem", name=re.compile(r"^Message$", re.I)).first
+                menu_msg = self._page.get_by_role("menuitem", name=_msg_loose)
+                if await menu_msg.count():
+                    msg_btn = menu_msg.first
 
-        if not await msg_btn.count():
+        if msg_btn is None:
             logger.warning("Message button not found — is this a 1st-degree connection?")
             return False
 
@@ -869,25 +912,90 @@ class LinkedInBrowser:
             () => {
               const out = [];
               const events = document.querySelectorAll('li.msg-s-message-list__event');
-              for (const el of events) {
-                const cls = typeof el.className === 'string' ? el.className : '';
-                let fromSelf = cls.includes('msg-s-message-list__event--self');
-                if (!fromSelf && el.querySelector('.msg-s-message-group--outgoing')) {
-                  fromSelf = true;
+
+              const senderIsSelf = (item, li) => {
+                const il = item.classList;
+                const ic = typeof item.className === 'string' ? item.className : '';
+                if (il && il.contains('msg-s-event-listitem--other')) {
+                  return false;
                 }
-                if (cls.includes('msg-s-message-list__event--incoming')) {
-                  fromSelf = false;
+                if (ic.includes('msg-s-event-listitem--other')) {
+                  return false;
                 }
-                const bubble = el.querySelector(
-                  '.msg-s-event-listitem__body, .msg-s-message-group__content, '
-                  + '.msg-s-event-listitem__message-bubble'
+
+                const list = li.classList;
+                const top = typeof li.className === 'string' ? li.className : '';
+                if (list && list.contains('msg-s-message-list__event--incoming')) {
+                  return false;
+                }
+                if (top.includes('msg-s-message-list__event--incoming')) {
+                  return false;
+                }
+                if (list && (
+                  list.contains('msg-s-message-list__event--self') ||
+                  list.contains('msg-s-message-list__event--outgoing')
+                )) {
+                  return true;
+                }
+                if (top.includes('msg-s-message-list__event--self') ||
+                    top.includes('msg-s-message-list__event--outgoing')) {
+                  return true;
+                }
+
+                let seenOut = false;
+                let seenIn = false;
+                const walk = (n, depth) => {
+                  if (depth > 12) return;
+                  const c = typeof n.className === 'string' ? n.className : '';
+                  if (c.includes('msg-s-message-group--outgoing')) seenOut = true;
+                  if (c.includes('msg-s-message-group--incoming')) seenIn = true;
+                  const ch = n.children;
+                  if (!ch) return;
+                  for (let i = 0; i < ch.length; i++) {
+                    walk(ch[i], depth + 1);
+                  }
+                };
+                walk(item, 0);
+                if (seenOut && !seenIn) return true;
+                if (!seenOut && seenIn) return false;
+
+                const content = item.querySelector('.msg-s-event-listitem__body, '
+                  + '.msg-s-message-group__content');
+                if (content) {
+                  const br = content.getBoundingClientRect();
+                  const er = li.getBoundingClientRect();
+                  const w = er.width;
+                  if (w > 48) {
+                    const align = (br.left - er.left + br.width / 2) / w;
+                    if (align > 0.55) return true;
+                    if (align < 0.45) return false;
+                  }
+                }
+                if (seenOut && seenIn) return false;
+                return true;
+              };
+
+              for (const li of events) {
+                const item = li.querySelector(
+                  '.msg-s-event-listitem[data-view-name="message-list-item"], '
+                  + '.msg-s-event-listitem'
                 );
-                let text = bubble ? (bubble.innerText || '') : (el.innerText || '');
+                if (!item) {
+                  continue;
+                }
+                const body = item.querySelector('.msg-s-event-listitem__body');
+                let text = body ? (body.innerText || '') : '';
+                if (!text.trim()) {
+                  const bubble = item.querySelector(
+                    '.msg-s-event-listitem__message-bubble, .msg-s-message-group__content'
+                  );
+                  text = bubble ? (bubble.innerText || '') : '';
+                }
                 text = text.replace(/\\r/g, '').replace(/[ \\t]+/g, ' ').trim();
                 if (!text) {
                   continue;
                 }
-                out.push({ message: text, self: fromSelf });
+                out.push({ message: text, self: senderIsSelf(item, li) });
               }
               return out;
             }
