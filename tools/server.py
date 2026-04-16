@@ -35,6 +35,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
 
   [all modes — LinkedIn actions]
     scrape_profile            Scrape a profile → structured JSON.
+    is_first_degree_connection  Check whether a profile is a 1st-degree connection.
     send_connection_request   Send a connection request with an optional note.
     send_message              Send a DM to a 1st-degree connection.
     fetch_chat_history        Read the DM thread for a connection.
@@ -240,6 +241,56 @@ async def scrape_profile(
         profile = await li.scrape_profile(profile_url)
     logger.info("scrape_profile finished  name=%s", profile.get("name"))
     return json.dumps(profile, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+async def is_first_degree_connection(
+    profile_url: str,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Check whether the signed-in LinkedIn member is a 1st-degree connection of
+    the given profile (DM-capable without InMail).
+
+    Live mode: opens the profile in the attached browser and uses the same
+    heuristics as ``LinkedInBrowser.is_first_degree_connection`` (degree badge
+    plus Message CTA fallback).
+
+    Mock mode: returns JSON with ``first_degree`` true only when the active test
+    case has ``connection_accepted`` and the session has moved past a cold state
+    (connection invite recorded or the thread has any messages).
+
+    Parameters
+    ----------
+    profile_url : str
+        Full LinkedIn profile URL.
+    cdp_url : str
+        Chrome DevTools Protocol endpoint. Defaults to "http://localhost:9222".
+
+    Returns
+    -------
+    str
+        JSON object: {"first_degree": bool, "profile_url": str}
+    """
+    if _mock_mcp_enabled():
+        return await _mock.handle_is_first_degree_connection(profile_url)
+
+    logger.info(
+        "is_first_degree_connection called  url=%s  cdp=%s", profile_url, cdp_url
+    )
+    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+        await li.assert_logged_in()
+        first = await li.is_first_degree_connection(profile_url)
+    out = {
+        "first_degree": first,
+        "profile_url": profile_url.strip(),
+    }
+    logger.info(
+        "is_first_degree_connection finished  url=%s  first_degree=%s",
+        profile_url,
+        first,
+    )
+    return json.dumps(out, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()

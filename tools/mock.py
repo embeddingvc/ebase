@@ -5,8 +5,8 @@ All mock-mode logic lives here so server.py stays thin.  Nothing in this
 module depends on MCP or the browser layer; it is importable standalone and
 fully testable without starting the server.
 
-LinkedIn tool mocks (``scrape_profile``, ``send_connection_request``, ``send_message``,
-``fetch_chat_history``) always centre on the ``_ALEX_CHEN`` fixture: if ``load_test_case``
+LinkedIn tool mocks (``scrape_profile``, ``is_first_degree_connection``, ``send_connection_request``,
+``send_message``, ``fetch_chat_history``) always centre on the ``_ALEX_CHEN`` fixture: if ``load_test_case``
 was not called, a session is auto-created from ``happy_path``, which uses that prospect
 and its scripted replies. Other scenarios still require ``load_test_case`` first.
 
@@ -26,6 +26,7 @@ Public surface
     handle_load_test_case(id, url)       → str
     handle_get_mock_state(url)           → str
     handle_scrape_profile(url)           → str
+    handle_is_first_degree_connection(url) → str
     handle_send_connection_request(url, note) → str
     handle_send_message(url, message)    → str
     handle_fetch_chat_history(url)       → str
@@ -518,6 +519,36 @@ async def handle_scrape_profile(profile_url: str) -> str:
         profile_url,
     )
     return json.dumps(profile, ensure_ascii=False, indent=2)
+
+
+async def handle_is_first_degree_connection(profile_url: str) -> str:
+    """
+    Return whether the mock session is in a 1st-degree (DM-ready) state.
+
+    Requires ``connection_accepted`` on the test case, and either a recorded
+    connection invite (``connection_note_posted``) or any thread history, so a
+    cold ``happy_path`` session before ``send_connection_request`` stays false.
+    """
+    session = ensure_default_mock_session(profile_url)
+    key = normalise_url(profile_url)
+    if not session.connection_accepted:
+        first = False
+    else:
+        first = session.connection_note_posted or len(session.history) > 0
+    logger.info(
+        "is_first_degree_connection MOCK (test case: %s)  url=%s  → %s",
+        session.test_case_id,
+        profile_url,
+        first,
+    )
+    return json.dumps(
+        {
+            "first_degree": first,
+            "profile_url": key or (profile_url or "").strip(),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 async def handle_send_connection_request(profile_url: str, note: str) -> str:

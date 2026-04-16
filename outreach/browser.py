@@ -401,6 +401,41 @@ class LinkedInBrowser:
                 "  3. Re-run `make server` (or `make run`)."
             )
 
+    async def _read_connection_degree_on_page(self) -> int | None:
+        """
+        Parse 1st / 2nd / 3rd+ connection degree from the *current* profile
+        page (caller must already have navigated and waited for content).
+        """
+        degree_text = ""
+        _degree_selectors = [
+            ".dist-value",                                # legacy layout
+            "[aria-label*='degree connection']",          # aria fallback
+        ]
+        for _sel in _degree_selectors:
+            try:
+                _el = self._page.locator(_sel).first
+                if await _el.count():
+                    degree_text = (await _el.inner_text(timeout=EL_TIMEOUT)).strip()
+                    if degree_text:
+                        break
+            except Exception:
+                continue
+        if not degree_text:
+            try:
+                body_text = await self._page.locator("main, body").first.inner_text(
+                    timeout=EL_TIMEOUT
+                )
+                _m = re.search(r"·\s*(\d+(?:st|nd|rd|th)\+?)", body_text)
+                if _m:
+                    degree_text = _m.group(1)
+            except Exception:
+                pass
+        return (
+            int(re.search(r"\d", degree_text).group())
+            if re.search(r"\d", degree_text)
+            else None
+        )
+
     # ── Profile scraping ──────────────────────────────────────────────────────
 
     async def scrape_profile(self, profile_url: str) -> dict:
@@ -501,31 +536,7 @@ class LinkedInBrowser:
 
         # ── Connection degree ──
         # Legacy selector first; new SDUI shows "· 1st" / "· 2nd" inline in a <p>.
-        connection_degree = None
-        degree_text = ""
-        _degree_selectors = [
-            ".dist-value",                                # legacy layout
-            "[aria-label*='degree connection']",          # aria fallback
-        ]
-        for _sel in _degree_selectors:
-            try:
-                _el = self._page.locator(_sel).first
-                if await _el.count():
-                    degree_text = (await _el.inner_text(timeout=EL_TIMEOUT)).strip()
-                    if degree_text:
-                        break
-            except Exception:
-                continue
-        # Also scan visible text for "· 1st" / "· 2nd" / "· 3rd+" patterns
-        if not degree_text:
-            try:
-                body_text = await self._page.locator("main, body").first.inner_text(timeout=EL_TIMEOUT)
-                _m = re.search(r"·\s*(\d+(?:st|nd|rd|th)\+?)", body_text)
-                if _m:
-                    degree_text = _m.group(1)
-            except Exception:
-                pass
-        connection_degree = int(re.search(r"\d", degree_text).group()) if re.search(r"\d", degree_text) else None
+        connection_degree = await self._read_connection_degree_on_page()
 
         await _human_scroll(self._page, "down")   # scroll further to reveal About / Experience
 
@@ -739,6 +750,74 @@ class LinkedInBrowser:
         await _human_pause(1.0, 2.0)
         logger.info("Connection request sent to %s", profile_url)
         return True
+
+    async def is_first_degree_connection(self, profile_url: str) -> bool:
+        """
+        Return True if the signed-in member is a 1st-degree connection of the
+        profile at ``profile_url`` (i.e. you can DM them without InMail).
+
+        Uses the same degree badge heuristics as :meth:`scrape_profile`.  If the
+        badge cannot be read, falls back to detecting a primary **Message** CTA
+        on the profile top card (same entry points as :meth:`send_message`).
+        """
+        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+        await _human_pause(1.5, 2.5)
+        try:
+            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+            await _human_pause(0.4, 0.9)
+        except Exception:
+            logger.warning(
+                "is_first_degree_connection: main/workspace not ready for %s",
+                profile_url,
+            )
+
+        await self._page.evaluate("window.scrollTo(0, 0)")
+        await _human_mouse_move(self._page)
+
+        degree = await self._read_connection_degree_on_page()
+        if degree == 1:
+            return True
+        if degree is not None:
+            return False
+
+        workspace = self._page.locator("main, #workspace")
+        main_el = self._page.locator("main").first
+        _msg_strict = re.compile(r"^Message$", re.I)
+        _msg_loose = re.compile(r"\bMessage\b", re.I)
+
+        async def _any_visible(multi: Locator) -> bool:
+            n = await multi.count()
+            for i in range(min(n, 40)):
+                el = multi.nth(i)
+                try:
+                    if await el.is_visible():
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        async def _has_message_cta(root: Locator) -> bool:
+            trials = [
+                root.locator("a[href*='/messaging/compose/']:has-text('Message')"),
+                root.locator("a[href*='messaging/compose']"),
+                root.locator("a[href*='/messaging/thread']"),
+                root.get_by_role("link", name=_msg_strict),
+                root.get_by_role("button", name=_msg_strict),
+                root.get_by_role("link", name=_msg_loose),
+                root.get_by_role("button", name=_msg_loose),
+                root.locator("button[aria-label*='Message' i]"),
+                root.locator("a[aria-label*='Message' i]"),
+                root.locator("[role='button'][aria-label*='Message' i]"),
+            ]
+            for trial in trials:
+                if await _any_visible(trial):
+                    return True
+            return await _any_visible(root.locator("a[href*='/messaging/']"))
+
+        if await _has_message_cta(workspace) or await _has_message_cta(main_el):
+            return True
+
+        return False
 
     # ── Messaging ─────────────────────────────────────────────────────────────
 

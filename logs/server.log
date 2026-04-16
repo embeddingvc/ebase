@@ -492,3 +492,11 @@
 2026-04-15 21:19:34,998  INFO      linkedin.browser  fetch_chat_history: 2 messages for https://www.linkedin.com/in/jay-sato-263a85270/
 2026-04-15 21:19:34,998  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
 2026-04-15 21:19:35,010  INFO      linkedin.server  fetch_chat_history finished  url=https://www.linkedin.com/in/jay-sato-263a85270/  count=2
+2026-04-15 21:27:04,968  INFO      linkedin.server  is_first_degree_connection called  url=https://www.linkedin.com/in/daniil-chistoforov/  cdp=http://localhost:9222
+2026-04-15 21:27:05,789  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/daniil-chistoforov/')
+2026-04-15 21:27:10,102  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-15 21:27:10,112  INFO      linkedin.server  is_first_degree_connection finished  url=https://www.linkedin.com/in/daniil-chistoforov/  first_degree=True
+2026-04-15 21:28:18,599  INFO      linkedin.server  is_first_degree_connection called  url=https://www.linkedin.com/in/alvincwu/  cdp=http://localhost:9222
+2026-04-15 21:28:19,414  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/alvincwu/')
+2026-04-15 21:28:23,146  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
+2026-04-15 21:28:23,152  INFO      linkedin.server  is_first_degree_connection finished  url=https://www.linkedin.com/in/alvincwu/  first_degree=False
