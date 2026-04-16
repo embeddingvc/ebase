@@ -36,6 +36,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
   [all modes — LinkedIn actions]
     scrape_profile            Scrape a profile → structured JSON.
     is_first_degree_connection  Check whether a profile is a 1st-degree connection.
+      (Used by outreach/skills/sync-pending-connections/SKILL.md with get_connections / save_connection.)
     send_connection_request   Send a connection request with an optional note.
     send_message              Send a DM to a 1st-degree connection.
     fetch_chat_history        Read the DM thread for a connection.
@@ -725,7 +726,7 @@ async def save_connection(
     note_sent : str | None
         The connection note that was sent, or None if no note was included.
     connection_status : str
-        "pending" (default) until LinkedIn accepts; then "accepted".
+        "pending" (default) until LinkedIn accepts; then "connected" (see prospect.schema.json).
 
     Returns
     -------

@@ -45,6 +45,7 @@ allows it; rely on documented fields below and MCP-returned JSON.
 | Tool | Use |
 |------|-----|
 | `get_connections` | Load the connections list (returns JSON text; parse `connections` array). |
+| `is_first_degree_connection` | Check DM-ready (1st-degree) status for a profile URL; used by **sync-pending-connections** to flip `pending` → `connected`. |
 | `get_prospect` | Load one prospect by `prospect_id`. On `error: prospect not found`, stop or branch per operator. |
 | `get_conversation` | Load one conversation by `prospect_id`. If missing, initialise a new object in memory that matches the conversation schema, then `upsert_conversation` when persisting. |
 | `upsert_conversation` | Persist the full conversation object: pass `prospect_id` and `conversation` = **stringified JSON** of the whole document. |
@@ -405,6 +406,7 @@ When `prospect_id` is **not** provided, run planning for every connection return
    `"No connections in project data. Add connections (e.g. send connection requests) first."`
 
 2. **Filter actionable connections.**  
+   Optionally run **`sync-pending-connections`** (`outreach/skills/sync-pending-connections/SKILL.md`) first so accepted invites are promoted from `"pending"` to `"connected"` before this step.  
    Skip entries where any of the following is true:
    - `connection_status` is `"pending"` — invitation not yet accepted; nothing to plan.
    - **`get_conversation(prospect_id)`** shows `outreach_stage` is `"ended"` or `"dead"` — sequence is complete.
