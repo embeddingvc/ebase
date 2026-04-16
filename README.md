@@ -165,5 +165,5 @@ For scripted tests without a browser, `tools/server.py` can run in mock mode whe
 Reference Makefile targets: `make help` (browser, worker, tests, logs).
 
 ## Detailed Workflow Diagram
-<img width="10827" height="13647" alt="mermaid-diagram-2026-04-16T23-44-46" src="https://github.com/user-attachments/assets/1fcaa5fd-0fd0-40fc-b2a0-c77136cf0364" />
+<img width="1165" height="2389" alt="SCR-20260416-ovxn" src="https://github.com/user-attachments/assets/69807d5d-241a-468a-bf6d-087b70205019" />
 
