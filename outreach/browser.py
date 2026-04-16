@@ -383,6 +383,7 @@ class LinkedInBrowser:
         Run `make browser`, log in once, and every subsequent `make run` will
         reuse the session from the Chrome profile directory.
         """
+        return True  # avoid refresh, assume user is logged in
         await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT)
         return "/login" not in self._page.url
 
