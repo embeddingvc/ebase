@@ -64,6 +64,38 @@ Optional **preferences** (example in [`claude_desktop_config.json`](claude_deskt
 
 Merge any keys you want into your **user** Claude config (see below). Do not commit secrets or machine-specific paths.
 
+## Installing skills
+
+Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is its **own directory** with a **`SKILL.md`** file (YAML frontmatter with `name` and `description`). Those skills assume the **LinkedIn MCP server** is available (see [MCP setup](#mcp-setup)).
+
+**Core skills (this repo):** `conversation-planner`, `state-updater`, `send-message`, `send-connection-request`, `sync-pending-connections`, `scrape-profile`, `profile-navigator`, `reply-to-post` — each under `outreach/skills/<name>/`.
+
+**Examples only:** `outreach/skills/orthogonal_examples/*` (standalone demos; not required for the main pipeline).
+
+### Claude Cowork
+
+1. Use a Cowork task whose **workspace is this repository** (or otherwise includes `outreach/skills/`), so Claude can read the `SKILL.md` files from disk.
+2. If your app version has **project knowledge / modules / attached folders**, add **`outreach/skills`** explicitly when the whole repo is not the workspace root.
+3. Invoke a skill by the **`name`** in the frontmatter (for example `conversation-planner`), or paste the path to a specific `SKILL.md` when the UI asks for instructions.
+
+### Claude Desktop (upload)
+
+Some Desktop builds let you register skills under **Settings** (often **Capabilities** or **Skills** — labels vary by version):
+
+1. Package **one skill**: zip the **folder** that directly contains `SKILL.md`, so the archive opens as `my-skill/SKILL.md`, not a bare `SKILL.md` at the top level.
+2. Use **Upload skill** (or equivalent), then **enable** the skill in the list if there is a toggle.
+
+The repo root file [`conversation-planner.skill`](conversation-planner.skill) is a packaged skill you can try the same way; for the latest in-repo copy, prefer **`outreach/skills/conversation-planner/`**.
+
+### Claude Code (CLI)
+
+Claude Code usually loads skills from:
+
+- **User:** `~/.claude/skills/<skill-name>/SKILL.md`
+- **Project:** `.claude/skills/<skill-name>/SKILL.md` inside a repo
+
+Copy or symlink each directory from `outreach/skills/<skill-name>` into one of those locations (omit `orthogonal_examples` unless you want those too). Restart or start a new session so the CLI picks up new folders.
+
 ## MCP setup
 
 ### 1. Open the Claude app config
