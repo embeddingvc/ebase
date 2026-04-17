@@ -106,6 +106,11 @@ The sample in [`claude_desktop_config.json`](claude_desktop_config.json) matches
 
 If Chrome is not running with remote debugging, live tools will fail until `make browser` (or an equivalent launch) is used.
 
+### Example Usage
+1. Connect to <linkedin-url>.
+2. Is <linkedin-url> my connection?
+3. Add `Run conversation planner skill` as a scheduled task.
+
 ### Mock mode (optional, no browser)
 
 For scripted tests without a browser, `tools/server.py` can run in mock mode when `_mock_mcp_enabled()` returns `True` (see the top of that file). In mock mode, tools use `tools/mock.py` instead of Playwright.
