@@ -34,26 +34,11 @@ You can still use **`uv`** commands everywhere if you prefer not to install the 
 
 ## Install the project
 
-From the repository root:
+From the repository root (this should create uv venv and install chromium):
 
 ```bash
 make install
 ```
-
-This runs `uv sync` and installs the Playwright Chromium browser. To do the same steps manually:
-
-```bash
-uv sync
-uv run playwright install chromium
-```
-
-Confirm the server starts (stdio MCP; it will wait for input from a host):
-
-```bash
-uv run tools/server.py
-```
-
-Press Ctrl+C to exit. Use this when debugging; normally Claude starts the process for you.
 
 ## Claude Cowork
 
@@ -70,52 +55,24 @@ Merge any keys you want into your **user** Claude config (see below). Do not com
 
 ## Installing skills
 
-Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is its **own directory** with a **`SKILL.md`** file (YAML frontmatter with `name` and `description`). Those skills assume the **LinkedIn MCP server** is available (see [MCP setup](#mcp-setup)).
+Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is its **own directory** with a **`SKILL.md`** file. Those skills assume the **LinkedIn MCP server** is available (see [MCP setup](#mcp-setup)).
 
-**Core skills (this repo):** `conversation-planner`, `state-updater`, `send-message`, `send-connection-request`, `sync-pending-connections`, `scrape-profile`, `profile-navigator`, `reply-to-post` — each under `outreach/skills/<name>/`.
+**Core skills (this repo):** `conversation-planner`, `send-connection-request`, `sync-pending-connections` — each under `outreach/skills/<name>/`.
 
-**Examples only:** `outreach/skills/orthogonal_examples/*` (standalone demos; not required for the main pipeline).
-
-### Claude Cowork
-
-1. Use a Cowork task whose **workspace is this repository** (or otherwise includes `outreach/skills/`), so Claude can read the `SKILL.md` files from disk.
-2. If your app version has **project knowledge / modules / attached folders**, add **`outreach/skills`** explicitly when the whole repo is not the workspace root.
-3. Invoke a skill by the **`name`** in the frontmatter (for example `conversation-planner`), or paste the path to a specific `SKILL.md` when the UI asks for instructions.
-
-### Claude Desktop (upload)
-
-Some Desktop builds let you register skills under **Settings** (often **Capabilities** or **Skills** — labels vary by version):
-
-1. Package **one skill**: zip the **folder** that directly contains `SKILL.md`, so the archive opens as `my-skill/SKILL.md`, not a bare `SKILL.md` at the top level.
-2. Use **Upload skill** (or equivalent), then **enable** the skill in the list if there is a toggle.
-
-The repo root file [`conversation-planner.skill`](conversation-planner.skill) is a packaged skill you can try the same way; for the latest in-repo copy, prefer **`outreach/skills/conversation-planner/`**.
-
-### Claude Code (CLI)
-
-Claude Code usually loads skills from:
-
-- **User:** `~/.claude/skills/<skill-name>/SKILL.md`
-- **Project:** `.claude/skills/<skill-name>/SKILL.md` inside a repo
-
-Copy or symlink each directory from `outreach/skills/<skill-name>` into one of those locations (omit `orthogonal_examples` unless you want those too). Restart or start a new session so the CLI picks up new folders.
+### Claude
+1. `Customize` → `Skills` → `+` → `Create skill` → `Upload a skill`
+2. Select the `SKILL.md` files under `outreach/skills/`
+3. Repeat for `conversation-planner`, `send-connection-request`, and `sync-pending-connections`
 
 ## MCP setup
 
-### 1. Open the Claude app config
-
-In the Claude desktop app, use **Menu → Developer → App Config File…** (wording may vary slightly by version). That opens `claude_desktop_config.json`.
-
-On macOS the file usually lives at:
-
-`~/Library/Application Support/Claude/claude_desktop_config.json`
-
-Back up the file before editing.
-
-### 2. Register the LinkedIn MCP server
-
-Add an `mcpServers` entry that runs this repo’s server with `uv`. Replace the placeholders with **your** paths and your `uv` binary (`which uv`).
-
+### Claude
+1. `Settings` → `Developer` → `Edit Config`
+   - That opens `claude_desktop_config.json`.
+   - On macOS the file usually lives at: `~/Library/Application Support/Claude/claude_desktop_config.json`
+2. Register the LinkedIn MCP server
+   - Replace the placeholders with your `uv` binary path (`which uv`).
+   - Replace the placeholders with your `repo` path (`pwd`)
 ```json
 {
   "mcpServers": {
@@ -124,8 +81,8 @@ Add an `mcpServers` entry that runs this repo’s server with `uv`. Replace the 
       "args": [
         "run",
         "--project",
-        "/absolute/path/to/LinkedIn Outreach",
-        "/absolute/path/to/LinkedIn Outreach/tools/server.py"
+        "/absolute/path/to/LinkedIn-Outreach",
+        "/absolute/path/to/LinkedIn-Outreach/tools/server.py"
       ]
     }
   }
@@ -136,14 +93,7 @@ If you already have other MCP servers, merge the `"linkedin"` block into the exi
 
 The sample in [`claude_desktop_config.json`](claude_desktop_config.json) matches this shape; update every path to match your machine.
 
-### 3. Restart Claude
-
-Quit and reopen the Claude app so it reloads MCP configuration. In Cowork (or chat), you should see tools from the **linkedin** server (e.g. `scrape_profile`, `send_message`, `fetch_chat_history`, and the `outreach/*` filesystem helpers).
-
-### 4. Live LinkedIn + Chrome (recommended for real sends)
-
-The MCP server drives a logged-in Chrome session over the **Chrome DevTools Protocol** (default `http://localhost:9222`).
-
+## Last Steps:
 1. Start Chrome with debugging (from the repo root):
 
    ```bash
