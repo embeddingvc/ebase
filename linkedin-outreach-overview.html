@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinkedIn Outreach — High-Level Overview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 24px 32px 16px;
+    border-bottom: 1px solid #1e293b;
+  }
+  header h1 { font-size: 22px; font-weight: 600; color: #f8fafc; }
+  header p { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+  .legend {
+    display: flex; gap: 24px; padding: 12px 32px; flex-wrap: wrap;
+    border-bottom: 1px solid #1e293b; background: #0f172a;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1;
+  }
+  .legend-dot {
+    width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+  }
+  .dot-skill { background: #059669; }
+  .dot-mcp { background: #2563eb; }
+  .dot-pw { background: #7c3aed; }
+  .dot-logic { background: #d97706; }
+  #diagram-container {
+    flex: 1; overflow: auto; padding: 32px;
+    display: flex; justify-content: center;
+  }
+  .mermaid svg { max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LinkedIn Outreach — High-Level Overview</h1>
+  <p>Architecture layers and 5-step outreach sequence at a glance</p>
+</header>
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot dot-skill"></div>Skill / Claude layer</div>
+  <div class="legend-item"><div class="legend-dot dot-mcp"></div>MCP tool layer</div>
+  <div class="legend-item"><div class="legend-dot dot-pw"></div>Playwright / Browser</div>
+  <div class="legend-item"><div class="legend-dot dot-logic"></div>Business logic / Decision</div>
+</div>
+<div id="diagram-container">
+<pre class="mermaid">
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '14px'}}}%%
+
+flowchart TB
+
+%% ─────────────────────────────────
+%% ARCHITECTURE LAYERS
+%% ─────────────────────────────────
+
+subgraph ARCH ["System Architecture"]
+  direction LR
+  L1["Claude + Skills\nOrchestration layer\nReads SKILL.md instructions\nComposes messages"]
+  L2["MCP Server\nFastMCP  Python\n20+ tools exposed\nAbstracts all I/O"]
+  L3["Playwright\nChrome via CDP\nHuman-like delays\nStealth mode"]
+  L4["LinkedIn\nProfiles  DMs\nConnection requests\nFeed  Posts"]
+  L1 -- "tool calls" --> L2
+  L2 -- "browser automation" --> L3
+  L3 -- "HTTP / DOM" --> L4
+end
+
+%% ─────────────────────────────────
+%% DATA LAYER
+%% ─────────────────────────────────
+
+subgraph DATA ["Persistence  via MCP filesystem tools"]
+  direction LR
+  D1["prospects/\nOne JSON per prospect\nProfile  stage  notes"]
+  D2["conversations/\nOne JSON per thread\nMessages  state machine\nplanned_message"]
+  D3["connections.json\nMaster registry\nstatus  timestamps"]
+  D4["logs/\nactions.jsonl\nplanned_messages.jsonl\nFull audit trail"]
+  D5["storage/reports/\nEnd-of-sequence\nmarkdown reports"]
+end
+
+%% ─────────────────────────────────
+%% MAIN WORKFLOW
+%% ─────────────────────────────────
+
+START(["Start Outreach"]) --> DISCOVER
+
+DISCOVER["1  Discover Prospect\nscrape-profile skill\nMCP scrape_profile\nPlaywright extracts profile data\nCreates prospect.json  stage=cold"]
+
+DISCOVER --> ROUTE{"Already\n1st-degree?"}
+ROUTE -- "No  2nd/3rd" --> CONNECT
+ROUTE -- "Yes" --> ENGAGE
+
+CONNECT["2  Send Connection Request\nsend-connection-request skill\nCompose note  300 char max\nMCP send_connection_request\nPlaywright clicks Connect + Add Note\nPersist  stage=pending_connection"]
+
+CONNECT --> WAIT["3  Wait for Acceptance\nsync-pending-connections skill\nMCP is_first_degree_connection\nPlaywright checks badge"]
+
+WAIT --> ACC{"Accepted?"}
+ACC -- "No  over 48h" --> DEAD["Mark Dead\nended_reason = no_response"]
+DEAD --> REPORT
+ACC -- "Yes" --> ENGAGE
+
+ENGAGE["4  Run Conversation Sequence\nconversation-planner skill\n4 phases per cycle"]
+
+subgraph SEQ ["5-Step Outreach Sequence"]
+  direction LR
+  S1["Step 1\nIntro\n300-500ch"]
+  S2["Step 2\nCareer\nDeep-Dive\n500ch"]
+  S3["Step 3\nCareer\nPlan\n500ch"]
+  S4["Step 4\nThe Ask\nResume or call\n500ch"]
+  S5["Step 5\nThe Close\n500ch"]
+  S1 -- "positive\nreply" --> S2
+  S2 -- "positive\nreply" --> S3
+  S3 -- "positive\nreply" --> S4
+  S4 -- "positive\nreply" --> S5
+end
+
+ENGAGE --> SEQ
+
+subgraph CYCLE ["Each Cycle  conversation-planner"]
+  direction TB
+  CA["Phase A  Sync\nfetch_chat_history\nMerge new messages\nDeduplicate thread"]
+  CB["Phase B  Plan\nLoad state via MCP\nState machine evaluates\nCompose next message\nLog PlannedMessage"]
+  CC["Phase C  Deliver\nsend_message via MCP\nPlaywright types + sends\nHuman-like timing"]
+  CD["Phase D  Persist\nupsert_conversation\nupsert_prospect\nappend_action_log"]
+  CA --> CB --> CC --> CD
+end
+
+SEQ --> CYCLE
+
+%% ─────────────────────────────────
+%% EXIT CONDITIONS
+%% ─────────────────────────────────
+
+subgraph EXITS ["Exit Conditions  from any step"]
+  direction LR
+  E1["No reply >= 48h\nno_response"]
+  E2["Prospect declines\nnot_interested"]
+  E3["Resume shared\nresume_received"]
+  E4["Call scheduled\ncall_scheduled"]
+  E5["Step 5 delivered\nsequence complete"]
+end
+
+CYCLE --> EXITS
+
+EXITS --> REPORT["5  End + Report\nGenerate markdown report\nMCP save_outreach_report\nupsert_conversation  final\nupsert_prospect  stage=ended\nappend_action_log  ended"]
+
+REPORT --> DONE(["Outreach Complete"])
+
+%% ─────────────────────────────────
+%% BATCH MODE
+%% ─────────────────────────────────
+
+BATCH(["Batch Mode"]) --> BFLOW["Load all connections\nFilter actionable ones\nRun one cycle per prospect\nLog batch summary"]
+BFLOW --> CYCLE
+
+%% ─────────────────────────────────
+%% STYLING
+%% ─────────────────────────────────
+
+classDef green fill:#059669,stroke:#047857,color:#fff,font-weight:bold
+classDef blue fill:#2563eb,stroke:#1d4ed8,color:#fff,font-weight:bold
+classDef purple fill:#7c3aed,stroke:#6d28d9,color:#fff,font-weight:bold
+classDef amber fill:#d97706,stroke:#b45309,color:#fff,font-weight:bold
+classDef slate fill:#475569,stroke:#334155,color:#fff
+classDef red fill:#dc2626,stroke:#b91c1c,color:#fff,font-weight:bold
+
+class DISCOVER,CONNECT,WAIT,ENGAGE green
+class CA,CB,CC,CD blue
+class S1,S2,S3,S4,S5 purple
+class ROUTE,ACC amber
+class D1,D2,D3,D4,D5 slate
+class E1,E2,E3,E4,E5,DEAD red
+class REPORT slate
+</pre>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.4.1/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    flowchart: {
+      curve: 'basis',
+      padding: 20,
+      nodeSpacing: 40,
+      rankSpacing: 50,
+      useMaxWidth: false
+    },
+    themeVariables: {
+      darkMode: true,
+      background: '#0f172a',
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#334155',
+      lineColor: '#64748b',
+      secondaryColor: '#1e293b',
+      tertiaryColor: '#0f172a'
+    }
+  });
+</script>
+</body>
+</html>
