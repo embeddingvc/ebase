@@ -38,8 +38,8 @@
     ]
   },
   "message_rules": {
-    "connection_note_char_limit": 300,
-    "followup_char_limit": 500,
+    "connection_note_char_limit": 200,
+    "followup_char_limit": 300,
     "must_include_first_name": true,
     "banned_phrases": [
       "I came across your profile",

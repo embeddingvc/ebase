@@ -500,3 +500,10 @@
 2026-04-15 21:28:19,414  INFO      linkedin.browser  Attached to Chrome at http://localhost:9222 (reusing tab: 'https://www.linkedin.com/in/alvincwu/')
 2026-04-15 21:28:23,146  INFO      linkedin.browser  Detaching from Chrome (browser stays open).
 2026-04-15 21:28:23,152  INFO      linkedin.server  is_first_degree_connection finished  url=https://www.linkedin.com/in/alvincwu/  first_degree=False
+2026-04-20 20:41:20,051  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-20 20:41:20,074  INFO      mcp.server.lowlevel.server  Processing request of type ListPromptsRequest
+2026-04-20 20:41:20,098  INFO      mcp.server.lowlevel.server  Processing request of type ListResourcesRequest
+2026-04-20 20:41:39,120  INFO      mcp.server.lowlevel.server  Processing request of type ListToolsRequest
+2026-04-20 20:41:49,519  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-20 20:42:59,200  INFO      mcp.server.lowlevel.server  Processing request of type CallToolRequest
+2026-04-20 20:42:59,203  INFO      linkedin.server  upsert_conversation_planner_config: wrote /Users/ruoqihuang/Claude/Projects/LinkedIn Outreach/outreach/config/conversation_planner.json
