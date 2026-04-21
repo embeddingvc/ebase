@@ -46,8 +46,10 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
 
   [all modes — outreach filesystem; paths are resolved inside the server]
     get_connections           Return outreach/connections.json as JSON text.
+    get_conversation_planner_config Return runtime planner config JSON.
     get_prospect              Return outreach/prospects/<id>.json as text.
     get_conversation          Return outreach/conversations/<id>.json as text.
+    upsert_conversation_planner_config Write runtime planner config from JSON string.
     upsert_prospect           Write outreach/prospects/<id>.json from JSON string.
     save_connection           Upsert one row in outreach/connections.json.
     upsert_conversation       Write outreach/conversations/<id>.json from JSON string.
@@ -612,6 +614,110 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_PLANNER_CONFIG_PATH = _ROOT / "outreach" / "config" / "conversation_planner.json"
+
+
+def _default_conversation_planner_config() -> dict:
+    return {
+        "persona": {
+            "name": "Nova Chen",
+            "role": "virtual team member",
+            "organization": "Embedding VC",
+            "specialization": "AI research and operations",
+        },
+        "organization": {
+            "description": (
+                "We back early-stage AI startups and connect top talent with great AI companies."
+            ),
+        },
+        "campaign": {
+            "goal": "Recruit strong AI and software talent for portfolio opportunities.",
+            "topic": "AI startup opportunities and career exploration",
+            "value_proposition": (
+                "high-context introductions to startups where candidate background maps to real needs"
+            ),
+        },
+        "conversation_end_goals": {
+            "preferred": [
+                {
+                    "id": "resume_received",
+                    "label": "Collect resume",
+                    "description": "Prospect shares resume for matching.",
+                },
+                {
+                    "id": "call_scheduled",
+                    "label": "Schedule meeting",
+                    "description": "Prospect agrees to a call and shares scheduling details.",
+                },
+            ],
+            "fallback": [
+                {"id": "not_interested", "label": "Prospect not interested"},
+                {"id": "no_response", "label": "No response timeout"},
+            ],
+        },
+        "message_rules": {
+            "connection_note_char_limit": 300,
+            "followup_char_limit": 500,
+            "must_include_first_name": True,
+            "banned_phrases": [
+                "I came across your profile",
+                "I'd love to pick your brain",
+                "synergy",
+                "hope this message finds you",
+                "reaching out to connect",
+                "touching base",
+                "circle back",
+                "bandwidth",
+            ],
+            "tone": "warm, specific, curious, low-pressure",
+        },
+    }
+
+
+def _validate_conversation_planner_config(config: dict) -> str | None:
+    if not isinstance(config, dict):
+        return "config must be a JSON object"
+
+    for key in (
+        "persona",
+        "organization",
+        "campaign",
+        "conversation_end_goals",
+        "message_rules",
+    ):
+        if key in config and not isinstance(config[key], dict):
+            return f"{key} must be an object"
+
+    for key in ("connection_note_char_limit", "followup_char_limit"):
+        value = (
+            config.get("message_rules", {}).get(key)
+            if isinstance(config.get("message_rules"), dict)
+            else None
+        )
+        if value is not None and (not isinstance(value, int) or value <= 0):
+            return f"message_rules.{key} must be a positive integer"
+
+    end_goals = config.get("conversation_end_goals")
+    if isinstance(end_goals, dict):
+        for bucket in ("preferred", "fallback"):
+            items = end_goals.get(bucket)
+            if items is None:
+                continue
+            if not isinstance(items, list):
+                return f"conversation_end_goals.{bucket} must be an array"
+            for idx, item in enumerate(items):
+                if not isinstance(item, dict):
+                    return (
+                        f"conversation_end_goals.{bucket}[{idx}] must be an object"
+                    )
+                if not item.get("id"):
+                    return (
+                        f"conversation_end_goals.{bucket}[{idx}].id is required"
+                    )
+
+    return None
+
+
 def _normalize_prospect_id_slug(raw: str | None) -> str | None:
     """Lowercase slug matching prospect.schema id pattern ^[a-z0-9_]+$."""
     if raw is None or not isinstance(raw, str):
@@ -957,6 +1063,46 @@ async def remove_pending_queue_entry(prospect_id: str) -> str:
         return "ok"
     except Exception as exc:
         logger.exception("remove_pending_queue_entry failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def get_conversation_planner_config() -> str:
+    """
+    Read outreach/config/conversation_planner.json from the project root.
+
+    Returns the current planner runtime config. Reads from disk on every call so
+    manual file edits are reflected immediately.
+    """
+    try:
+        if not _PLANNER_CONFIG_PATH.exists():
+            default_cfg = _default_conversation_planner_config()
+            _atomic_write_json(_PLANNER_CONFIG_PATH, default_cfg)
+            return json.dumps(default_cfg, indent=2, ensure_ascii=False) + "\n"
+        return _PLANNER_CONFIG_PATH.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.exception("get_conversation_planner_config failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def upsert_conversation_planner_config(config: str) -> str:
+    """
+    Write outreach/config/conversation_planner.json from JSON string input.
+
+    Performs lightweight structural validation and writes atomically so runtime
+    reads always see a complete file.
+    """
+    try:
+        parsed = json.loads(config)
+        validation_error = _validate_conversation_planner_config(parsed)
+        if validation_error:
+            return f"error: {validation_error}"
+        _atomic_write_json(_PLANNER_CONFIG_PATH, parsed)
+        logger.info("upsert_conversation_planner_config: wrote %s", _PLANNER_CONFIG_PATH)
+        return f"ok — wrote {_PLANNER_CONFIG_PATH}"
+    except Exception as exc:
+        logger.exception("upsert_conversation_planner_config failed")
         return f"error: {exc}"
 
 
