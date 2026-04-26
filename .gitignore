@@ -1,2 +1,22 @@
 .DS_Store
 .env
+
+# Python cache/bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test/tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local logs
+*.log
+logs/
+
+# Local generated/user-specific outreach data
+outreach/connections.json
+outreach/generated/
