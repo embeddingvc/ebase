@@ -671,6 +671,32 @@ def _default_conversation_planner_config() -> dict:
             ],
             "tone": "warm, specific, curious, low-pressure",
         },
+        "router": {
+            "default_plan_mode": "full_sequence",
+            "step_timeout_hours": 48,
+            "step4_path_priority": [
+                "resume_received",
+                "call_scheduled",
+            ],
+            "signal_routes": {
+                "disinterest": {
+                    "next_action": "mark_dead",
+                    "ended_reason": "not_interested",
+                },
+                "no_response_timeout": {
+                    "next_action": "mark_dead",
+                    "ended_reason": "no_response",
+                },
+                "resume_or_artifact_received": {
+                    "force_sequence_step": 5,
+                    "preferred_goal_id": "resume_received",
+                },
+                "email_or_call_intent": {
+                    "force_sequence_step": 4,
+                    "preferred_goal_id": "call_scheduled",
+                },
+            },
+        },
     }
 
 
@@ -684,6 +710,7 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
         "campaign",
         "conversation_end_goals",
         "message_rules",
+        "router",
     ):
         if key in config and not isinstance(config[key], dict):
             return f"{key} must be an object"
@@ -714,6 +741,21 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
                     return (
                         f"conversation_end_goals.{bucket}[{idx}].id is required"
                     )
+
+    router = config.get("router")
+    if isinstance(router, dict):
+        timeout = router.get("step_timeout_hours")
+        if timeout is not None and (not isinstance(timeout, int) or timeout <= 0):
+            return "router.step_timeout_hours must be a positive integer"
+        priorities = router.get("step4_path_priority")
+        if priorities is not None:
+            if not isinstance(priorities, list) or not all(
+                isinstance(item, str) and item.strip() for item in priorities
+            ):
+                return "router.step4_path_priority must be an array of non-empty strings"
+        routes = router.get("signal_routes")
+        if routes is not None and not isinstance(routes, dict):
+            return "router.signal_routes must be an object"
 
     return None
 

@@ -41,6 +41,8 @@ Use config fields when composing:
 - `campaign.goal`, `campaign.topic`, `campaign.value_proposition`
 - `conversation_end_goals.preferred[]` / `fallback[]` (their `id` values can be custom)
 - `message_rules` limits and phrasing constraints
+- `router` for route selection (`default_plan_mode`, `step_timeout_hours`,
+  `step4_path_priority`, `signal_routes`)
 
 If a field is missing, fall back to the behavior currently documented in this skill.
 
@@ -122,6 +124,8 @@ Use this as the default end-to-end runbook. **Phases A–D** map to MCP calls an
 1. Ensure `prospect` and `conversation` are current (after Phase A, use in-memory objects or call
    `get_prospect` / `get_conversation` again if another tool may have changed files).
 2. Apply **Inputs → The Outreach Sequence**, **State Machine**, and **Composing the Message** below.
+   When `router.signal_routes` provides an explicit route for an observed signal, apply it before
+   default state-machine branching.
 3. Perform **Side Effects** (below): build the updated `conversation` object, then
    **`upsert_conversation`**. For end-of-sequence, **`save_outreach_report`** then upsert conversation
    with `report_path` set to the canonical relative string `outreach/storage/reports/<prospect_id>.md`.
@@ -211,7 +215,9 @@ The sequence has five steps. Each run sends **exactly one step** — never two.
 
 **Goal:** Progress toward a configured preferred end goal.
 
-Choose based on conversation signals and `conversation_end_goals.preferred`:
+Choose based on conversation signals and `conversation_end_goals.preferred`.
+If `router.step4_path_priority` exists, treat it as the tie-break order for which preferred goal to
+ask for first.
 
 **Path A — Resume ask** (when `resume_received` or equivalent custom goal is preferred and they signal openness):
 - Ask if they would be willing to share their resume.
@@ -250,19 +256,33 @@ Use the table below to determine which step to execute (or whether to end withou
 |--------------------|-----------------|--------|
 | No messages sent | null | Send Step 1 |
 | Step 1 sent, prospect replied positively | 1 | Send Step 2 |
-| Step 1 sent, no reply after ≥ 2 days | 1 | End — `no_response` |
+| Step 1 sent, no reply after ≥ timeout | 1 | End — `no_response` |
 | Step 1 sent via connection note, no reply yet | 1 | Wait — do nothing |
 | Step 2 sent, prospect replied | 2 | Send Step 3 |
-| Step 2 sent, no reply after ≥ 2 days | 2 | End — `no_response` |
+| Step 2 sent, no reply after ≥ timeout | 2 | End — `no_response` |
 | Step 3 sent, prospect replied | 3 | Send Step 4 |
-| Step 3 sent, no reply after ≥ 2 days | 3 | End — `no_response` |
+| Step 3 sent, no reply after ≥ timeout | 3 | End — `no_response` |
 | Step 4 sent, prospect replied | 4 | Send Step 5 |
-| Step 4 sent, no reply after ≥ 2 days | 4 | End — `no_response` |
+| Step 4 sent, no reply after ≥ timeout | 4 | End — `no_response` |
 | Step 5 sent or sequence naturally closed | 5 | End — appropriate reason |
 | Prospect expressed disinterest at any point | any | End — `not_interested` |
 | Resume / email / call captured | any | Send Step 5 (close) then End |
 
-"No reply after ≥ 2 days" means `last_action_timestamp` is > 48 hours before the current UTC time and there are no new prospect messages after that timestamp.
+"No reply after ≥ timeout" means `last_action_timestamp` is older than `router.step_timeout_hours`
+(default 48) before the current UTC time and there are no new prospect messages after that
+timestamp.
+
+### Router configuration (apply before defaults)
+
+Use `router.signal_routes` from config as an override map when signals are clear:
+
+- `disinterest` → mark as terminal (`next_action` / `ended_reason` from route config).
+- `no_response_timeout` → terminal timeout route from config.
+- `resume_or_artifact_received` → force Step 5 close with configured `preferred_goal_id`.
+- `email_or_call_intent` → route Step 4 toward call/email ask using configured goal ID.
+
+If route config is missing or incomplete for a signal, fall back to the default state machine and
+goal selection rules above.
 
 ---
 

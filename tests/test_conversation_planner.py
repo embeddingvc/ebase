@@ -383,6 +383,32 @@ TEST_CASES = [
             "ended_reason": "not_interested",
         },
     },
+    {
+        "name": "Router — Custom timeout route (24h)",
+        "prospect_file": "prospect_alex.json",
+        "conversation_file": "conv_no_reply_timeout.json",
+        "extra_context": (
+            "Runtime planner config snapshot:\n"
+            '{\n'
+            '  "router": {\n'
+            '    "step_timeout_hours": 24,\n'
+            '    "signal_routes": {\n'
+            '      "no_response_timeout": {\n'
+            '        "next_action": "mark_dead",\n'
+            '        "ended_reason": "no_response"\n'
+            "      }\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+            "Current UTC time: 2026-03-26T20:00:00Z. "
+            "Last operator message was at 2026-03-25T14:00:00Z and there are no new prospect messages. "
+            "This exceeds 24 hours and should trigger the no_response timeout route."
+        ),
+        "expected": {
+            "end_conversation": True,
+            "ended_reason": "no_response",
+        },
+    },
 ]
 
 
@@ -562,6 +588,9 @@ def main():
         "campaign.goal",
         "campaign.topic",
         "conversation_end_goals",
+        "router",
+        "step_timeout_hours",
+        "signal_routes",
     ):
         if required_phrase not in skill_prompt:
             static_failures.append(f"Skill prompt missing phrase: {required_phrase}")
