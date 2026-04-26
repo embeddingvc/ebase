@@ -364,8 +364,9 @@ async def send_message(
     """
     Send a direct message to an existing 1st-degree LinkedIn connection.
 
-    Navigates to the given profile, clicks the Message button, types the
-    message at human-like speed, and submits it.
+    Navigates to ``https://www.linkedin.com/messaging/``, resolves the
+    conversation for the given profile URL, types the message at human-like
+    speed, and submits it.
 
     In mock mode: appends the operator message to history, then appends the
     next scripted prospect reply (if any).  Silence is simulated when all
@@ -391,7 +392,8 @@ async def send_message(
     logger.info("send_message called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
-        success = await li.send_message(profile_url, message)
+        search_name = _lookup_connection_name(profile_url)
+        success = await li.send_message(profile_url, message, search_name=search_name)
     if success:
         logger.info("send_message finished  url=%s", profile_url)
         return "ok"
@@ -410,8 +412,9 @@ async def fetch_chat_history(
     """
     Load the visible direct-message thread for a 1st-degree connection.
 
-    Opens the same Message flow as send_message and returns message bubbles
-    currently in the DOM (older history may require scrolling in the UI).
+    Opens ``https://www.linkedin.com/messaging/`` and smart-navigates to the
+    target conversation, then returns message bubbles currently in the DOM
+    (older history may require scrolling in the UI).
 
     In mock mode: returns the accumulated conversation history for that URL (starts empty
     until ``send_connection_request`` / ``send_message``).  Default session uses the Alex Chen
@@ -437,7 +440,8 @@ async def fetch_chat_history(
     logger.info("fetch_chat_history called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
-        items = await li.fetch_chat_history(profile_url)
+        search_name = _lookup_connection_name(profile_url)
+        items = await li.fetch_chat_history(profile_url, search_name=search_name)
     logger.info(
         "fetch_chat_history finished  url=%s  count=%d", profile_url, len(items)
     )
@@ -783,6 +787,39 @@ def _derive_prospect_id_from_profile_url(profile_url: str) -> str | None:
         return None
 
 
+def _sanitize_connection_name(name: str | None) -> str:
+    """
+    Keep only a clean person name for storage/search.
+    """
+    text = (name or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"\s+#\S.*$", "", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _lookup_connection_name(profile_url: str) -> str | None:
+    """
+    Read clean name for a profile URL from outreach/connections.json.
+    """
+    path = _ROOT / "outreach" / "connections.json"
+    try:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        rows = data.get("connections", [])
+        if not isinstance(rows, list):
+            return None
+        for row in rows:
+            if isinstance(row, dict) and row.get("profile_url") == profile_url:
+                name = _sanitize_connection_name(row.get("name"))
+                return name or None
+    except Exception:
+        logger.exception("_lookup_connection_name failed")
+    return None
+
+
 def _atomic_write_json(path: Path, data: object) -> None:
     """Write JSON atomically via temp-file + rename so a crash cannot corrupt the file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -899,10 +936,11 @@ async def save_connection(
         derived = _derive_prospect_id_from_profile_url(profile_url)
         resolved_pid = explicit or previous_pid or derived
 
+        clean_name = _sanitize_connection_name(name) or name.strip()
         entry = {
             "prospect_id": resolved_pid,
             "profile_url": profile_url,
-            "name": name,
+            "name": clean_name,
             "title": title,
             "connection_status": connection_status,
             "connected_at": _iso_now(),
@@ -917,12 +955,12 @@ async def save_connection(
         _atomic_write_json(path, data)
         logger.info(
             "save_connection: saved %s prospect_id=%s → %s",
-            name,
+            clean_name,
             resolved_pid,
             path,
         )
         return (
-            f"ok — saved {name} ({profile_url}) prospect_id={resolved_pid!r} to {path}"
+            f"ok — saved {clean_name} ({profile_url}) prospect_id={resolved_pid!r} to {path}"
         )
     except Exception as exc:
         logger.exception("save_connection failed")
