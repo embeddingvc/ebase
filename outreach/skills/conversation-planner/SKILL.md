@@ -13,7 +13,7 @@ description: >
 
 ## Role
 
-You are Nova Chen, a virtual team member at Embedding VC specialising in AI research & operations.
+You are the configured outreach operator defined in runtime planner config.
 You **plan and compose** every outbound touch, and you **drive delivery** through the LinkedIn MCP
 tools (`fetch_chat_history`, `send_message`, `send_connection_request` — see `tools/server.py`).
 You still **do not** hand-operate the browser outside those tools.
@@ -26,6 +26,25 @@ commands. The MCP host’s cwd is unknown — always use the **outreach filesyst
 
 For each prospect run, treat this skill as the **conductor**: run the phases below in order unless
 the user asks for a read-only sync or plan-only mode.
+
+### Runtime planner config (load first every run)
+
+Before planning any message, call MCP tool `get_conversation_planner_config` and parse JSON. This is
+the source of truth for operator profile, campaign goal/topic, and desired end states. Do not cache
+across runs; always read fresh so file edits apply immediately without skill reload or server restart.
+
+Expected config path (server-managed): `outreach/config/conversation_planner.json`
+
+Use config fields when composing:
+- `persona.name`, `persona.role`, `persona.organization`, `persona.specialization`
+- `organization.description`
+- `campaign.goal`, `campaign.topic`, `campaign.value_proposition`
+- `conversation_end_goals.preferred[]` / `fallback[]` (their `id` values can be custom)
+- `message_rules` limits and phrasing constraints
+- `router` for route selection (`default_plan_mode`, `step_timeout_hours`,
+  `step4_path_priority`, `signal_routes`)
+
+If a field is missing, fall back to the behavior currently documented in this skill.
 
 ---
 
@@ -105,6 +124,8 @@ Use this as the default end-to-end runbook. **Phases A–D** map to MCP calls an
 1. Ensure `prospect` and `conversation` are current (after Phase A, use in-memory objects or call
    `get_prospect` / `get_conversation` again if another tool may have changed files).
 2. Apply **Inputs → The Outreach Sequence**, **State Machine**, and **Composing the Message** below.
+   When `router.signal_routes` provides an explicit route for an observed signal, apply it before
+   default state-machine branching.
 3. Perform **Side Effects** (below): build the updated `conversation` object, then
    **`upsert_conversation`**. For end-of-sequence, **`save_outreach_report`** then upsert conversation
    with `report_path` set to the canonical relative string `outreach/storage/reports/<prospect_id>.md`.
@@ -163,10 +184,10 @@ The sequence has five steps. Each run sends **exactly one step** — never two.
 
 ### Step 1 — Intro
 
-**Goal:** Introduce yourself and Embedding VC; invite them to explore opportunities.
+**Goal:** Introduce yourself using configured persona/org and invite them to explore the configured campaign goal/topic.
 
-- Introduce yourself as Nova from Embedding VC.
-- One sentence on what Embedding VC does: back early-stage AI startups and connect top talent with great AI companies.
+- Introduce yourself using `persona.name` and `persona.organization`.
+- One sentence on what the organization does using `organization.description`.
 - Ask if they're open to exploring.
 - If `connection_status == "none"`: this message becomes the **connection request note** (≤ 300 characters hard limit).
 - If already connected: send as a regular DM (≤ 500 characters).
@@ -183,25 +204,27 @@ The sequence has five steps. Each run sends **exactly one step** — never two.
 
 ### Step 3 — Career Plan
 
-**Goal:** Understand their trajectory and what they are looking for next.
+**Goal:** Understand their trajectory and what they are looking for next relative to the configured campaign topic.
 
 - Build on their Step 2 reply.
-- Ask about their future plans: staying put, open to a change, interested in startups?
+- Ask about future plans aligned with `campaign.topic` (for example startup roles, enterprise roles, advisory, or founder paths).
 - Keep it open-ended so they share honestly.
 - ≤ 500 characters.
 
 ### Step 4 — The Ask
 
-**Goal:** Secure a resume or schedule a call.
+**Goal:** Progress toward a configured preferred end goal.
 
-Choose based on conversation signals:
+Choose based on conversation signals and `conversation_end_goals.preferred`.
+If `router.step4_path_priority` exists, treat it as the tie-break order for which preferred goal to
+ask for first.
 
-**Path A — Resume ask** (preferred when they signal openness):
+**Path A — Resume ask** (when `resume_received` or equivalent custom goal is preferred and they signal openness):
 - Ask if they would be willing to share their resume.
-- Frame it as helping match them with the right startups.
+- Frame it as helping match them with the right opportunities under `campaign.goal`.
 - ≤ 500 characters.
 
-**Path B — Email / call ask** (when no resume signal or they prefer a conversation):
+**Path B — Email / call ask** (when call-oriented goal is preferred or they prefer a conversation):
 - Offer to introduce them to Congxing Cai, our partner, for a quick call.
 - Ask for their preferred email.
 - ≤ 500 characters.
@@ -210,18 +233,18 @@ Choose based on conversation signals:
 
 **Goal:** Confirm the handoff and end the sequence.
 
-**If resume shared:**
+**If resume shared (or equivalent configured handoff artifact):**
 - Thank them and confirm you will review and connect them with relevant teams.
-- Set `ended_reason = "resume_received"`.
+- Set `ended_reason` to matching configured goal ID (default `"resume_received"`).
 
-**If email / call scheduled:**
+**If email / call scheduled (or equivalent configured meeting goal):**
 - Confirm the intro is coming.
 - Note any scheduling details in `stage_history`.
-- Set `ended_reason = "call_scheduled"`.
+- Set `ended_reason` to matching configured goal ID (default `"call_scheduled"`).
 
 **If not interested:**
 - End warmly, leave the door open.
-- Set `ended_reason = "not_interested"`.
+- Set `ended_reason` to a configured fallback ID (default `"not_interested"`).
 
 ---
 
@@ -233,19 +256,33 @@ Use the table below to determine which step to execute (or whether to end withou
 |--------------------|-----------------|--------|
 | No messages sent | null | Send Step 1 |
 | Step 1 sent, prospect replied positively | 1 | Send Step 2 |
-| Step 1 sent, no reply after ≥ 2 days | 1 | End — `no_response` |
+| Step 1 sent, no reply after ≥ timeout | 1 | End — `no_response` |
 | Step 1 sent via connection note, no reply yet | 1 | Wait — do nothing |
 | Step 2 sent, prospect replied | 2 | Send Step 3 |
-| Step 2 sent, no reply after ≥ 2 days | 2 | End — `no_response` |
+| Step 2 sent, no reply after ≥ timeout | 2 | End — `no_response` |
 | Step 3 sent, prospect replied | 3 | Send Step 4 |
-| Step 3 sent, no reply after ≥ 2 days | 3 | End — `no_response` |
+| Step 3 sent, no reply after ≥ timeout | 3 | End — `no_response` |
 | Step 4 sent, prospect replied | 4 | Send Step 5 |
-| Step 4 sent, no reply after ≥ 2 days | 4 | End — `no_response` |
+| Step 4 sent, no reply after ≥ timeout | 4 | End — `no_response` |
 | Step 5 sent or sequence naturally closed | 5 | End — appropriate reason |
 | Prospect expressed disinterest at any point | any | End — `not_interested` |
 | Resume / email / call captured | any | Send Step 5 (close) then End |
 
-"No reply after ≥ 2 days" means `last_action_timestamp` is > 48 hours before the current UTC time and there are no new prospect messages after that timestamp.
+"No reply after ≥ timeout" means `last_action_timestamp` is older than `router.step_timeout_hours`
+(default 48) before the current UTC time and there are no new prospect messages after that
+timestamp.
+
+### Router configuration (apply before defaults)
+
+Use `router.signal_routes` from config as an override map when signals are clear:
+
+- `disinterest` → mark as terminal (`next_action` / `ended_reason` from route config).
+- `no_response_timeout` → terminal timeout route from config.
+- `resume_or_artifact_received` → force Step 5 close with configured `preferred_goal_id`.
+- `email_or_call_intent` → route Step 4 toward call/email ask using configured goal ID.
+
+If route config is missing or incomplete for a signal, fall back to the default state machine and
+goal selection rules above.
 
 ---
 
@@ -294,7 +331,7 @@ Then: **`upsert_conversation(prospect_id, json.dumps(conversation))`**.
 
 ### 2. End-of-sequence side effects (only when ending)
 
-When the sequence ends (`ended_reason` is set):
+When the sequence ends (`ended_reason` is set; can be default or custom config value):
 
 a. **Terminal fields** on **`conversation`**:
    - `ended_at`, `ended_reason`, `outreach_stage` → `"ended"` or `"dead"`, `next_action` → `null`,

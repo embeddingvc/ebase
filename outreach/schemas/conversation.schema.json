@@ -114,15 +114,8 @@
 
     "ended_reason": {
       "type": ["string", "null"],
-      "enum": [
-        "resume_received",
-        "call_scheduled",
-        "not_interested",
-        "no_response",
-        "opted_out",
-        null
-      ],
-      "description": "Terminal reason code set when outreach_stage becomes 'ended' or 'dead'.",
+      "minLength": 1,
+      "description": "Terminal reason code set when outreach_stage becomes 'ended' or 'dead'. Recommended defaults include resume_received, call_scheduled, not_interested, no_response, opted_out, but custom campaign-specific codes are allowed.",
       "default": null
     },
 

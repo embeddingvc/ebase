@@ -96,6 +96,44 @@ Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is i
 2. Select the `SKILL.md` files under `outreach/skills/`
 3. Repeat for `conversation-planner`, `send-connection-request`, and `sync-pending-connections`
 
+## Runtime Conversation Planner Config
+
+The `conversation-planner` skill supports live runtime configuration from:
+
+- `outreach/config/conversation_planner.json`
+
+This file controls:
+
+- outreach persona/profile (`persona`)
+- campaign goal + topic (`campaign`)
+- preferred conversation end outcomes (`conversation_end_goals`)
+- message limits/rules (`message_rules`)
+
+### Why this matters
+
+You can change planner behavior (for example profile identity, end-state intent, or outreach topic) **without** restarting the MCP server and **without** reloading the skill.
+
+### Update methods
+
+You can update config in either way:
+
+1. Edit `outreach/config/conversation_planner.json` directly.
+2. Use MCP tools:
+   - `get_conversation_planner_config`
+   - `upsert_conversation_planner_config`
+
+Both are runtime-safe. Planner config is read from disk fresh on each run.
+
+### Example adjustments
+
+- Switch outreach topic from startup recruiting to enterprise AI advisory by changing:
+  - `campaign.topic`
+  - `campaign.goal`
+- Prefer scheduling calls over collecting resumes by reordering/rewriting:
+  - `conversation_end_goals.preferred`
+- Customize terminal reason codes for your pipeline with custom `ended_reason` IDs
+  (conversation schema now allows non-empty custom strings).
+
 ## MCP setup
 
 ### Claude

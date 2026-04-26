@@ -35,6 +35,9 @@ BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES_DIR = os.path.join(BASE_DIR, "tests", "fixtures", "conversation-planner")
 SKILL_PATH   = os.path.join(BASE_DIR, "outreach", "skills", "conversation-planner", "SKILL.md")
 LOGS_DIR     = os.path.join(BASE_DIR, "outreach", "logs")
+PLANNER_CONFIG_PATH = os.path.join(
+    BASE_DIR, "outreach", "config", "conversation_planner.json"
+)
 
 # ── Load .env ────────────────────────────────────────────────────────────────
 
@@ -74,15 +77,6 @@ VALID_ACTIONS = {
     "mark_dead",
     "download_resume",
     "confirm_meeting",
-    None,
-}
-
-VALID_END_REASONS = {
-    "resume_received",
-    "call_scheduled",
-    "not_interested",
-    "no_response",
-    "opted_out",
     None,
 }
 
@@ -254,8 +248,10 @@ def validate_planned_message(result: dict, prospect: dict, expected: dict) -> li
             )
 
     # ── ended_reason ─────────────────────────────────────────────────────
-    if result.get("ended_reason") not in VALID_END_REASONS:
-        failures.append(f"Invalid ended_reason: '{result.get('ended_reason')}'")
+    ended_reason = result.get("ended_reason")
+    if ended_reason is not None:
+        if not isinstance(ended_reason, str) or not ended_reason.strip():
+            failures.append(f"Invalid ended_reason: '{ended_reason}'")
 
     if "ended_reason" in expected:
         if result.get("ended_reason") != expected["ended_reason"]:
@@ -385,6 +381,32 @@ TEST_CASES = [
         "expected": {
             "end_conversation": True,
             "ended_reason": "not_interested",
+        },
+    },
+    {
+        "name": "Router — Custom timeout route (24h)",
+        "prospect_file": "prospect_alex.json",
+        "conversation_file": "conv_no_reply_timeout.json",
+        "extra_context": (
+            "Runtime planner config snapshot:\n"
+            '{\n'
+            '  "router": {\n'
+            '    "step_timeout_hours": 24,\n'
+            '    "signal_routes": {\n'
+            '      "no_response_timeout": {\n'
+            '        "next_action": "mark_dead",\n'
+            '        "ended_reason": "no_response"\n'
+            "      }\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+            "Current UTC time: 2026-03-26T20:00:00Z. "
+            "Last operator message was at 2026-03-25T14:00:00Z and there are no new prospect messages. "
+            "This exceeds 24 hours and should trigger the no_response timeout route."
+        ),
+        "expected": {
+            "end_conversation": True,
+            "ended_reason": "no_response",
         },
     },
 ]
@@ -543,7 +565,42 @@ def main():
     print(f"Model: {model}")
     print(f"Skill: {SKILL_PATH}")
 
+    # Fast static checks for config-driven planner behavior.
+    static_failures = []
+    if not os.path.exists(PLANNER_CONFIG_PATH):
+        static_failures.append(f"Missing config file: {PLANNER_CONFIG_PATH}")
+    else:
+        with open(PLANNER_CONFIG_PATH) as f:
+            cfg = json.load(f)
+        for required_key in (
+            "persona",
+            "organization",
+            "campaign",
+            "conversation_end_goals",
+            "message_rules",
+        ):
+            if required_key not in cfg:
+                static_failures.append(f"Config missing key: {required_key}")
+
     skill_prompt = load_skill_prompt()
+    for required_phrase in (
+        "get_conversation_planner_config",
+        "campaign.goal",
+        "campaign.topic",
+        "conversation_end_goals",
+        "router",
+        "step_timeout_hours",
+        "signal_routes",
+    ):
+        if required_phrase not in skill_prompt:
+            static_failures.append(f"Skill prompt missing phrase: {required_phrase}")
+
+    if static_failures:
+        print("Static config checks failed:")
+        for failure in static_failures:
+            print(f"  - {failure}")
+        sys.exit(1)
+
     logger = TestLogger()
 
     logger.header(
