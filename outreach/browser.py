@@ -872,9 +872,34 @@ class LinkedInBrowser:
         text = re.sub(r"\s+", " ", text).strip()
         return text
 
+    def _find_open_messaging_tab(self) -> Page | None:
+        """
+        Return an already-open LinkedIn messaging tab, if any.
+        """
+        if not self._ctx:
+            return None
+        pages = [p for p in self._ctx.pages if not p.is_closed()]
+        for p in pages:
+            url = (p.url or "").lower()
+            if "linkedin.com/messaging" in url:
+                return p
+        return None
+
     async def _open_messaging_home(self) -> None:
-        await self._page.goto(f"{BASE_URL}/messaging/", timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
-        await _human_pause(1.0, 1.8)
+        target = f"{BASE_URL}/messaging/"
+
+        # Reuse an already-open messaging tab directly (no reload).
+        msg_tab = self._find_open_messaging_tab()
+        if msg_tab is not None:
+            self._page = msg_tab
+            await self._page.bring_to_front()
+            await _human_pause(0.2, 0.5)
+        else:
+            current_url = (self._page.url or "").lower()
+            if "linkedin.com/messaging" not in current_url:
+                await self._page.goto(target, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+                await _human_pause(1.0, 1.8)
+
         try:
             await self._page.wait_for_selector(
                 "main, #messaging, .msg-conversations-container, [data-test-id='messaging-container']",
@@ -920,23 +945,9 @@ class LinkedInBrowser:
                     continue
             return None
 
-        row_candidates = [
-            self._page.locator("a.msg-conversation-listitem__link"),
-            self._page.locator("div.msg-conversation-listitem__link"),
-            self._page.locator("li.msg-conversation-listitem div.msg-conversation-listitem__link"),
-            self._page.locator("li.msg-conversation-listitem"),
-            self._page.locator("a[href*='/messaging/thread/']"),
-            self._page.locator(".msg-conversation-listitem a"),
-        ]
-
         row: Locator | None = None
-        for cand in row_candidates:
-            found = await _find_thread_row_in(cand)
-            if found is not None:
-                row = found
-                break
-
-        if row is None:
+        # Prefer explicit inbox search flow: type name -> Enter -> click first visible result.
+        if query:
             search_boxes = [
                 self._page.locator("input[placeholder*='Search messages' i]").first,
                 self._page.locator("input[aria-label*='Search messages' i]").first,
@@ -953,36 +964,49 @@ class LinkedInBrowser:
                 except Exception:
                     continue
 
-            if search_box is None or not query:
-                logger.warning("Messaging search box not available for %s", profile_url)
-                return False
+            if search_box is not None:
+                await _human_click(self._page, search_box)
+                await search_box.fill("")
+                await _human_pause(0.1, 0.2)
+                for ch in query:
+                    await self._page.keyboard.type(ch)
+                    await asyncio.sleep(random.uniform(0.04, 0.14))
+                await _human_pause(0.1, 0.2)
+                await self._page.keyboard.press("Enter")
+                await _human_pause(0.8, 1.4)
 
-            await _human_click(self._page, search_box)
-            await search_box.fill("")
-            await _human_pause(0.1, 0.2)
-            for ch in query:
-                await self._page.keyboard.type(ch)
-                await asyncio.sleep(random.uniform(0.04, 0.14))
-            await _human_pause(0.1, 0.2)
-            await self._page.keyboard.press("Enter")
-            await _human_pause(0.8, 1.4)
+                # Requirement: after searching, open the first visible person/thread result.
+                search_rows = self._page.locator(
+                    "a[href*='/messaging/thread/'], "
+                    ".msg-conversation-listitem a, "
+                    ".msg-conversation-listitem div.msg-conversation-listitem__link, "
+                    "li.msg-conversation-listitem, "
+                    "[data-view-name*='search'] a[href*='/messaging/']"
+                )
+                for i in range(min(await search_rows.count(), 30)):
+                    cand = search_rows.nth(i)
+                    try:
+                        if await cand.is_visible():
+                            row = cand
+                            break
+                    except Exception:
+                        continue
 
-            # Requirement: after searching, open the first visible person/thread result.
-            search_rows = self._page.locator(
-                "a[href*='/messaging/thread/'], "
-                ".msg-conversation-listitem a, "
-                ".msg-conversation-listitem div.msg-conversation-listitem__link, "
-                "li.msg-conversation-listitem, "
-                "[data-view-name*='search'] a[href*='/messaging/']"
-            )
-            for i in range(min(await search_rows.count(), 30)):
-                cand = search_rows.nth(i)
-                try:
-                    if await cand.is_visible():
-                        row = cand
-                        break
-                except Exception:
-                    continue
+        # Fallback when search UI/results are unavailable: try matching visible threads.
+        if row is None:
+            row_candidates = [
+                self._page.locator("a.msg-conversation-listitem__link"),
+                self._page.locator("div.msg-conversation-listitem__link"),
+                self._page.locator("li.msg-conversation-listitem div.msg-conversation-listitem__link"),
+                self._page.locator("li.msg-conversation-listitem"),
+                self._page.locator("a[href*='/messaging/thread/']"),
+                self._page.locator(".msg-conversation-listitem a"),
+            ]
+            for cand in row_candidates:
+                found = await _find_thread_row_in(cand)
+                if found is not None:
+                    row = found
+                    break
 
         if row is None:
             logger.warning("No messaging thread matched profile=%s", profile_url)
@@ -1035,7 +1059,7 @@ class LinkedInBrowser:
             return False
 
         await expect(send_btn).to_be_visible(timeout=EL_TIMEOUT)
-        await _human_click(self._page, send_btn)
+        # await _human_click(self._page, send_btn)
         await _human_pause(1.0, 2.0)
         logger.info("Message sent to %s", profile_url)
         return True
