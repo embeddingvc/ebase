@@ -357,6 +357,43 @@ class LinkedInBrowser:
             return usable[0]
         return None
 
+    @staticmethod
+    def _normalized_profile_path(url: str) -> str:
+        """
+        Normalize LinkedIn profile URLs to compare current-vs-target pages.
+        """
+        try:
+            p = urlparse((url or "").strip())
+            path = "/" + (p.path or "").strip("/").lower()
+            if not path:
+                return "/"
+            return path
+        except Exception:
+            return "/"
+
+    def _is_current_tab_target_profile(self, profile_url: str) -> bool:
+        """
+        True when the current tab is already on the requested profile URL.
+        """
+        current = self._normalized_profile_path(self._page.url if self._page else "")
+        target = self._normalized_profile_path(profile_url)
+        return (
+            target.startswith("/in/")
+            and current == target
+            and "linkedin.com" in ((self._page.url if self._page else "") or "").lower()
+        )
+
+    async def _ensure_profile_tab(self, profile_url: str) -> None:
+        """
+        Navigate to profile only if current tab is not already that profile.
+        """
+        if self._is_current_tab_target_profile(profile_url):
+            await self._page.bring_to_front()
+            await _human_pause(0.2, 0.5)
+            return
+        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+        await _human_pause(1.5, 2.5)
+
     async def __aexit__(self, *_: Any) -> None:
         if self._is_attached:
             # Close only the tab we opened — leave the rest of the browser alone.
@@ -446,8 +483,7 @@ class LinkedInBrowser:
         Returns a dict that matches (or extends) the prospect schema used by
         outreach/planner.py.
         """
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
-        await _human_pause(1.5, 2.5)
+        await self._ensure_profile_tab(profile_url)
         await _human_scroll(self._page, "down")   # read down the page like a human
 
         # ── Wait for page content ──
@@ -612,8 +648,7 @@ class LinkedInBrowser:
         if len(note) > 300:
             raise ValueError(f"Connection note too long: {len(note)} chars (LinkedIn limit: 300)")
 
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
-        await _human_pause(1.5, 2.5)
+        await self._ensure_profile_tab(profile_url)
         try:
             await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
             await _human_pause(0.4, 0.9)
@@ -761,8 +796,7 @@ class LinkedInBrowser:
         badge cannot be read, falls back to detecting a primary **Message** CTA
         on the profile top card (same entry points as :meth:`send_message`).
         """
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
-        await _human_pause(1.5, 2.5)
+        await self._ensure_profile_tab(profile_url)
         try:
             await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
             await _human_pause(0.4, 0.9)
@@ -1059,7 +1093,7 @@ class LinkedInBrowser:
             return False
 
         await expect(send_btn).to_be_visible(timeout=EL_TIMEOUT)
-        # await _human_click(self._page, send_btn)
+        await _human_click(self._page, send_btn)
         await _human_pause(1.0, 2.0)
         logger.info("Message sent to %s", profile_url)
         return True

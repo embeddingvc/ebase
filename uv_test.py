@@ -5,6 +5,7 @@ run(create_new_post('Lobster is great...🦞'))
 
 from asyncio import run
 from tools.server import fetch_chat_history
+run(fetch_chat_history('https://www.linkedin.com/in/daniil-chistoforov/'))
 run(fetch_chat_history('https://www.linkedin.com/in/nova-chen-4136833a9/'))
 run(fetch_chat_history('https://www.linkedin.com/in/jay-sato-263a85270/'))
 
