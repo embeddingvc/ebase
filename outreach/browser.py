@@ -68,6 +68,7 @@ import logging
 import os
 import random
 import re
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -356,6 +357,43 @@ class LinkedInBrowser:
             return usable[0]
         return None
 
+    @staticmethod
+    def _normalized_profile_path(url: str) -> str:
+        """
+        Normalize LinkedIn profile URLs to compare current-vs-target pages.
+        """
+        try:
+            p = urlparse((url or "").strip())
+            path = "/" + (p.path or "").strip("/").lower()
+            if not path:
+                return "/"
+            return path
+        except Exception:
+            return "/"
+
+    def _is_current_tab_target_profile(self, profile_url: str) -> bool:
+        """
+        True when the current tab is already on the requested profile URL.
+        """
+        current = self._normalized_profile_path(self._page.url if self._page else "")
+        target = self._normalized_profile_path(profile_url)
+        return (
+            target.startswith("/in/")
+            and current == target
+            and "linkedin.com" in ((self._page.url if self._page else "") or "").lower()
+        )
+
+    async def _ensure_profile_tab(self, profile_url: str) -> None:
+        """
+        Navigate to profile only if current tab is not already that profile.
+        """
+        if self._is_current_tab_target_profile(profile_url):
+            await self._page.bring_to_front()
+            await _human_pause(0.2, 0.5)
+            return
+        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+        await _human_pause(1.5, 2.5)
+
     async def __aexit__(self, *_: Any) -> None:
         if self._is_attached:
             # Close only the tab we opened — leave the rest of the browser alone.
@@ -445,8 +483,7 @@ class LinkedInBrowser:
         Returns a dict that matches (or extends) the prospect schema used by
         outreach/planner.py.
         """
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
-        await _human_pause(1.5, 2.5)
+        await self._ensure_profile_tab(profile_url)
         await _human_scroll(self._page, "down")   # read down the page like a human
 
         # ── Wait for page content ──
@@ -611,8 +648,7 @@ class LinkedInBrowser:
         if len(note) > 300:
             raise ValueError(f"Connection note too long: {len(note)} chars (LinkedIn limit: 300)")
 
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
-        await _human_pause(1.5, 2.5)
+        await self._ensure_profile_tab(profile_url)
         try:
             await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
             await _human_pause(0.4, 0.9)
@@ -760,8 +796,7 @@ class LinkedInBrowser:
         badge cannot be read, falls back to detecting a primary **Message** CTA
         on the profile top card (same entry points as :meth:`send_message`).
         """
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
-        await _human_pause(1.5, 2.5)
+        await self._ensure_profile_tab(profile_url)
         try:
             await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
             await _human_pause(0.4, 0.9)
@@ -821,104 +856,207 @@ class LinkedInBrowser:
 
     # ── Messaging ─────────────────────────────────────────────────────────────
 
-    async def _open_message_ui_from_profile(self, profile_url: str) -> bool:
+    def _profile_match_hints(self, profile_url: str) -> tuple[list[str], str]:
         """
-        Open the messaging overlay / thread from a member profile (same entry
-        points as :meth:`send_message`).
+        Build stable matching hints from a LinkedIn profile URL.
+
+        Returns ``(path_hints, search_query)``:
+          - ``path_hints``: normalized path tokens to match thread links.
+          - ``search_query``: readable query for the messaging search box.
         """
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
-        await _human_pause(1.5, 2.5)
-        try:
-            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
-            await _human_pause(0.4, 0.9)
-        except Exception:
-            logger.warning(
-                "_open_message_ui_from_profile: main/workspace not ready for %s",
-                profile_url,
-            )
+        parsed = urlparse(profile_url)
+        path = parsed.path or ""
+        cleaned = "/" + path.strip("/")
+        cleaned_lower = cleaned.lower()
+        hints: list[str] = []
+        if cleaned_lower and cleaned_lower != "/":
+            hints.append(cleaned_lower.rstrip("/"))
+            hints.append(cleaned_lower.rstrip("/") + "/")
 
-        await self._page.evaluate("window.scrollTo(0, 0)")
-        await _human_mouse_move(self._page)
+        slug = ""
+        m = re.search(r"/in/([^/?#]+)", cleaned_lower)
+        if m:
+            slug = m.group(1).strip().strip("/")
 
-        # Profile CTAs often hydrate after first paint; thread links may use
-        # /messaging/thread/… instead of /messaging/compose/… on newer UI.
+        if slug:
+            hints.append(f"/in/{slug}")
+            hints.append(f"/in/{slug}/")
+
+        # Use a human-readable name for inbox search, dropping trailing handle/hash tails:
+        # jay-sato-263a85270 -> jay sato
+        candidate = slug if slug else cleaned.strip("/")
+        parts = [p for p in candidate.split("-") if p]
+        if len(parts) >= 2:
+            tail = parts[-1]
+            # Drop trailing token if it looks like a hash/ID chunk.
+            if re.search(r"\d", tail):
+                parts = parts[:-1]
+        query = " ".join(parts) if parts else candidate
+        query = re.sub(r"\s+", " ", query).strip()
+        return hints, query
+
+    def _sanitize_search_name(self, search_name: str | None) -> str:
+        """
+        Normalize user-facing person name for messaging search.
+        """
+        text = (search_name or "").strip()
+        if not text:
+            return ""
+        text = re.sub(r"\s+#\S.*$", "", text).strip()
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def _find_open_messaging_tab(self) -> Page | None:
+        """
+        Return an already-open LinkedIn messaging tab, if any.
+        """
+        if not self._ctx:
+            return None
+        pages = [p for p in self._ctx.pages if not p.is_closed()]
+        for p in pages:
+            url = (p.url or "").lower()
+            if "linkedin.com/messaging" in url:
+                return p
+        return None
+
+    async def _open_messaging_home(self) -> None:
+        target = f"{BASE_URL}/messaging/"
+
+        # Reuse an already-open messaging tab directly (no reload).
+        msg_tab = self._find_open_messaging_tab()
+        if msg_tab is not None:
+            self._page = msg_tab
+            await self._page.bring_to_front()
+            await _human_pause(0.2, 0.5)
+        else:
+            current_url = (self._page.url or "").lower()
+            if "linkedin.com/messaging" not in current_url:
+                await self._page.goto(target, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+                await _human_pause(1.0, 1.8)
+
         try:
             await self._page.wait_for_selector(
-                "a[href*='/messaging/'], "
-                "button[aria-label*='Message' i], "
-                "[role='button'][aria-label*='Message' i]",
-                timeout=min(15_000, NAV_TIMEOUT),
+                "main, #messaging, .msg-conversations-container, [data-test-id='messaging-container']",
+                timeout=NAV_TIMEOUT,
             )
         except Exception:
-            pass
+            logger.warning("_open_messaging_home: messaging shell not fully ready yet.")
+        await _human_pause(0.3, 0.7)
 
-        workspace = self._page.locator("main, #workspace")
-        main_el = self._page.locator("main").first
-        _msg_strict = re.compile(r"^Message$", re.I)
-        _msg_loose = re.compile(r"\bMessage\b", re.I)
+    async def _open_message_ui_from_messaging(
+        self,
+        profile_url: str,
+        *,
+        search_name: str | None = None,
+    ) -> bool:
+        """
+        Open a conversation from ``/messaging/`` (never from profile CTAs).
 
-        async def _first_visible(multi: Locator) -> Locator | None:
+        Strategy:
+          1. Go to inbox.
+          2. Try direct match in visible conversation rows by profile-path hints.
+          3. If no hit, use inbox search and pick the best matching thread.
+        """
+        hints, fallback_query = self._profile_match_hints(profile_url)
+        query = self._sanitize_search_name(search_name) or fallback_query
+        await self._open_messaging_home()
+
+        async def _find_thread_row_in(multi: Locator) -> Locator | None:
             n = await multi.count()
-            for i in range(min(n, 40)):
-                el = multi.nth(i)
+            for i in range(min(n, 60)):
+                row = multi.nth(i)
                 try:
-                    if await el.is_visible():
-                        return el
+                    if not await row.is_visible():
+                        continue
+                    href = (await row.get_attribute("href") or "").lower()
+                    if any(h in href for h in hints):
+                        return row
+                    if query:
+                        txt = ((await row.inner_text()) or "").lower()
+                        if query.lower() in txt:
+                            return row
                 except Exception:
                     continue
             return None
 
-        async def _message_cta_in(root: Locator) -> Locator | None:
-            trials = [
-                root.locator("a[href*='/messaging/compose/']:has-text('Message')"),
-                root.locator("a[href*='messaging/compose']"),
-                root.locator("a[href*='/messaging/thread']"),
-                root.get_by_role("link", name=_msg_strict),
-                root.get_by_role("button", name=_msg_strict),
-                root.get_by_role("link", name=_msg_loose),
-                root.get_by_role("button", name=_msg_loose),
-                root.locator("button[aria-label*='Message' i]"),
-                root.locator("a[aria-label*='Message' i]"),
-                root.locator("[role='button'][aria-label*='Message' i]"),
+        row: Locator | None = None
+        # Prefer explicit inbox search flow: type name -> Enter -> click first visible result.
+        if query:
+            search_boxes = [
+                self._page.locator("input[placeholder*='Search messages' i]").first,
+                self._page.locator("input[aria-label*='Search messages' i]").first,
+                self._page.locator("input[placeholder*='Search' i]").first,
+                self._page.get_by_role("searchbox").first,
+                self._page.locator("input.msg-search-typeahead__input").first,
             ]
-            for trial in trials:
-                found = await _first_visible(trial)
+            search_box = None
+            for cand in search_boxes:
+                try:
+                    if await cand.count() and await cand.is_visible():
+                        search_box = cand
+                        break
+                except Exception:
+                    continue
+
+            if search_box is not None:
+                await _human_click(self._page, search_box)
+                await search_box.fill("")
+                await _human_pause(0.1, 0.2)
+                for ch in query:
+                    await self._page.keyboard.type(ch)
+                    await asyncio.sleep(random.uniform(0.04, 0.14))
+                await _human_pause(0.1, 0.2)
+                await self._page.keyboard.press("Enter")
+                await _human_pause(0.8, 1.4)
+
+                # Requirement: after searching, open the first visible person/thread result.
+                search_rows = self._page.locator(
+                    "a[href*='/messaging/thread/'], "
+                    ".msg-conversation-listitem a, "
+                    ".msg-conversation-listitem div.msg-conversation-listitem__link, "
+                    "li.msg-conversation-listitem, "
+                    "[data-view-name*='search'] a[href*='/messaging/']"
+                )
+                for i in range(min(await search_rows.count(), 30)):
+                    cand = search_rows.nth(i)
+                    try:
+                        if await cand.is_visible():
+                            row = cand
+                            break
+                    except Exception:
+                        continue
+
+        # Fallback when search UI/results are unavailable: try matching visible threads.
+        if row is None:
+            row_candidates = [
+                self._page.locator("a.msg-conversation-listitem__link"),
+                self._page.locator("div.msg-conversation-listitem__link"),
+                self._page.locator("li.msg-conversation-listitem div.msg-conversation-listitem__link"),
+                self._page.locator("li.msg-conversation-listitem"),
+                self._page.locator("a[href*='/messaging/thread/']"),
+                self._page.locator(".msg-conversation-listitem a"),
+            ]
+            for cand in row_candidates:
+                found = await _find_thread_row_in(cand)
                 if found is not None:
-                    return found
-            return await _first_visible(root.locator("a[href*='/messaging/']"))
+                    row = found
+                    break
 
-        msg_btn = await _message_cta_in(workspace)
-        if msg_btn is None:
-            msg_btn = await _message_cta_in(main_el)
-
-        if msg_btn is None:
-            more_btn = workspace.get_by_role("button", name=re.compile(r"^More$", re.I)).first
-            if not await more_btn.count():
-                more_btn = main_el.get_by_role("button", name=re.compile(r"^More$", re.I)).first
-            if not await more_btn.count():
-                more_btn = self._page.get_by_role("button", name=re.compile(r"^More$", re.I)).last
-            if await more_btn.count():
-                await _human_click(self._page, more_btn)
-                await _human_pause(0.2, 0.4)
-                menu_msg = self._page.get_by_role("menuitem", name=_msg_loose)
-                if await menu_msg.count():
-                    msg_btn = menu_msg.first
-
-        if msg_btn is None:
-            logger.warning("Message button not found — is this a 1st-degree connection?")
+        if row is None:
+            logger.warning("No messaging thread matched profile=%s", profile_url)
             return False
 
-        try:
-            await expect(msg_btn).to_be_visible(timeout=EL_TIMEOUT)
-        except Exception:
-            logger.warning("Message control not visible on %s", profile_url)
-            return False
-
-        await _human_click(self._page, msg_btn)
-        await _human_pause(0.5, 1.0)
+        await _human_click(self._page, row)
+        await _human_pause(0.7, 1.2)
         return True
 
-    async def send_message(self, profile_url: str, message: str) -> bool:
+    async def send_message(
+        self,
+        profile_url: str,
+        message: str,
+        *,
+        search_name: str | None = None,
+    ) -> bool:
         """
         Send a direct message to an existing connection.
 
@@ -930,7 +1068,7 @@ class LinkedInBrowser:
         if len(message) > 8_000:
             raise ValueError("Message too long (LinkedIn limit: ~8 000 chars)")
 
-        if not await self._open_message_ui_from_profile(profile_url):
+        if not await self._open_message_ui_from_messaging(profile_url, search_name=search_name):
             return False
 
         compose_selector = (
@@ -960,7 +1098,12 @@ class LinkedInBrowser:
         logger.info("Message sent to %s", profile_url)
         return True
 
-    async def fetch_chat_history(self, profile_url: str) -> list[dict[str, Any]]:
+    async def fetch_chat_history(
+        self,
+        profile_url: str,
+        *,
+        search_name: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Read the visible DM thread for a 1st-degree connection (same profile →
         Message flow as :meth:`send_message`).
@@ -970,7 +1113,7 @@ class LinkedInBrowser:
         logged-in user's outgoing messages. Older messages not scrolled into
         view are not included.
         """
-        if not await self._open_message_ui_from_profile(profile_url):
+        if not await self._open_message_ui_from_messaging(profile_url, search_name=search_name):
             return []
 
         try:
