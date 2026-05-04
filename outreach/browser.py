@@ -207,6 +207,181 @@ async def _human_click(page: Page, locator) -> None:
     await _human_pause(0.3, 0.8)
 
 
+# ── parse_profile structuring (heuristic slot-filling, no full-page dumps) ───
+
+def _pp_split_lines(block: str, limit: int = 32) -> list[str]:
+    lines = [ln.strip() for ln in block.replace("\r", "").split("\n") if ln.strip()]
+    return lines[:limit]
+
+
+def _pp_word_count(text: str) -> int:
+    return len(re.findall(r"\b\w+\b", text or ""))
+
+
+def _pp_has_url(text: str) -> bool:
+    return bool(re.search(r"https?://|www\.\S+", text or "", re.I))
+
+
+def _pp_hashtag_count(text: str) -> int:
+    return len(re.findall(r"(?<![\w#])#\w[\w-]*", text or ""))
+
+
+def _pp_mention_count(text: str) -> int:
+    return len(re.findall(r"(?<![\w@])@[\w][\w-]*", text or ""))
+
+
+def _pp_degree_label(degree: int | None) -> str | None:
+    if degree is None:
+        return None
+    if degree <= 1:
+        return "1st"
+    if degree == 2:
+        return "2nd"
+    return "3rd+"
+
+
+def _pp_looks_date_range(line: str) -> bool:
+    if not line or len(line) > 140:
+        return False
+    low = line.lower()
+    if "present" in low and re.search(r"\b(19|20)\d{2}\b", line):
+        return True
+    if re.search(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b", low):
+        return True
+    if re.search(r"\b(19|20)\d{2}\b\s*[-–—]", line):
+        return True
+    if re.search(r"\b(19|20)\d{2}\b.*\b(19|20)\d{2}\b", line):
+        return True
+    return False
+
+
+def _pp_structure_experience_card(text: str) -> dict[str, Any]:
+    lines = _pp_split_lines(text, 22)
+    if not lines:
+        return {"parse_confidence": "none"}
+    role_title = lines[0]
+    organization = None
+    employment_type = None
+    if len(lines) > 1:
+        L1 = lines[1]
+        if "·" in L1:
+            parts = [p.strip() for p in L1.split("·", 1)]
+            organization = parts[0] or None
+            employment_type = parts[1] if len(parts) > 1 else None
+        else:
+            organization = L1
+    tenure = None
+    location = None
+    description_lines: list[str] = []
+    for ln in lines[2:]:
+        if tenure is None and _pp_looks_date_range(ln):
+            tenure = ln
+            continue
+        if location is None and tenure is not None and len(ln) < 100:
+            location = ln
+            continue
+        description_lines.append(ln)
+    description = "\n".join(description_lines).strip() or None
+    conf = "high" if role_title and organization else ("medium" if role_title else "none")
+    return {
+        "role_title": role_title,
+        "organization": organization,
+        "employment_type": employment_type,
+        "tenure": tenure,
+        "location": location,
+        "description": description,
+        "parse_confidence": conf,
+    }
+
+
+def _pp_structure_education_card(text: str) -> dict[str, Any]:
+    lines = _pp_split_lines(text, 18)
+    if not lines:
+        return {"parse_confidence": "none"}
+    school = lines[0]
+    degree = None
+    field_of_study = None
+    if len(lines) > 1:
+        L1 = lines[1]
+        if "·" in L1:
+            bits = [b.strip() for b in L1.split("·")]
+            degree = bits[0] or None
+            field_of_study = bits[1] if len(bits) > 1 else None
+        else:
+            degree = L1
+    dates = None
+    highlights: list[str] = []
+    for ln in lines[2:]:
+        if dates is None and _pp_looks_date_range(ln):
+            dates = ln
+            continue
+        if len(ln) > 2:
+            highlights.append(ln)
+    return {
+        "school": school,
+        "degree": degree,
+        "field_of_study": field_of_study,
+        "dates": dates,
+        "highlights": highlights[:6] or None,
+        "parse_confidence": "high" if school else "none",
+    }
+
+
+def _pp_structure_skill_row(text: str) -> dict[str, Any]:
+    lines = _pp_split_lines(text, 8)
+    if not lines:
+        return {"parse_confidence": "none"}
+    name = lines[0]
+    context = None
+    for ln in lines[1:]:
+        if re.search(r"endorse|assessment|skill", ln, re.I):
+            context = ln
+            break
+    return {
+        "name": name,
+        "context": context,
+        "parse_confidence": "high" if name else "none",
+    }
+
+
+def _pp_structure_recommendation_card(text: str) -> dict[str, Any]:
+    lines = _pp_split_lines(text, 48)
+    if not lines:
+        return {"parse_confidence": "none"}
+    author = lines[0]
+    relationship_caption = None
+    body_start = 1
+    if len(lines) > 1 and len(lines[1]) <= 160:
+        relationship_caption = lines[1]
+        body_start = 2
+    excerpt = "\n".join(lines[body_start:]).strip() or None
+    return {
+        "author": author,
+        "relationship_caption": relationship_caption,
+        "excerpt": excerpt,
+        "parse_confidence": "high" if author else "none",
+    }
+
+
+def _pp_structure_activity_update(index: int, post: dict[str, Any]) -> dict[str, Any]:
+    body = (post.get("text") or "").strip()
+    return {
+        "index": index,
+        "body": body,
+        "metrics": {
+            "characters": len(body),
+            "words": _pp_word_count(body),
+            "has_urls": _pp_has_url(body),
+            "hashtag_count": _pp_hashtag_count(body),
+            "mention_count": _pp_mention_count(body),
+        },
+        "engagement": {
+            "likes_reported": int(post.get("likes") or 0),
+        },
+        "timestamp_caption": (post.get("timestamp") or "").strip() or None,
+    }
+
+
 # ── Browser wrapper ───────────────────────────────────────────────────────────
 
 class LinkedInBrowser:
@@ -476,39 +651,46 @@ class LinkedInBrowser:
 
     # ── Profile scraping ──────────────────────────────────────────────────────
 
-    async def scrape_profile(self, profile_url: str) -> dict:
+    @staticmethod
+    def _canonical_in_profile_url(profile_url: str) -> str:
         """
-        Navigate to a LinkedIn profile and extract key fields.
+        Normalize any ``/in/<vanity>/…`` URL to ``https://www.linkedin.com/in/<vanity>/``.
 
-        Returns a dict that matches (or extends) the prospect schema used by
-        outreach/planner.py.
+        Used to build ``details/*`` and activity sub-routes during :meth:`parse_profile`.
+        """
+        raw = (profile_url or "").strip().split("?")[0].split("#")[0]
+        m = re.search(r"/in/([^/]+)", raw, flags=re.I)
+        if m:
+            slug = m.group(1).strip("/")
+            return f"{BASE_URL}/in/{slug}/"
+        return raw if raw.endswith("/") else (raw + "/")
+
+    async def _scrape_profile_main_fields(self, profile_url: str) -> dict:
+        """
+        Load the profile overview tab and extract the same structured fields as
+        :meth:`scrape_profile` **excluding** ``recent_posts`` (caller handles activity).
+
+        Leaves the browser on the profile overview URL when it returns.
         """
         await self._ensure_profile_tab(profile_url)
         await _human_scroll(self._page, "down")   # read down the page like a human
 
-        # ── Wait for page content ──
-        # LinkedIn's new SDUI renders content into <main id="workspace">.
-        # Wait for that rather than a specific heading tag so we don't burn the
-        # full NAV_TIMEOUT on each absent selector.
         try:
             await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
-            await _human_pause(0.5, 1.0)  # extra settle for JS-rendered content
+            await _human_pause(0.5, 1.0)
         except Exception:
-            logger.warning("scrape_profile: page did not reach expected state for %s", profile_url)
+            logger.warning(
+                "_scrape_profile_main_fields: page did not reach expected state for %s",
+                profile_url,
+            )
 
-        # ── Name ──
-        # LinkedIn's SDUI (as of 2025+) uses <h2> for the profile name instead
-        # of the old <h1>.  We try each selector with a short timeout so we don't
-        # block 30 s per absent selector.
         _SECTION_HEADERS = {"Experience", "Education", "Skills", "Activity", "About",
                             "Featured", "Recommendations", "Courses", "Projects"}
         name = ""
         _name_selectors = [
-            "h1.text-heading-xlarge",          # legacy LinkedIn class-based layout
-            ".pv-text-details__left-panel h1", # older layout variant
-            "h1",                              # generic h1 fallback
-            # New SDUI layout: name is an h2, but scoped to <main> so we skip the
-            # nav bar's "0 notifications" heading that also uses h2 at page level.
+            "h1.text-heading-xlarge",
+            ".pv-text-details__left-panel h1",
+            "h1",
             "main h2",
             "#workspace h2",
         ]
@@ -517,15 +699,12 @@ class LinkedInBrowser:
                 _el = self._page.locator(_sel).first
                 if await _el.count():
                     _text = (await _el.inner_text(timeout=EL_TIMEOUT)).strip()
-                    # Section headers ("Experience", "Activity", …) are also h2 —
-                    # skip them so we don't accidentally return a header as the name.
                     if _text and _text not in _SECTION_HEADERS:
                         name = _text
                         break
             except Exception:
                 continue
 
-        # Last resort: LinkedIn page titles follow "Name | LinkedIn" format.
         if not name:
             try:
                 title = await self._page.title()
@@ -535,15 +714,15 @@ class LinkedInBrowser:
                 pass
 
         if not name:
-            logger.warning("scrape_profile: could not locate profile name on %s", profile_url)
+            logger.warning(
+                "_scrape_profile_main_fields: could not locate profile name on %s",
+                profile_url,
+            )
 
-        # ── Headline / title ──
-        # Try the legacy class first, then fall back to the second <p> in the
-        # SDUI topcard (which sits right after the name heading).
         headline = ""
         _headline_selectors = [
-            ".text-body-medium.break-words",                    # legacy layout
-            ".pv-text-details__left-panel .text-body-medium",  # older variant
+            ".text-body-medium.break-words",
+            ".pv-text-details__left-panel .text-body-medium",
         ]
         for _sel in _headline_selectors:
             try:
@@ -555,11 +734,10 @@ class LinkedInBrowser:
             except Exception:
                 continue
 
-        # ── Location ──
         location = ""
         _location_selectors = [
-            ".text-body-small.inline.t-black--light.break-words",  # legacy layout
-            ".pv-text-details__left-panel .t-black--light",        # older variant
+            ".text-body-small.inline.t-black--light.break-words",
+            ".pv-text-details__left-panel .t-black--light",
         ]
         for _sel in _location_selectors:
             try:
@@ -571,48 +749,23 @@ class LinkedInBrowser:
             except Exception:
                 continue
 
-        # ── Connection degree ──
-        # Legacy selector first; new SDUI shows "· 1st" / "· 2nd" inline in a <p>.
         connection_degree = await self._read_connection_degree_on_page()
 
-        await _human_scroll(self._page, "down")   # scroll further to reveal About / Experience
+        await _human_scroll(self._page, "down")
 
-        # ── About section ──
-        about_el = self._page.locator("section#about ~ div, div[data-generated-suggestion-target='urn:li:fs_aboutPrompt']").first
+        about_el = self._page.locator(
+            "section#about ~ div, div[data-generated-suggestion-target='urn:li:fs_aboutPrompt']"
+        ).first
         about = await about_el.inner_text(timeout=EL_TIMEOUT) if await about_el.count() else ""
 
-        # ── Raw visible text (profile page) ──
-        # Grab everything visible inside <main> before we navigate away.
-        # This acts as a catch-all for fields that structured selectors miss
-        # (About text, Skills, Education, etc.) and lets the skill summarise
-        # whatever LinkedIn happens to render on the day.
         raw_text = ""
         try:
             main_el = self._page.locator("main, #workspace").first
             if await main_el.count():
                 _raw = await main_el.inner_text(timeout=EL_TIMEOUT)
-                # Collapse runs of blank lines into a single blank line so the
-                # text stays readable without being padded with dozens of newlines.
                 raw_text = re.sub(r"\n{3,}", "\n\n", _raw).strip()
         except Exception as exc:
             logger.warning("Could not capture raw page text: %s", exc)
-
-        # ── Recent posts (activity feed) ──
-        posts: list[dict] = []
-        try:
-            activity_url = profile_url.rstrip("/") + "/recent-activity/all/"
-            await self._page.goto(activity_url, timeout=NAV_TIMEOUT)
-            await _human_pause(1.5, 2.5)
-            await _human_scroll(self._page, "down")
-
-            post_els = self._page.locator(".feed-shared-update-v2__description")
-            count = await post_els.count()
-            for i in range(min(count, 3)):
-                text = await post_els.nth(i).inner_text(timeout=EL_TIMEOUT)
-                posts.append({"text": text.strip(), "timestamp": "", "likes": 0})
-                await _human_pause(0.3, 0.8)   # brief read pause between posts
-        except Exception as exc:
-            logger.warning("Could not scrape activity feed: %s", exc)
 
         return {
             "linkedin_url":      profile_url,
@@ -621,9 +774,295 @@ class LinkedInBrowser:
             "location":          location.strip(),
             "connection_degree": connection_degree,
             "about":             about.strip(),
-            "recent_posts":      posts,
             "raw_text":          raw_text,
             "scraped_at":        datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def _scrape_recent_activity_posts(
+        self,
+        profile_url: str,
+        *,
+        limit: int = 3,
+        extra_scroll_rounds: int = 0,
+    ) -> list[dict[str, Any]]:
+        """
+        Navigate to ``…/recent-activity/all/`` and collect up to ``limit`` update bodies.
+
+        Returns the browser on the activity page.
+        """
+        posts: list[dict[str, Any]] = []
+        try:
+            activity_url = profile_url.rstrip("/") + "/recent-activity/all/"
+            await self._page.goto(activity_url, timeout=NAV_TIMEOUT)
+            await _human_pause(1.5, 2.5)
+            await _human_scroll(self._page, "down")
+            for _ in range(max(0, extra_scroll_rounds)):
+                await _human_scroll(self._page, "down")
+                await _human_pause(0.35, 0.75)
+
+            post_els = self._page.locator(".feed-shared-update-v2__description")
+            count = await post_els.count()
+            for i in range(min(count, limit)):
+                text = await post_els.nth(i).inner_text(timeout=EL_TIMEOUT)
+                posts.append({"text": text.strip(), "timestamp": "", "likes": 0})
+                await _human_pause(0.3, 0.8)
+        except Exception as exc:
+            logger.warning("Could not scrape activity feed: %s", exc)
+        return posts
+
+    async def _extract_pvs_list_cards(self, max_items: int = 40) -> list[dict[str, str]]:
+        """Best-effort rows from a LinkedIn PVS / list detail page."""
+        seen: set[str] = set()
+        items: list[dict[str, str]] = []
+        selectors = (
+            "li.pvs-list__paged-list-item",
+            "ul li.artdeco-list__item",
+        )
+        for sel in selectors:
+            loc = self._page.locator(sel)
+            try:
+                n = await loc.count()
+            except Exception:
+                continue
+            if n == 0:
+                continue
+            for i in range(min(n, max_items)):
+                try:
+                    txt = (await loc.nth(i).inner_text(timeout=EL_TIMEOUT)).strip()
+                except Exception:
+                    continue
+                if len(txt) < 4:
+                    continue
+                key = txt[:280]
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append({"text": txt[:6000]})
+            if items:
+                break
+        return items
+
+    async def _extract_mutual_connections_preview(self, max_names: int = 18) -> list[str]:
+        """Names (plain text) from a visible *Mutual connections* module on the overview."""
+        names: list[str] = []
+        root = self._page.locator("main, #workspace").first
+        if not await root.count():
+            return names
+        try:
+            section = root.locator("section, div").filter(
+                has_text=re.compile(r"mutual\s+connection", re.I)
+            ).first
+            if not await section.count():
+                return names
+            links = section.locator("a[href*='/in/']")
+            n = await links.count()
+            for i in range(min(n, max_names * 2)):
+                try:
+                    t = (await links.nth(i).inner_text(timeout=EL_TIMEOUT)).strip()
+                except Exception:
+                    continue
+                first_line = t.split("\n")[0].strip()
+                if not first_line or len(first_line) > 120:
+                    continue
+                if first_line not in names:
+                    names.append(first_line)
+                if len(names) >= max_names:
+                    break
+        except Exception as exc:
+            logger.warning("mutual connections preview: %s", exc)
+        return names
+
+    async def scrape_profile(self, profile_url: str) -> dict:
+        """
+        Navigate to a LinkedIn profile and extract key fields.
+
+        Returns a dict that matches (or extends) the prospect schema used by
+        outreach/planner.py.
+        """
+        data = await self._scrape_profile_main_fields(profile_url)
+        data["recent_posts"] = await self._scrape_recent_activity_posts(
+            profile_url, limit=3, extra_scroll_rounds=0
+        )
+        return data
+
+    async def parse_profile(
+        self,
+        profile_url: str,
+        *,
+        max_activity_posts: int = 12,
+        detail_scroll_rounds: int = 2,
+        activity_extra_scroll_rounds: int = 3,
+    ) -> dict[str, Any]:
+        """
+        Multi-step crawl with a **structured** return: identity, narrative, relation
+        slots, activity metrics, and crawl diagnostics. Omits full-page ``raw_text``
+        and other unsegmented dumps — use :meth:`scrape_profile` when you need that.
+        """
+        base = self._canonical_in_profile_url(profile_url)
+        slug_m = re.search(r"/in/([^/]+)/?", base.rstrip("/"), flags=re.I)
+        public_id = slug_m.group(1) if slug_m else None
+        crawl_log: list[dict[str, Any]] = []
+
+        main = await self._scrape_profile_main_fields(profile_url)
+        crawl_log.append({
+            "phase": "main_profile",
+            "url": self._page.url,
+            "status": "ok",
+            "name_present": bool(main.get("name")),
+        })
+
+        mutual: list[str] = []
+        try:
+            mutual = await self._extract_mutual_connections_preview()
+            crawl_log.append({
+                "phase": "mutual_connections",
+                "status": "ok",
+                "count": len(mutual),
+            })
+        except Exception as exc:
+            logger.warning("parse_profile mutual_connections: %s", exc)
+            crawl_log.append({
+                "phase": "mutual_connections",
+                "status": "error",
+                "error": str(exc),
+            })
+
+        raw_cards: dict[str, list[dict[str, str]]] = {
+            "experience": [],
+            "education": [],
+            "skills": [],
+            "recommendations": [],
+        }
+        subpaths: tuple[tuple[str, str], ...] = (
+            ("experience", "details/experience/"),
+            ("education", "details/education/"),
+            ("skills", "details/skills/"),
+            ("recommendations", "details/recommendations/"),
+        )
+        for key, path in subpaths:
+            url = base.rstrip("/") + "/" + path
+            try:
+                await self._page.goto(url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+                await _human_pause(1.0, 2.0)
+                try:
+                    await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+                except Exception:
+                    pass
+                for _ in range(max(0, detail_scroll_rounds)):
+                    await _human_scroll(self._page, "down")
+                    await _human_pause(0.25, 0.55)
+                cards = await self._extract_pvs_list_cards()
+                raw_cards[key] = cards
+                crawl_log.append({
+                    "phase": key,
+                    "url": url,
+                    "status": "ok",
+                    "items": len(cards),
+                })
+            except Exception as exc:
+                logger.warning("parse_profile %s: %s", key, exc)
+                raw_cards[key] = []
+                crawl_log.append({
+                    "phase": key,
+                    "url": url,
+                    "status": "error",
+                    "error": str(exc),
+                })
+
+        activity_url = base.rstrip("/") + "/recent-activity/all/"
+        posts = await self._scrape_recent_activity_posts(
+            profile_url,
+            limit=max(1, max_activity_posts),
+            extra_scroll_rounds=activity_extra_scroll_rounds,
+        )
+        crawl_log.append({
+            "phase": "activity_feed",
+            "url": activity_url,
+            "status": "ok",
+            "posts": len(posts),
+        })
+
+        experience = [_pp_structure_experience_card(c["text"]) for c in raw_cards["experience"]]
+        education = [_pp_structure_education_card(c["text"]) for c in raw_cards["education"]]
+        skills = [_pp_structure_skill_row(c["text"]) for c in raw_cards["skills"]]
+        recommendations = [
+            _pp_structure_recommendation_card(c["text"]) for c in raw_cards["recommendations"]
+        ]
+        mutual_objs = [{"display_name": n} for n in mutual]
+
+        exp0 = experience[0] if experience else {}
+        skills_preview = [s["name"] for s in skills[:15] if s.get("name")]
+
+        subject: dict[str, Any] = {
+            "identity": {
+                "linkedin_url": main.get("linkedin_url") or profile_url,
+                "public_id": public_id,
+                "full_name": (main.get("name") or "").strip(),
+                "headline": (main.get("title") or "").strip(),
+                "location": (main.get("location") or "").strip(),
+                "network": {
+                    "degree": main.get("connection_degree"),
+                    "label": _pp_degree_label(main.get("connection_degree")),
+                },
+            },
+            "narrative": {
+                "about": (main.get("about") or "").strip(),
+                "about_metrics": {
+                    "characters": len(main.get("about") or ""),
+                    "words": _pp_word_count(main.get("about") or ""),
+                },
+            },
+            "career_signals": {
+                "primary_role": exp0.get("role_title") if exp0.get("parse_confidence") != "none" else None,
+                "primary_organization": exp0.get("organization"),
+                "employment_type_primary": exp0.get("employment_type"),
+                "tenure_primary": exp0.get("tenure"),
+                "skills_preview": skills_preview,
+            },
+        }
+
+        updates = [_pp_structure_activity_update(i, p) for i, p in enumerate(posts)]
+        total_words = sum(u["metrics"]["words"] for u in updates)
+
+        relations: dict[str, Any] = {
+            "experience": experience,
+            "education": education,
+            "skills": skills,
+            "recommendations": recommendations,
+            "mutual_connections": mutual_objs,
+            "rollup": {
+                "experience_count": len(experience),
+                "education_count": len(education),
+                "skills_count": len(skills),
+                "recommendations_count": len(recommendations),
+                "mutual_connections_count": len(mutual_objs),
+                "low_confidence_experience": sum(
+                    1 for e in experience if e.get("parse_confidence") == "none"
+                ),
+            },
+        }
+
+        parsed_at = datetime.now(timezone.utc).isoformat()
+        return {
+            "subject": subject,
+            "relations": relations,
+            "activity": {
+                "feed_url": activity_url,
+                "stats": {
+                    "updates_collected": len(updates),
+                    "total_words": total_words,
+                    "any_update_has_url": any(u["metrics"]["has_urls"] for u in updates),
+                    "updates_with_hashtags": sum(
+                        1 for u in updates if u["metrics"]["hashtag_count"] > 0
+                    ),
+                },
+                "updates": updates,
+            },
+            "crawl_log": crawl_log,
+            "meta": {
+                "parsed_at": parsed_at,
+                "schema": "linkedin.parse_profile/v2",
+            },
         }
 
     # ── Connection request ────────────────────────────────────────────────────

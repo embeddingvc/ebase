@@ -26,18 +26,74 @@ _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 # ── Prompt templates ──────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are an expert recruiter writing personalized LinkedIn outreach messages.
+SYSTEM_PROMPT = """You are an expert LinkedIn outreach writer (recruiting, networking, or warm reconnection).
 
 Rules:
 - Connection request notes must be ≤300 characters (LinkedIn hard limit — count carefully)
 - Follow-up messages must be ≤500 characters
-- Reference at least one specific detail from the prospect's recent posts or background
+- Reference at least one specific detail from the prospect's recent posts or background when relevant
 - Never use these phrases: "I came across your profile", "I'd love to pick your brain",
   "synergy", "hope this message finds you", "reaching out to connect", "touching base"
 - Sound human and specific — not like a mass template
 - You MUST open with or include the prospect's first name somewhere in the message
+- Honor the stated end_goal: for none, write a warm note with no ask for a meeting, call, resume, or next-step scheduling
 - Do not add any preamble or explanation — return only the message text itself
 """
+
+_VALID_END_GOALS = frozenset({"schedule_meeting", "obtain_resume", "none"})
+
+
+def resolve_end_goal(prospect: dict) -> str:
+    """
+    Canonical end goal for prompts and persistence.
+
+    Prefer prospect['end_goal']; if missing, map legacy target_action; else default schedule_meeting.
+    """
+    raw = prospect.get("end_goal")
+    if isinstance(raw, str) and raw in _VALID_END_GOALS:
+        return raw
+    legacy = prospect.get("target_action")
+    if legacy == "request_resume":
+        return "obtain_resume"
+    if legacy == "schedule_call":
+        return "schedule_meeting"
+    if legacy == "general_outreach":
+        return "schedule_meeting"
+    return "schedule_meeting"
+
+
+def _outreach_topic_line(prospect: dict, conversation: dict) -> str:
+    topic = prospect.get("outreach_topic")
+    if isinstance(topic, str) and topic.strip():
+        return topic.strip()
+    snap = conversation.get("outreach_topic")
+    if isinstance(snap, str) and snap.strip():
+        return snap.strip()
+    return "(no dedicated topic — use notes and profile signals only)"
+
+
+def _end_goal_instructions(end_goal: str, action: str) -> str:
+    if end_goal == "obtain_resume":
+        return (
+            "End goal: recruiting / obtain_resume. "
+            "Steer naturally toward learning fit; it is OK to hint that sharing a resume or profile "
+            "could help match them to opportunities"
+            + (" in a later message" if action == "send_connection_request" else "")
+            + ". Do not demand a resume in the connection note."
+        )
+    if end_goal == "none":
+        return (
+            "End goal: none (relationship only). "
+            "No pitch, no meeting request, no calendar link, no resume ask, no 'let's find time to chat' "
+            "about work opportunities. A light human reason to connect is fine."
+        )
+    return (
+        "End goal: schedule_meeting (default). "
+        "It is OK to suggest a brief intro call or meeting when natural"
+        + ("; the connection note can lightly tee that up without being pushy" if action == "send_connection_request" else "")
+        + "."
+    )
+
 
 def _build_user_prompt(prospect: dict, conversation: dict, action: str) -> str:
     recent_posts = prospect.get("recent_posts", [])
@@ -54,6 +110,9 @@ def _build_user_prompt(prospect: dict, conversation: dict, action: str) -> str:
 
     first_name = prospect.get("name", "").split()[0]
     char_limit = 300 if action == "send_connection_request" else 500
+    end_goal = resolve_end_goal(prospect)
+    topic_line = _outreach_topic_line(prospect, conversation)
+    goal_rules = _end_goal_instructions(end_goal, action)
     return f"""Generate a LinkedIn message for this action: {action.replace("_", " ")}
 HARD LIMIT: {char_limit} characters maximum. Count carefully before responding.
 The prospect's first name is "{first_name}" — you must use it in the message.
@@ -64,6 +123,11 @@ Title:      {prospect.get("title")}
 Company:    {prospect.get("company")}
 Location:   {prospect.get("location")}
 Notes:      {prospect.get("notes", "")}
+
+--- TOPIC & GOAL ---
+Conversation topic (anchor the angle of the message): {topic_line}
+Resolved end_goal: {end_goal}
+{goal_rules}
 
 Recent posts:
 {posts_text or "(none)"}
@@ -121,18 +185,44 @@ def _plan_stub(prospect: dict, conversation: dict, action: str) -> str:
     name  = prospect["name"].split()[0]
     posts = prospect.get("recent_posts", [])
     hook  = posts[0]["text"][:60] if posts else prospect.get("notes", "your background")[:60]
+    end_goal = resolve_end_goal(prospect)
+    topic = _outreach_topic_line(prospect, conversation)
+    topic_bit = (
+        f" On {topic} —" if topic != "(no dedicated topic — use notes and profile signals only)" else ""
+    )
 
     if action == "send_connection_request":
+        if end_goal == "none":
+            return (
+                f"Hey {name} —{topic_bit} been a while and great to see what you're up to lately. "
+                "Would love to connect here."
+            ).replace("  ", " ")[:300]
+        if end_goal == "obtain_resume":
+            return (
+                f"Hey {name} — saw your post on {hook}... "
+                f"We're hiring in that space and your angle stood out.{topic_bit} Would love to connect."
+            ).replace("  ", " ")[:300]
         return (
             f"Hey {name} — saw your recent post on {hook}... "
-            "Building something in that space and your background stood out. Would love to connect."
-        )[:300]
+            f"Your take resonated.{topic_bit} Would love to connect and find time for a quick intro if you're open."
+        ).replace("  ", " ")[:300]
 
     if action == "send_followup_message":
+        if end_goal == "none":
+            return (
+                f"Thanks for connecting, {name}! "
+                "Really glad we're in touch here — hope we can catch up informally when life allows."
+            )[:500]
+        if end_goal == "obtain_resume":
+            return (
+                f"Thanks for connecting, {name}! "
+                f"We're hiring for a role that maps closely to your {prospect.get('title', 'background')} experience. "
+                "Would you be open to sharing your resume so I can pass it along to the team?"
+            )[:500]
         return (
             f"Thanks for connecting, {name}! "
-            f"We're hiring for a role that maps closely to your {prospect.get('title', 'background')} experience. "
-            "Would you be open to sharing your resume so I can pass it along to the team?"
+            f"Loved your background in {prospect.get('title', 'this space')}. "
+            "Would you be open to a short intro call this week or next? Happy to work around your schedule."
         )[:500]
 
     return f"Hi {name}, following up — happy to answer any questions about the role."

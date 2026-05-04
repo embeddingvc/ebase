@@ -85,6 +85,20 @@
       "default": null
     },
 
+    "end_goal": {
+      "type": ["string", "null"],
+      "enum": ["schedule_meeting", "obtain_resume", "none", null],
+      "description": "Snapshot of prospect end_goal at last pipeline touch (typically set when a connection request is sent). Used by the planner and for audit.",
+      "default": null
+    },
+
+    "outreach_topic": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Snapshot of prospect outreach_topic when the connection request was sent (or updated on later sends).",
+      "default": null
+    },
+
     "resume_path": {
       "type": ["string", "null"],
       "description": "Relative path to the saved resume file, e.g. 'outreach/storage/resumes/alex_chen_softeng.pdf'. Set by the download-resume automation skill.",

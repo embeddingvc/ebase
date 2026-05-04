@@ -63,7 +63,7 @@ def _chrome_running(cdp_url: str = CDP_URL) -> bool:
 sys.path.insert(0, str(BASE_DIR))
 
 from outreach.browser import LinkedInBrowser  # noqa: E402
-from outreach.planner import plan_message     # noqa: E402
+from outreach.planner import plan_message, resolve_end_goal  # noqa: E402
 
 
 # ── Queue helpers ─────────────────────────────────────────────────────────────
@@ -140,6 +140,9 @@ async def handle_send_connection_request(job: dict, li: LinkedInBrowser) -> str:
     conversation["last_action"]           = "send_connection_request"
     conversation["last_action_timestamp"] = datetime.now(timezone.utc).isoformat()
     conversation["connection_note"]       = note
+    conversation["end_goal"]            = resolve_end_goal(prospect)
+    ot = prospect.get("outreach_topic")
+    conversation["outreach_topic"]      = ot.strip() if isinstance(ot, str) and ot.strip() else None
     conversation["next_action"]           = "send_followup_message"
     conversation["messages"].append({
         "sender":    "us",

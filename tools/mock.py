@@ -1,9 +1,10 @@
 """
 tools/mock.py — LinkedIn MCP mock backend.
 
-All mock-mode logic lives here so server.py stays thin.  Nothing in this
-module depends on MCP or the browser layer; it is importable standalone and
-fully testable without starting the server.
+All mock-mode logic lives here so server.py stays thin.  Nothing depends on
+MCP.  :func:`handle_parse_profile` imports small slot-formatting helpers from
+``outreach.browser`` so mock output matches the live ``parse_profile`` schema;
+other handlers stay free of Playwright.
 
 LinkedIn tool mocks (``scrape_profile``, ``is_first_degree_connection``, ``send_connection_request``,
 ``send_message``, ``fetch_chat_history``) always centre on the ``_ALEX_CHEN`` fixture: if ``load_test_case``
@@ -26,6 +27,7 @@ Public surface
     handle_load_test_case(id, url)       → str
     handle_get_mock_state(url)           → str
     handle_scrape_profile(url)           → str
+    handle_parse_profile(url)          → str
     handle_is_first_degree_connection(url) → str
     handle_send_connection_request(url, note) → str
     handle_send_message(url, message)    → str
@@ -39,6 +41,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -86,7 +89,9 @@ _ALEX_CHEN: dict[str, Any] = {
     ],
     "connection_status": "none",
     "outreach_stage": "cold",
-    "target_action": "request_resume",
+    "end_goal": "obtain_resume",
+    "outreach_topic": "Series A ML infra roles in the portfolio",
+    "target_action": None,
     "notes": (
         "Strong distributed systems background. "
         "Mentioned open to new roles in a comment 3 weeks ago."
@@ -519,6 +524,154 @@ async def handle_scrape_profile(profile_url: str) -> str:
         profile_url,
     )
     return json.dumps(profile, ensure_ascii=False, indent=2)
+
+
+async def handle_parse_profile(profile_url: str) -> str:
+    """
+    Return a ``parse_profile`` v2 document (structured fields only; no raw page dump).
+
+    Uses the active test-case prospect plus deterministic multi-line blobs so the
+    same slot-filling helpers as live mode shape ``experience`` / ``education`` rows.
+    """
+    from outreach.browser import (
+        _pp_degree_label,
+        _pp_structure_activity_update,
+        _pp_structure_education_card,
+        _pp_structure_experience_card,
+        _pp_structure_recommendation_card,
+        _pp_structure_skill_row,
+        _pp_word_count,
+    )
+
+    session = ensure_default_mock_session(profile_url)
+    tc = TEST_CASES[session.test_case_id]
+    prospect = dict(tc["prospect"])
+    url = profile_url.strip()
+    mutual_names = list(prospect.get("mutual_connections") or [])
+    name = prospect.get("name") or "Member"
+    headline = prospect.get("title") or ""
+    location = prospect.get("location") or ""
+    degree = prospect.get("connection_degree")
+    about = (prospect.get("about") or "").strip()
+    posts_raw = list(prospect.get("recent_posts") or [])
+
+    slug = ""
+    m = re.search(r"/in/([^/?#]+)", url, flags=re.I)
+    if m:
+        slug = m.group(1).strip("/")
+
+    exp_blob = (
+        f"{headline or 'Senior Software Engineer'}\n"
+        f"{prospect.get('company') or 'Example Corp'} · Full-time\n"
+        f"Jan 2020 – Present · 5 yrs\n"
+        f"{location or 'San Francisco Bay Area'}\n"
+        f"Focus: high-scale backend and reliability."
+    )
+    edu_blob = (
+        "Stanford University\n"
+        "BS · Computer Science\n"
+        "2014 – 2018\n"
+        "Activities: ACM chapter."
+    )
+    experience = [_pp_structure_experience_card(exp_blob)]
+    education = [_pp_structure_education_card(edu_blob)]
+    skills = [
+        _pp_structure_skill_row("Python\n· 99+ endorsements"),
+        _pp_structure_skill_row("Distributed Systems"),
+    ]
+    rec_blob = (
+        "Jordan Park\n"
+        "Managed Alex directly at Stripe\n"
+        f"{name} is one of the strongest infra engineers I've worked with — "
+        "owns complex migrations end-to-end."
+    )
+    recommendations = [_pp_structure_recommendation_card(rec_blob)]
+
+    mutual_objs = [{"display_name": n} for n in mutual_names]
+    exp0 = experience[0] if experience else {}
+    skills_preview = [s["name"] for s in skills[:15] if s.get("name")]
+
+    subject: dict[str, Any] = {
+        "identity": {
+            "linkedin_url": url,
+            "public_id": slug or None,
+            "full_name": name,
+            "headline": headline,
+            "location": location,
+            "network": {"degree": degree, "label": _pp_degree_label(degree)},
+        },
+        "narrative": {
+            "about": about,
+            "about_metrics": {
+                "characters": len(about),
+                "words": _pp_word_count(about),
+            },
+        },
+        "career_signals": {
+            "primary_role": exp0.get("role_title"),
+            "primary_organization": exp0.get("organization"),
+            "employment_type_primary": exp0.get("employment_type"),
+            "tenure_primary": exp0.get("tenure"),
+            "skills_preview": skills_preview,
+        },
+    }
+
+    updates = [
+        _pp_structure_activity_update(i, p if isinstance(p, dict) else {"text": str(p)})
+        for i, p in enumerate(posts_raw)
+    ]
+    total_words = sum(u["metrics"]["words"] for u in updates)
+    activity_url = url.rstrip("/") + "/recent-activity/all/"
+    parsed_at = datetime.now(timezone.utc).isoformat()
+
+    parsed: dict[str, Any] = {
+        "subject": subject,
+        "relations": {
+            "experience": experience,
+            "education": education,
+            "skills": skills,
+            "recommendations": recommendations,
+            "mutual_connections": mutual_objs,
+            "rollup": {
+                "experience_count": len(experience),
+                "education_count": len(education),
+                "skills_count": len(skills),
+                "recommendations_count": len(recommendations),
+                "mutual_connections_count": len(mutual_objs),
+                "low_confidence_experience": sum(
+                    1 for e in experience if e.get("parse_confidence") == "none"
+                ),
+            },
+        },
+        "activity": {
+            "feed_url": activity_url,
+            "stats": {
+                "updates_collected": len(updates),
+                "total_words": total_words,
+                "any_update_has_url": any(u["metrics"]["has_urls"] for u in updates),
+                "updates_with_hashtags": sum(
+                    1 for u in updates if u["metrics"]["hashtag_count"] > 0
+                ),
+            },
+            "updates": updates,
+        },
+        "crawl_log": [
+            {"phase": "main_profile", "status": "ok", "mock": True},
+            {"phase": "mutual_connections", "status": "ok", "count": len(mutual_objs), "mock": True},
+            {"phase": "experience", "status": "ok", "items": len(experience), "mock": True},
+            {"phase": "education", "status": "ok", "items": len(education), "mock": True},
+            {"phase": "skills", "status": "ok", "items": len(skills), "mock": True},
+            {"phase": "recommendations", "status": "ok", "items": len(recommendations), "mock": True},
+            {"phase": "activity_feed", "status": "ok", "posts": len(updates), "mock": True},
+        ],
+        "meta": {"parsed_at": parsed_at, "schema": "linkedin.parse_profile/v2", "mock": True},
+    }
+    logger.info(
+        "parse_profile MOCK (test case: %s)  url=%s",
+        session.test_case_id,
+        profile_url,
+    )
+    return json.dumps(parsed, ensure_ascii=False, indent=2)
 
 
 async def handle_is_first_degree_connection(profile_url: str) -> str:

@@ -98,11 +98,25 @@
       "default": "cold"
     },
 
+    "end_goal": {
+      "type": "string",
+      "enum": ["schedule_meeting", "obtain_resume", "none"],
+      "description": "What success looks like for this thread. schedule_meeting = work toward a call or calendar hold; obtain_resume = recruiting path toward a resume or profile artifact; none = relationship touch-in only (no meeting or resume ask in generated copy). Defaults in code to schedule_meeting when omitted.",
+      "default": "schedule_meeting"
+    },
+
+    "outreach_topic": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Operator-defined topic to anchor the connection note and early messages (e.g. portfolio intro call, catching up after years, a specific role). Complements free-form notes.",
+      "default": null
+    },
+
     "target_action": {
       "type": ["string", "null"],
       "enum": ["request_resume", "schedule_call", "general_outreach", null],
-      "description": "The ultimate goal for this outreach sequence.",
-      "default": "request_resume"
+      "description": "Legacy goal field. Prefer end_goal. When end_goal is absent, request_resume maps to obtain_resume, schedule_call to schedule_meeting, general_outreach to schedule_meeting.",
+      "default": null
     },
 
     "notes": {

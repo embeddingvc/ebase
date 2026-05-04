@@ -25,6 +25,11 @@ connection flows. Do not seed MCP upserts from fixture JSON unless the user is e
 - `profile_url` (required) — full LinkedIn profile URL, e.g. `https://www.linkedin.com/in/username/`
 - `note` (optional) — personalised connection note (LinkedIn limit: **300 chars**). Omit to send without a note.
 
+**Prospect JSON** (via `upsert_prospect` before you generate the note) drives the message planner:
+
+- `end_goal` — **`schedule_meeting`** (default when omitted): steer toward a short intro call or meeting. **`obtain_resume`**: recruiting path toward sharing a resume or profile artifact (maps from legacy `target_action: request_resume`). **`none`**: warm connect only — no meeting, resume, or scheduling ask in generated copy (e.g. old friend).
+- `outreach_topic` — optional string that anchors what to talk about (overrides relying only on `notes` / profile). Examples: a specific role, product area, or “catching up after grad school.”
+
 ## Steps
 
 ### 1. Scrape the profile
@@ -86,7 +91,9 @@ When you have a `prospect_id` for the pipeline:
    Use the real note when one was sent; if none, use a short line such as `(connection request sent, no note)`.
 3. Set `last_action` → `"send_connection_request"`, `last_action_timestamp` → now,
    `next_action` → `null`, and advance `outreach_stage` / `stage_history` per your pipeline (e.g.
-   toward `pending_connection`).
+   toward `pending_connection`). Snapshot **`end_goal`** (resolved: default `schedule_meeting` unless
+   the prospect sets `end_goal` or legacy `target_action`) and **`outreach_topic`** from the prospect
+   onto the conversation so later steps know what angle was used at connect time.
 4. **`upsert_conversation(prospect_id, json.dumps(conversation))`**
 5. **`append_action_log(entry=json.dumps({...}))`**:
 ```json

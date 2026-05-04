@@ -35,6 +35,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
 
   [all modes — LinkedIn actions]
     scrape_profile            Scrape a profile → structured JSON.
+    parse_profile             Structured multi-page parse (v2 schema; no raw page dump).
     is_first_degree_connection  Check whether a profile is a 1st-degree connection.
       (Used by outreach/skills/sync-pending-connections/SKILL.md with get_connections / save_connection.)
     send_connection_request   Send a connection request with an optional note.
@@ -244,6 +245,84 @@ async def scrape_profile(
         profile = await li.scrape_profile(profile_url)
     logger.info("scrape_profile finished  name=%s", profile.get("name"))
     return json.dumps(profile, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+async def parse_profile(
+    profile_url: str,
+    cdp_url: str = "http://localhost:9222",
+    max_activity_posts: int = 12,
+    detail_scroll_rounds: int = 2,
+    activity_extra_scroll_rounds: int = 3,
+) -> str:
+    """
+    Parse a LinkedIn profile with a multi-step crawl (dynamic “relations + activity” pass).
+
+    Live mode walks several routes (overview, ``details/*`` lists, mutual strip, then
+    ``recent-activity/all`` with extra scrolling). Unlike :func:`scrape_profile`, the
+    payload is **analysed**: slot-filled experience/education/skill/recommendation
+    objects, identity + narrative + ``career_signals``, activity items with text
+    metrics — **no** full-page ``raw_text`` or other unsegmented dumps.
+
+    Returns JSON (schema ``linkedin.parse_profile/v2``):
+
+    - ``subject`` — ``identity`` (url, ``public_id``, name, headline, location,
+      network degree/label), ``narrative`` (about + character/word counts),
+      ``career_signals`` (primary role/org/tenure + skills preview).
+    - ``relations`` — structured ``experience``, ``education``, ``skills``,
+      ``recommendations``, ``mutual_connections`` (``display_name`` objects), and
+      ``rollup`` counts.
+    - ``activity`` — ``feed_url``, ``stats`` (aggregate metrics), ``updates`` (each
+      with ``body``, ``metrics``, ``engagement``).
+    - ``crawl_log`` — crawl phases for debugging.
+    - ``meta`` — ``parsed_at`` and schema id.
+
+    Mock mode: returns the same envelope with fixture-backed values (no browser).
+
+    Parameters
+    ----------
+    profile_url : str
+        Full LinkedIn profile URL, e.g. "https://www.linkedin.com/in/username/".
+    cdp_url : str
+        Chrome DevTools Protocol endpoint. Defaults to "http://localhost:9222".
+    max_activity_posts : int
+        Maximum activity feed update bodies to collect (default 12).
+    detail_scroll_rounds : int
+        Down-scroll iterations on each ``details/*`` page (default 2).
+    activity_extra_scroll_rounds : int
+        Extra scroll passes on the activity feed after the first (default 3).
+
+    Returns
+    -------
+    str
+        JSON object with ``subject``, ``relations``, ``activity``, ``crawl_log``, ``meta``.
+    """
+    if _mock_mcp_enabled():
+        return await _mock.handle_parse_profile(profile_url)
+
+    logger.info(
+        "parse_profile called  url=%s  cdp=%s  max_activity_posts=%s",
+        profile_url,
+        cdp_url,
+        max_activity_posts,
+    )
+    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+        await li.assert_logged_in()
+        parsed = await li.parse_profile(
+            profile_url,
+            max_activity_posts=max_activity_posts,
+            detail_scroll_rounds=detail_scroll_rounds,
+            activity_extra_scroll_rounds=activity_extra_scroll_rounds,
+        )
+    subj = parsed.get("subject") or {}
+    ident = subj.get("identity") or {}
+    act = parsed.get("activity") or {}
+    logger.info(
+        "parse_profile finished  name=%s  updates=%s",
+        ident.get("full_name"),
+        (act.get("stats") or {}).get("updates_collected"),
+    )
+    return json.dumps(parsed, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()

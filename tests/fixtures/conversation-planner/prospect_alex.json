@@ -21,7 +21,9 @@
   ],
   "connection_status": "none",
   "outreach_stage": "cold",
-  "target_action": "request_resume",
+  "end_goal": "schedule_meeting",
+  "outreach_topic": "AI startup opportunities and career exploration",
+  "target_action": null,
   "notes": "Strong distributed systems background. Mentioned open to new roles in a comment 3 weeks ago.",
   "profile_fetched_at": "2026-03-24T00:00:00Z"
 }
