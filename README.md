@@ -1,41 +1,60 @@
 # LinkedIn Outreach
 
-Automation and workflow tooling for LinkedIn outreach: a Python project with a **LinkedIn MCP server** (`tools/server.py`) that Claude can call for browser actions and filesystem-backed pipeline state under `outreach/`.
+Automation + workflow tooling for LinkedIn outreach. This repo provides:
 
-## Architecture
+- A **LinkedIn MCP server** (`tools/server.py`) that exposes LinkedIn actions as tools (Playwright attaching to a real Chrome session via CDP).
+- A **queue-draining worker** (`outreach/worker.py`) for “run jobs from JSON queue files” automation.
+- A **message planner** (`outreach/planner.py`) that can generate copy in **API mode** (Anthropic) or **stub mode** (offline).
+- Claude **skills** under `outreach/skills/` that orchestrate end-to-end outreach using MCP tools.
+
+## What you can do
+
+- **Profile data**
+  - `scrape_profile`: quick structured scrape (includes `recent_posts` and also captures `raw_text`)
+  - `parse_profile`: deeper multi-page crawl with a **structured** output (`linkedin.parse_profile/v2`) and activity metrics (no raw page dump)
+- **Connection + messaging**
+  - `send_connection_request` (optional ≤300 char note)
+  - `is_first_degree_connection` (used to promote pending → connected)
+  - `fetch_chat_history`
+  - `send_message`
+- **Content / engagement**
+  - `create_new_post`
+  - `reply_to_post`
+  - `browse_forever` (background “human-like” feed browsing)
+- **Outreach persistence (server-managed filesystem I/O)**
+  - `get_*`, `upsert_*`, `append_*`, `save_connection`, `save_outreach_report`, `remove_pending_queue_entry`
+
+## Architecture (high level)
+
 ```mermaid
-%% LinkedIn Outreach — High-Level Overview
-%% Architecture + 5-step sequence + exit conditions
-
 flowchart TB
+  subgraph ARCH ["System Architecture"]
+    direction LR
+    L1["Claude + Skills\n(outreach/skills/*/SKILL.md)"]
+    L2["MCP Server\nFastMCP\n(tools/server.py)"]
+    L3["Playwright\nAttach to Chrome via CDP\n(outreach/browser.py)"]
+    L4["LinkedIn"]
+    L1 -->|"tool calls"| L2
+    L2 -->|"browser automation"| L3
+    L3 -->|"UI interactions"| L4
+  end
 
-%% ─────────────────────────────────
-%% ARCHITECTURE LAYERS
-%% ─────────────────────────────────
+  subgraph WORKER ["Optional automation path"]
+    direction LR
+    W1["Queue files\n(outreach/queue/*.json)"]
+    W2["Worker\n(outreach/worker.py)"]
+    W3["Planner\n(outreach/planner.py)"]
+    W1 --> W2 --> W3
+  end
 
-subgraph ARCH ["System Architecture"]
-  direction LR
-  L1["Claude + Skills\nOrchestration layer\nReads SKILL.md instructions\nComposes messages"]
-  L2["MCP Server\nFastMCP · Python\n20+ tools exposed\nAbstracts all I/O"]
-  L3["Playwright\nChrome via CDP\nHuman-like delays\nStealth mode"]
-  L4["LinkedIn\nProfiles · DMs\nConnection requests\nFeed · Posts"]
-  L1 -- "tool calls" --> L2
-  L2 -- "browser automation" --> L3
-  L3 -- "HTTP / DOM" --> L4
-end
-
-%% ─────────────────────────────────
-%% DATA LAYER
-%% ─────────────────────────────────
-
-subgraph DATA ["Persistence (via MCP filesystem tools)"]
-  direction LR
-  D1["prospects/\nOne JSON per prospect\nProfile · stage · notes"]
-  D2["conversations/\nOne JSON per thread\nMessages · state machine\nplanned_message"]
-  D3["connections.json\nMaster registry\nstatus · timestamps"]
-  D4["logs/\nactions.jsonl\nplanned_messages.jsonl\nFull audit trail"]
-  D5["storage/reports/\nEnd-of-sequence\nmarkdown reports"]
-end
+  subgraph DATA ["Data (repo-local)"]
+    direction LR
+    D1["outreach/prospects/*.json"]
+    D2["outreach/conversations/*.json"]
+    D3["outreach/connections.json"]
+    D4["outreach/logs/*.jsonl\n(actions + planned messages)"]
+    D5["outreach/storage/reports/*.md"]
+  end
 ```
 
 ## Prerequisites
@@ -43,7 +62,7 @@ end
 - **Python** 3.10 or newer  
 - **[uv](https://docs.astral.sh/uv/)** (recommended) for environments and `uv run`  
 - **Google Chrome** (live mode): used with remote debugging so Playwright can attach  
-- **Claude** desktop app with **Cowork** (or another MCP host that supports stdio MCP servers)
+- **Claude Desktop** (or another MCP host that supports stdio MCP servers)
 - **Make** (for `make install`, `make browser`, etc.)
 
 ### macOS: Install Make
@@ -66,30 +85,81 @@ You can still use **`uv`** commands everywhere if you prefer not to install the 
 
 ## Install the project
 
-From the repository root (this should create uv venv and install chromium):
+From the repository root:
 
 ```bash
 make install
 ```
 
-## Claude Cowork
+This will:
 
-Cowork is the task-oriented workspace in the Claude desktop app. It can use **MCP tools** (including this repo’s LinkedIn server) the same way other Claude surfaces do, as long as the server is registered in your app config.
+- Create/sync the `uv` environment (`uv sync`)
+- Install Playwright’s Chromium runtime (`playwright install chromium`)
 
-Optional **preferences** (example in [`claude_desktop_config.json`](claude_desktop_config.json)):
+## Quickstart (live browser automation)
 
-- `coworkScheduledTasksEnabled` — scheduled tasks in Cowork  
-- `coworkWebSearchEnabled` — web search in Cowork  
-- `sidebarMode` — e.g. `"task"` for task-focused sidebar  
-- `ccdScheduledTasksEnabled` — scheduled tasks for Claude Code Desktop integration, if you use it  
+Day-to-day, the simplest flow is:
 
-Merge any keys you want into your **user** Claude config (see below). Do not commit secrets or machine-specific paths.
+```bash
+make run
+```
 
-## Installing skills
+That will:
 
-Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is its **own directory** with a **`SKILL.md`** file. Those skills assume the **LinkedIn MCP server** is available (see [MCP setup](#mcp-setup)).
+- Start Chrome (if not already running) with a dedicated profile and CDP port.
+- Start the worker in the foreground (`make server`).
 
-**Core skills (this repo):** `conversation-planner`, `send-connection-request`, `sync-pending-connections` — each under `outreach/skills/<name>/`.
+Then log into LinkedIn in the Chrome window (first time per profile) and use either:
+
+- **Claude + MCP tools** (recommended for interactive workflows), or
+- **Queue files + worker** (recommended for batch automation).
+
+## Environment variables
+
+- **LinkedIn browser / worker**
+  - `CDP_URL` (default `http://localhost:9222`)
+  - `POLL_INTERVAL` (seconds, default `5`)
+- **Planner (Anthropic API mode)**
+  - `ANTHROPIC_API_KEY` (required to call the API)
+  - `CLAUDE_MODEL` (default `claude-haiku-4-5-20251001`)
+
+Example: copy `.env.example` to `.env` and fill your values (never commit `.env`).
+
+## Claude Desktop (MCP setup)
+
+Register the MCP server in Claude Desktop.
+
+1. `Settings` → `Developer` → `Edit Config`
+2. Add (or merge) a `linkedin` server entry.
+
+The sample in [`claude_desktop_config.json`](claude_desktop_config.json) matches the expected shape; update paths for your machine:
+
+```json
+{
+  "mcpServers": {
+    "linkedin": {
+      "command": "/absolute/path/to/uv",
+      "args": [
+        "run",
+        "--project",
+        "/absolute/path/to/LinkedIn Outreach",
+        "/absolute/path/to/LinkedIn Outreach/tools/server.py"
+      ]
+    }
+  }
+}
+```
+
+## Installing Claude skills
+
+Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is its **own directory** with a **`SKILL.md`** file. Those skills assume the **LinkedIn MCP server** is available (see [Claude Desktop (MCP setup)](#claude-desktop-mcp-setup)).
+
+**Core skills (this repo):**
+
+- `conversation-planner`
+- `send-connection-request`
+- `sync-pending-connections`
+- `reply-to-post`
 
 ### Claude
 1. `Customize` → `Skills` → `+` → `Create skill` → `Upload a skill`
@@ -121,8 +191,9 @@ You can update config in either way:
 2. Use MCP tools:
    - `get_conversation_planner_config`
    - `upsert_conversation_planner_config`
+   - `sync_conversation_planner_from_linkedin_profile` — scrape the signed-in member (`/in/me/`) or a given profile URL and fill or overwrite `persona` plus `organization.description`
 
-Both are runtime-safe. Planner config is read from disk fresh on each run.
+Both reads/writes are runtime-safe. Planner config is read from disk fresh on each run.
 
 ### Example adjustments
 
@@ -134,36 +205,7 @@ Both are runtime-safe. Planner config is read from disk fresh on each run.
 - Customize terminal reason codes for your pipeline with custom `ended_reason` IDs
   (conversation schema now allows non-empty custom strings).
 
-## MCP setup
-
-### Claude
-1. `Settings` → `Developer` → `Edit Config`
-   - That opens `claude_desktop_config.json`.
-   - On macOS the file usually lives at: `~/Library/Application Support/Claude/claude_desktop_config.json`
-2. Register the LinkedIn MCP server
-   - Replace the placeholders with your `uv` binary path (`which uv`).
-   - Replace the placeholders with your `repo` path (`pwd`)
-```json
-{
-  "mcpServers": {
-    "linkedin": {
-      "command": "/absolute/path/to/uv",
-      "args": [
-        "run",
-        "--project",
-        "/absolute/path/to/LinkedIn-Outreach",
-        "/absolute/path/to/LinkedIn-Outreach/tools/server.py"
-      ]
-    }
-  }
-}
-```
-
-If you already have other MCP servers, merge the `"linkedin"` block into the existing `mcpServers` object instead of replacing the whole file.
-
-The sample in [`claude_desktop_config.json`](claude_desktop_config.json) matches this shape; update every path to match your machine.
-
-## Last Steps:
+## Live mode checklist
 1. Start Chrome with debugging (from the repo root):
 
    ```bash
@@ -172,7 +214,7 @@ The sample in [`claude_desktop_config.json`](claude_desktop_config.json) matches
 
 2. Sign in to LinkedIn in that Chrome window.
 
-3. Use Cowork / Claude with the MCP tools as usual.
+3. Use Claude with the MCP tools as usual.
 
 If Chrome is not running with remote debugging, live tools will fail until `make browser` (or an equivalent launch) is used.
 
@@ -183,11 +225,45 @@ If Chrome is not running with remote debugging, live tools will fail until `make
 
 ### Mock mode (optional, no browser)
 
-For scripted tests without a browser, `tools/server.py` can run in mock mode when `_mock_mcp_enabled()` returns `True` (see the top of that file). In mock mode, tools use `tools/mock.py` instead of Playwright.
+For scripted tests without a browser, `tools/server.py` can run in mock mode when `_mock_mcp_enabled()` returns `True` (see `tools/server.py`). In mock mode, tools use `tools/mock.py` instead of Playwright.
+
+**Note:** in the current repo state, `_mock_mcp_enabled()` is set to **`False`** (live mode).
 
 ---
 
-Reference Makefile targets: `make help` (browser, worker, tests, logs).
+## Operational data layout
+
+- **Queue automation**
+  - `outreach/queue/pending.json`: input queue (worker pops ready jobs)
+  - `outreach/queue/completed.json`: successes
+  - `outreach/queue/failed.json`: failures
+- **Pipeline records**
+  - `outreach/prospects/<prospect_id>.json`
+  - `outreach/conversations/<prospect_id>.json`
+  - `outreach/connections.json` (upserted via MCP `save_connection`)
+- **Audit logs**
+  - `outreach/logs/actions.jsonl`
+  - `outreach/logs/planned_messages.jsonl`
+- **Reports**
+  - `outreach/storage/reports/<prospect_id>.md`
+- **Process logs**
+  - `outreach/logs/worker.log` (stdout/stderr stream from `make server`)
+  - `logs/server.log` (MCP server logger)
+  - `logs/worker.log` (worker logger)
+
+## Useful Make targets
+
+Run `make help` to see all targets. Common ones:
+
+- `make install`: install deps + Playwright chromium
+- `make browser`: start Chrome with CDP enabled
+- `make run`: start Chrome + worker
+- `make server`: start worker only (Chrome must already be running)
+- `make status`: check if Chrome/worker are running
+- `make queue`: pretty-print pending/completed/failed queue JSON
+- `make logs`: tail `outreach/logs/worker.log`
+- `make test`: run exploration tests
+- `make test_conversation`: run conversation-planner tests (needs `ANTHROPIC_API_KEY`)
 
 ## Detailed Workflow Diagram
 ```mermaid
