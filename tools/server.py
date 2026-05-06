@@ -48,6 +48,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
   [all modes — outreach filesystem; paths are resolved inside the server]
     get_connections           Return outreach/connections.json as JSON text.
     get_conversation_planner_config Return runtime planner config JSON.
+    sync_conversation_planner_from_linkedin_profile Fill persona + organization from a LinkedIn profile scrape (defaults to the signed-in member via /in/me/).
     get_prospect              Return outreach/prospects/<id>.json as text.
     get_conversation          Return outreach/conversations/<id>.json as text.
     upsert_conversation_planner_config Write runtime planner config from JSON string.
@@ -72,6 +73,7 @@ import json
 import logging
 import re
 import sys
+import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -614,6 +616,42 @@ async def reply_to_post(
 
 
 @mcp.tool()
+async def download_profile_pdf(
+    profile_url: str,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Download a LinkedIn profile as PDF via the UI action: More → Save to PDF.
+
+    Saves the file to ./profiles/ in the project root and returns JSON:
+      {"ok": true, "profile_url": "...", "filename": "<uuid>.pdf", "path": "..."}
+    """
+    if _mock_mcp_enabled():
+        return json.dumps(
+            {"ok": False, "error": "download_profile_pdf is not supported in mock mode."},
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    filename = f"{uuid.uuid4()}.pdf"
+    save_dir = _ROOT / "profiles"
+
+    logger.info("download_profile_pdf called  url=%s  cdp=%s", profile_url, cdp_url)
+    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+        await li.assert_logged_in()
+        path = await li.download_profile_pdf(profile_url, save_dir=save_dir, filename=filename)
+
+    out = {
+        "ok": True,
+        "profile_url": profile_url.strip(),
+        "filename": filename,
+        "path": str(path),
+    }
+    logger.info("download_profile_pdf finished  file=%s", path)
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
 async def browse_forever(
     reaction: str = "Like",
     cdp_url: str = "http://localhost:9222",
@@ -841,6 +879,110 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
             return "router.signal_routes must be an object"
 
     return None
+
+
+_DEFAULT_ME_PROFILE_URL = "https://www.linkedin.com/in/me/"
+
+
+def _truncate_plain_text(text: str, max_len: int) -> str:
+    s = (text or "").strip()
+    if not s:
+        return ""
+    if len(s) <= max_len:
+        return s
+    if max_len <= 1:
+        return "…"
+    return s[: max_len - 1].rstrip() + "…"
+
+
+def _split_headline_for_persona(headline: str) -> tuple[str, str]:
+    """
+    Best-effort split of a LinkedIn headline into (role, organization).
+    """
+    h = (headline or "").strip()
+    if not h:
+        return "", ""
+    low = h.casefold()
+    for sep in (" at ", " @ "):
+        idx = low.find(sep)
+        if idx > 0:
+            role = h[:idx].strip()
+            org = h[idx + len(sep) :].strip()
+            return role, org
+    for sep in (" | ", " · ", " • "):
+        if sep in h:
+            left, right = h.split(sep, 1)
+            left, right = left.strip(), right.strip()
+            if right:
+                return left, right
+    return h, ""
+
+
+def _persona_and_org_from_scraped_profile(profile: dict) -> tuple[dict, str]:
+    """
+    Map scrape_profile / mock prospect dict → (persona dict, organization.description).
+    """
+    name = str(profile.get("name") or "").strip()
+    headline = str(profile.get("title") or "").strip()
+    about = str(profile.get("about") or "").strip()
+    location = str(profile.get("location") or "").strip()
+
+    role, org = _split_headline_for_persona(headline)
+    if not org and profile.get("company"):
+        org = str(profile.get("company") or "").strip()
+
+    spec_parts = [p for p in (headline, location) if p]
+    specialization = _truncate_plain_text(" · ".join(spec_parts), 400)
+    if about:
+        specialization = _truncate_plain_text(about, 400)
+
+    persona = {
+        "name": name,
+        "role": role or headline,
+        "organization": org,
+        "specialization": specialization,
+    }
+    if about:
+        org_description = _truncate_plain_text(about, 1200)
+    else:
+        bits = [b for b in (name, headline, location) if b]
+        org_description = _truncate_plain_text(" — ".join(bits), 1200)
+    return persona, org_description
+
+
+def _load_planner_config_for_merge() -> dict:
+    if not _PLANNER_CONFIG_PATH.exists():
+        return _default_conversation_planner_config()
+    return json.loads(_PLANNER_CONFIG_PATH.read_text(encoding="utf-8"))
+
+
+def _apply_scraped_to_planner_config(
+    cfg: dict,
+    persona: dict,
+    org_description: str,
+    *,
+    overwrite: bool,
+) -> list[str]:
+    """
+    Mutates cfg in place. Returns list of field paths that were written.
+    """
+    updated: list[str] = []
+    p = cfg.setdefault("persona", {})
+    for key in ("name", "role", "organization", "specialization"):
+        cur = str(p.get(key, "") or "").strip()
+        new_val = str(persona.get(key, "") or "").strip()
+        if not new_val:
+            continue
+        if overwrite or not cur:
+            p[key] = new_val
+            updated.append(f"persona.{key}")
+    o = cfg.setdefault("organization", {})
+    cur_desc = str(o.get("description", "") or "").strip()
+    new_desc = (org_description or "").strip()
+    if new_desc and (overwrite or not cur_desc):
+        o["description"] = new_desc
+        updated.append("organization.description")
+    return updated
 
 
 def _normalize_prospect_id_slug(raw: str | None) -> str | None:
@@ -1263,6 +1405,126 @@ async def upsert_conversation_planner_config(config: str) -> str:
     except Exception as exc:
         logger.exception("upsert_conversation_planner_config failed")
         return f"error: {exc}"
+
+
+@mcp.tool()
+async def sync_conversation_planner_from_linkedin_profile(
+    profile_url: str = "",
+    overwrite: bool = False,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Scrape a LinkedIn **member** profile and copy fields into conversation planner config:
+    ``persona`` (name, role, organization, specialization) and ``organization.description``.
+
+    Use on **first-time setup** when those fields are empty, or whenever the operator asks to
+    **refresh persona from LinkedIn**. With ``overwrite=false`` (default), only blanks are
+    filled; set ``overwrite=true`` to replace existing values.
+
+    **Profile URL:** Pass the full ``https://www.linkedin.com/in/…`` URL for any member,
+    **or omit / leave empty** to use ``https://www.linkedin.com/in/me/`` so the signed-in
+    user's profile opens (LinkedIn redirects to their public profile).
+
+    Prerequisites (live mode): Chrome with CDP attached and LinkedIn logged in —
+    same as ``scrape_profile``.
+
+    Parameters
+    ----------
+    profile_url : str
+        LinkedIn profile to scrape for persona data; empty ⇒ ``/in/me/``.
+    overwrite : bool
+        If true, overwrite non-empty persona and organization.description; if false,
+        only fill missing/empty slots.
+    cdp_url : str
+        Chrome DevTools Protocol endpoint (live mode).
+
+    Returns
+    -------
+    str
+        JSON with ``ok``, ``updated_fields``, ``profile_url_used``, ``persona``,
+        ``organization``, and diagnostics; or ``ok: false`` and ``error``.
+    """
+    effective = (profile_url or "").strip() or _DEFAULT_ME_PROFILE_URL
+    try:
+        if _mock_mcp_enabled():
+            raw = await _mock.handle_scrape_profile(effective)
+            profile = json.loads(raw)
+        else:
+            logger.info(
+                "sync_conversation_planner_from_linkedin_profile  url=%s  overwrite=%s  cdp=%s",
+                effective,
+                overwrite,
+                cdp_url,
+            )
+            async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+                await li.assert_logged_in()
+                profile = await li.scrape_profile(effective)
+                try:
+                    pu = getattr(getattr(li, "_page", None), "url", None)
+                    if pu:
+                        profile["linkedin_url"] = LinkedInBrowser._canonical_in_profile_url(
+                            pu
+                        )
+                except Exception:
+                    pass
+
+        persona, org_desc = _persona_and_org_from_scraped_profile(profile)
+        if not persona.get("name"):
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        "Could not read a profile name from LinkedIn — "
+                        "check login, DOM, or pass an explicit profile_url."
+                    ),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+
+        cfg = _load_planner_config_for_merge()
+        updated_fields = _apply_scraped_to_planner_config(
+            cfg,
+            persona,
+            org_desc,
+            overwrite=overwrite,
+        )
+
+        validation_error = _validate_conversation_planner_config(cfg)
+        if validation_error:
+            return json.dumps(
+                {"ok": False, "error": validation_error},
+                indent=2,
+                ensure_ascii=False,
+            )
+
+        _atomic_write_json(_PLANNER_CONFIG_PATH, cfg)
+        resolved_url = str(profile.get("linkedin_url") or effective).strip()
+        logger.info(
+            "sync_conversation_planner_from_linkedin_profile: wrote planner  "
+            "fields=%s  profile=%s",
+            updated_fields,
+            resolved_url,
+        )
+        return json.dumps(
+            {
+                "ok": True,
+                "profile_url_used": resolved_url,
+                "overwrite": overwrite,
+                "updated_fields": updated_fields,
+                "persona": cfg.get("persona", {}),
+                "organization": cfg.get("organization", {}),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    except Exception as exc:
+        logger.exception("sync_conversation_planner_from_linkedin_profile failed")
+        return json.dumps(
+            {"ok": False, "error": str(exc)},
+            indent=2,
+            ensure_ascii=False,
+        )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

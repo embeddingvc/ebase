@@ -35,6 +35,8 @@ across runs; always read fresh so file edits apply immediately without skill rel
 
 Expected config path (server-managed): `outreach/config/conversation_planner.json`
 
+**Initializing or refreshing persona:** When `persona` is unset, call MCP **`sync_conversation_planner_from_linkedin_profile`** with an empty `profile_url` so the server scrapes `https://www.linkedin.com/in/me/` (redirects to the signed-in member), or pass a full profile URL for someone else’s public profile. Default `overwrite=false` only fills blank fields; pass `overwrite=true` to replace existing values.
+
 Use config fields when composing:
 - `persona.name`, `persona.role`, `persona.organization`, `persona.specialization`
 - `organization.description`
@@ -72,6 +74,7 @@ allows it; rely on documented fields below and MCP-returned JSON.
 | `save_connection` | Upsert one row in the connections list (used heavily by send-connection-request; planner may use after intros). |
 | `append_action_log` | Append one JSON object line to the actions log (`entry` = stringified JSON). |
 | `append_planned_message_log` | Append one PlannedMessage object (`entry` = stringified JSON). |
+| `sync_conversation_planner_from_linkedin_profile` | Pull `persona` + `organization.description` from a LinkedIn scrape (empty `profile_url` ⇒ signed-in user); use `overwrite` to replace vs fill-missing. |
 | `save_outreach_report` | Write markdown body for end-of-sequence reports (`prospect_id`, `content`). |
 | `remove_pending_queue_entry` | Remove a prospect from `pending.json` when the pipeline uses the queue. |
 

@@ -1,4 +1,4 @@
-"""
+r"""
 LinkedIn browser client — Playwright-based.
 
 Handles all LinkedIn UI interactions: login, profile scraping,
@@ -68,6 +68,7 @@ import logging
 import os
 import random
 import re
+import uuid
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2058,6 +2059,72 @@ class LinkedInBrowser:
         dest = save_path / suggested
         await download.save_as(str(dest))
         logger.info("Résumé saved to %s", dest)
+        return dest
+
+    async def download_profile_pdf(
+        self,
+        profile_url: str,
+        *,
+        save_dir: str | Path,
+        filename: str | None = None,
+    ) -> Path:
+        """
+        Download the LinkedIn profile "Save to PDF" export.
+
+        This triggers a browser download via the profile overflow menu.
+        """
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        await self._ensure_profile_tab(profile_url)
+        try:
+            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+            await _human_pause(0.4, 0.9)
+        except Exception:
+            logger.warning("download_profile_pdf: main/workspace not ready for %s", profile_url)
+
+        await self._page.evaluate("window.scrollTo(0, 0)")
+        await _human_mouse_move(self._page)
+        await _human_pause(0.2, 0.4)
+
+        workspace = self._page.locator("main, #workspace")
+
+        # Prefer the accessible overflow action button when present.
+        more_btn = self._page.locator("button[aria-label='More actions']").first
+        if not await more_btn.count():
+            more_btn = workspace.get_by_role("button", name=re.compile(r"^More$", re.I)).first
+        if not await more_btn.count():
+            more_btn = self._page.get_by_role("button", name=re.compile(r"^More$", re.I)).last
+        if not await more_btn.count():
+            raise RuntimeError("Could not find the profile 'More' overflow button.")
+
+        await _human_click(self._page, more_btn)
+        await _human_pause(0.2, 0.4)
+
+        save_pdf = self._page.locator("[aria-label='Save to PDF'][role='button']").first
+        if not await save_pdf.count():
+            save_pdf = self._page.get_by_role("menuitem", name=re.compile(r"Save to PDF", re.I)).first
+        if not await save_pdf.count():
+            save_pdf = self._page.get_by_role("button", name=re.compile(r"Save to PDF", re.I)).first
+        if not await save_pdf.count():
+            save_pdf = self._page.locator("text=Save to PDF").first
+        if not await save_pdf.count():
+            raise RuntimeError("Could not find 'Save to PDF' in the More menu.")
+
+        # Trigger download and persist.
+        async with self._page.expect_download() as dl_info:
+            await _human_click(self._page, save_pdf)
+        download = await dl_info.value
+
+        out_name = (filename or "").strip()
+        if not out_name:
+            out_name = f"{uuid.uuid4()}.pdf"
+        if not out_name.lower().endswith(".pdf"):
+            out_name += ".pdf"
+        dest = save_path / out_name
+
+        await download.save_as(str(dest))
+        logger.info("Profile PDF saved to %s (suggested=%s)", dest, download.suggested_filename)
         return dest
 
     # ── Evidence capture ──────────────────────────────────────────────────────
