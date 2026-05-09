@@ -8,6 +8,8 @@
 #  make test       Run the full exploration test suite
 #  make smoke      Run smoke tests only (no credentials needed)
 #  make install    Install Python dependencies + Playwright browsers
+#  make claude-install   Register MCP + copy repo skills → .claude/skills for Claude Code (https://docs.anthropic.com/en/docs/claude-code)
+#  make claude-cleanup   Undo claude-install (local MCP entry + synced skill dirs)
 #  make logs       Tail the worker output log
 #  make queue      Pretty-print the pending job queue
 #  make status     Show whether Chrome + worker are running
@@ -35,7 +37,11 @@ LOG_DIR  := outreach/logs
 LOG_FILE := $(LOG_DIR)/worker.log
 PID_FILE := outreach/storage/worker.pid
 
-.PHONY: run browser server stop test test_conversation smoke install logs queue status help
+# Claude Code CLI (https://docs.anthropic.com/en/docs/claude-code)
+CLAUDE_MCP_SERVER_NAME := linkedin
+
+.PHONY: run browser server stop test test_conversation smoke install logs queue status help \
+	claude-install claude-cleanup
 
 # ── Default target ────────────────────────────────────────────────────────────
 
@@ -110,6 +116,40 @@ browse: ## Run the human-behaviour session forever (Ctrl-C to stop)
 install: ## Install Python deps + Playwright Chromium browser
 	uv sync
 	uv run playwright install chromium
+
+claude-install: ## Copy outreach/skills → .claude/skills + add stdio MCP (local scope; uses `claude mcp add`)
+	@command -v claude >/dev/null 2>&1 || { printf '%s\n' 'Claude Code CLI not found in PATH. Install: https://docs.anthropic.com/en/docs/claude-code' >&2; exit 1; }
+	@command -v uv >/dev/null 2>&1 || { printf '%s\n' 'uv not found. Run: make install' >&2; exit 1; }
+	@cd "$(CURDIR)" && mkdir -p .claude/skills && for d in outreach/skills/*/; do \
+	  [ -d "$$d" ] || continue; \
+	  n=$$(basename "$$d"); \
+	  mkdir -p ".claude/skills/$$n"; \
+	  if command -v rsync >/dev/null 2>&1; then \
+	    rsync -a --delete "$$d" ".claude/skills/$$n/"; \
+	  else \
+	    rm -rf ".claude/skills/$$n"; mkdir -p ".claude/skills/$$n"; \
+	    cp -a "$${d%/}/." ".claude/skills/$$n/"; \
+	  fi; \
+	done
+	@claude mcp remove --scope local $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
+	@cd "$(CURDIR)" && claude mcp add --transport stdio --scope local $(CLAUDE_MCP_SERVER_NAME) -- \
+	  uv run --project "$(CURDIR)" "$(CURDIR)/tools/server.py"
+	@printf '%s\n' "Claude Code: skill copies under .claude/skills/; MCP '$(CLAUDE_MCP_SERVER_NAME)' (local scope). Check: claude mcp list"
+
+claude-cleanup: ## Remove local MCP entry + skill dirs for repo skills under .claude/skills (also clears project-scoped name if present)
+	@claude mcp remove --scope local $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
+	@cd "$(CURDIR)" && claude mcp remove --scope project $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
+	@cd "$(CURDIR)" && python3 -c "import json, pathlib; p=pathlib.Path('.mcp.json'); \
+	  p.is_file() or exit(); d=json.loads(p.read_text()); \
+	  (not (d.get('mcpServers') or {})) and p.unlink()" 2>/dev/null || true
+	@cd "$(CURDIR)" && for d in outreach/skills/*/; do \
+	  [ -d "$$d" ] || continue; \
+	  n=$$(basename "$$d"); \
+	  rm -rf ".claude/skills/$$n"; \
+	done
+	@rmdir "$(CURDIR)/.claude/skills" 2>/dev/null || true
+	@rmdir "$(CURDIR)/.claude" 2>/dev/null || true
+	@printf '%s\n' "Claude Code: removed MCP '$(CLAUDE_MCP_SERVER_NAME)' (local/project) and repo skill dirs under .claude/skills/"
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
