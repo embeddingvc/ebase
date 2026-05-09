@@ -111,7 +111,10 @@ That will:
 
 Then log into LinkedIn in the Chrome window (first time per profile) and use either:
 
-- **Claude + MCP tools** (recommended for interactive workflows), or
+
+- **Claude CLI** (recommended for installation)
+  - run `make claude-install` to install mcp and skills
+- **Claude + MCP tools** 
 - **Queue files + worker** (recommended for batch automation).
 
 ## Environment variables
@@ -220,6 +223,7 @@ Both reads/writes are runtime-safe. Planner config is read from disk fresh on ea
 If Chrome is not running with remote debugging, live tools will fail until `make browser` (or an equivalent launch) is used.
 
 ### Example Usage
+0. Sync my linkedin conversation plannar persona.
 1. Connect to <linkedin-url>.
 2. Is <linkedin-url> my connection?
 3. Add `Run conversation planner skill` as a scheduled task.
