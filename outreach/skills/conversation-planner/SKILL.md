@@ -35,7 +35,7 @@ across runs; always read fresh so file edits apply immediately without skill rel
 
 Expected config path (server-managed): `outreach/config/conversation_planner.json`
 
-**Initializing or refreshing persona:** When `persona` is unset, call MCP **`sync_conversation_planner_from_linkedin_profile`** with an empty `profile_url` so the server scrapes `https://www.linkedin.com/in/me/` (redirects to the signed-in member), or pass a full profile URL for someone else’s public profile. Default `overwrite=false` only fills blank fields; pass `overwrite=true` to replace existing values.
+**Initializing or refreshing persona from LinkedIn:** Follow the dedicated Skill **`sync-planner-persona-from-linkedin`**: call MCP **`parse_profile`**, synthesize `persona` + `organization` copy from the v2 envelope (experience, education, skills, activity, about), then call **`merge_conversation_planner_identity`** to write only those fields. Do not rely on ad-hoc scraping for a full identity refresh when depth matters.
 
 Use config fields when composing:
 - `persona.name`, `persona.role`, `persona.organization`, `persona.specialization`
@@ -74,7 +74,7 @@ allows it; rely on documented fields below and MCP-returned JSON.
 | `save_connection` | Upsert one row in the connections list (used heavily by send-connection-request; planner may use after intros). |
 | `append_action_log` | Append one JSON object line to the actions log (`entry` = stringified JSON). |
 | `append_planned_message_log` | Append one PlannedMessage object (`entry` = stringified JSON). |
-| `sync_conversation_planner_from_linkedin_profile` | Pull `persona` + `organization.description` from a LinkedIn scrape (empty `profile_url` ⇒ signed-in user); use `overwrite` to replace vs fill-missing. |
+| `merge_conversation_planner_identity` | Shallow-merge `persona` and/or `organization` JSON blobs into planner config after you distill copy (typically following Skill `sync-planner-persona-from-linkedin`). |
 | `save_outreach_report` | Write markdown body for end-of-sequence reports (`prospect_id`, `content`). |
 | `remove_pending_queue_entry` | Remove a prospect from `pending.json` when the pipeline uses the queue. |
 

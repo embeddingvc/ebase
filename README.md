@@ -157,6 +157,7 @@ Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is i
 **Core skills (this repo):**
 
 - `conversation-planner`
+- `sync-planner-persona-from-linkedin`
 - `send-connection-request`
 - `sync-pending-connections`
 - `reply-to-post`
@@ -164,7 +165,7 @@ Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is i
 ### Claude
 1. `Customize` → `Skills` → `+` → `Create skill` → `Upload a skill`
 2. Select the `SKILL.md` files under `outreach/skills/`
-3. Repeat for `conversation-planner`, `send-connection-request`, and `sync-pending-connections`
+3. Repeat for `conversation-planner`, `sync-planner-persona-from-linkedin`, `send-connection-request`, and `sync-pending-connections`
 
 ## Runtime Conversation Planner Config
 
@@ -191,7 +192,7 @@ You can update config in either way:
 2. Use MCP tools:
    - `get_conversation_planner_config`
    - `upsert_conversation_planner_config`
-   - `sync_conversation_planner_from_linkedin_profile` — scrape the signed-in member (`/in/me/`) or a given profile URL and fill or overwrite `persona` plus `organization.description`
+   - `merge_conversation_planner_identity` — shallow-merge LLM-authored `persona` / `organization` JSON after **`parse_profile`** (see Skill `sync-planner-persona-from-linkedin`; the server does not summarize LinkedIn for you).
 
 Both reads/writes are runtime-safe. Planner config is read from disk fresh on each run.
 

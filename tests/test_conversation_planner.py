@@ -585,7 +585,8 @@ def main():
     skill_prompt = load_skill_prompt()
     for required_phrase in (
         "get_conversation_planner_config",
-        "sync_conversation_planner_from_linkedin_profile",
+        "merge_conversation_planner_identity",
+        "sync-planner-persona-from-linkedin",
         "campaign.goal",
         "campaign.topic",
         "conversation_end_goals",

@@ -16,3 +16,10 @@ run(is_first_degree_connection('https://www.linkedin.com/in/daniil-chistoforov/'
 from asyncio import run
 from tools.server import parse_profile
 run(parse_profile('https://www.linkedin.com/in/daniil-chistoforov/'))
+
+from asyncio import run
+from tools.server import merge_conversation_planner_identity
+run(merge_conversation_planner_identity(
+    persona_json='{"name":"Test User","role":"Engineer","organization":"Example Co","specialization":"Testing merge tool."}',
+    organization_json='{"description":"Primary outreach contact works at Example Co."}',
+))

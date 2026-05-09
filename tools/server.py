@@ -48,7 +48,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
   [all modes — outreach filesystem; paths are resolved inside the server]
     get_connections           Return outreach/connections.json as JSON text.
     get_conversation_planner_config Return runtime planner config JSON.
-    sync_conversation_planner_from_linkedin_profile Fill persona + organization from a LinkedIn profile scrape (defaults to the signed-in member via /in/me/).
+    merge_conversation_planner_identity Merge persona / organization blobs into planner JSON (filesystem only; host LLM summarizes first).
     get_prospect              Return outreach/prospects/<id>.json as text.
     get_conversation          Return outreach/conversations/<id>.json as text.
     upsert_conversation_planner_config Write runtime planner config from JSON string.
@@ -881,108 +881,14 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
     return None
 
 
-_DEFAULT_ME_PROFILE_URL = "https://www.linkedin.com/in/me/"
-
-
-def _truncate_plain_text(text: str, max_len: int) -> str:
-    s = (text or "").strip()
-    if not s:
-        return ""
-    if len(s) <= max_len:
-        return s
-    if max_len <= 1:
-        return "…"
-    return s[: max_len - 1].rstrip() + "…"
-
-
-def _split_headline_for_persona(headline: str) -> tuple[str, str]:
-    """
-    Best-effort split of a LinkedIn headline into (role, organization).
-    """
-    h = (headline or "").strip()
-    if not h:
-        return "", ""
-    low = h.casefold()
-    for sep in (" at ", " @ "):
-        idx = low.find(sep)
-        if idx > 0:
-            role = h[:idx].strip()
-            org = h[idx + len(sep) :].strip()
-            return role, org
-    for sep in (" | ", " · ", " • "):
-        if sep in h:
-            left, right = h.split(sep, 1)
-            left, right = left.strip(), right.strip()
-            if right:
-                return left, right
-    return h, ""
-
-
-def _persona_and_org_from_scraped_profile(profile: dict) -> tuple[dict, str]:
-    """
-    Map scrape_profile / mock prospect dict → (persona dict, organization.description).
-    """
-    name = str(profile.get("name") or "").strip()
-    headline = str(profile.get("title") or "").strip()
-    about = str(profile.get("about") or "").strip()
-    location = str(profile.get("location") or "").strip()
-
-    role, org = _split_headline_for_persona(headline)
-    if not org and profile.get("company"):
-        org = str(profile.get("company") or "").strip()
-
-    spec_parts = [p for p in (headline, location) if p]
-    specialization = _truncate_plain_text(" · ".join(spec_parts), 400)
-    if about:
-        specialization = _truncate_plain_text(about, 400)
-
-    persona = {
-        "name": name,
-        "role": role or headline,
-        "organization": org,
-        "specialization": specialization,
-    }
-    if about:
-        org_description = _truncate_plain_text(about, 1200)
-    else:
-        bits = [b for b in (name, headline, location) if b]
-        org_description = _truncate_plain_text(" — ".join(bits), 1200)
-    return persona, org_description
+_ALLOWED_PLANNER_PERSONA_KEYS = frozenset({"name", "role", "organization", "specialization"})
+_ALLOWED_PLANNER_ORGANIZATION_KEYS = frozenset({"description"})
 
 
 def _load_planner_config_for_merge() -> dict:
     if not _PLANNER_CONFIG_PATH.exists():
         return _default_conversation_planner_config()
     return json.loads(_PLANNER_CONFIG_PATH.read_text(encoding="utf-8"))
-
-
-def _apply_scraped_to_planner_config(
-    cfg: dict,
-    persona: dict,
-    org_description: str,
-    *,
-    overwrite: bool,
-) -> list[str]:
-    """
-    Mutates cfg in place. Returns list of field paths that were written.
-    """
-    updated: list[str] = []
-    p = cfg.setdefault("persona", {})
-    for key in ("name", "role", "organization", "specialization"):
-        cur = str(p.get(key, "") or "").strip()
-        new_val = str(persona.get(key, "") or "").strip()
-        if not new_val:
-            continue
-        if overwrite or not cur:
-            p[key] = new_val
-            updated.append(f"persona.{key}")
-    o = cfg.setdefault("organization", {})
-    cur_desc = str(o.get("description", "") or "").strip()
-    new_desc = (org_description or "").strip()
-    if new_desc and (overwrite or not cur_desc):
-        o["description"] = new_desc
-        updated.append("organization.description")
-    return updated
 
 
 def _normalize_prospect_id_slug(raw: str | None) -> str | None:
@@ -1408,74 +1314,83 @@ async def upsert_conversation_planner_config(config: str) -> str:
 
 
 @mcp.tool()
-async def sync_conversation_planner_from_linkedin_profile(
-    profile_url: str = "",
-    overwrite: bool = False,
-    cdp_url: str = "http://localhost:9222",
+async def merge_conversation_planner_identity(
+    persona_json: str = "{}",
+    organization_json: str = "{}",
 ) -> str:
     """
-    Scrape a LinkedIn **member** profile and copy fields into conversation planner config:
-    ``persona`` (name, role, organization, specialization) and ``organization.description``.
+    Shallow-merge ``persona`` and/or ``organization`` into ``conversation_planner.json``.
 
-    Use on **first-time setup** when those fields are empty, or whenever the operator asks to
-    **refresh persona from LinkedIn**. With ``overwrite=false`` (default), only blanks are
-    filled; set ``overwrite=true`` to replace existing values.
+    Intended for Skills / LLM-authored updates: call MCP ``parse_profile`` first (host model
+    reads the v2 envelope), decide ``persona`` + ``organization`` copy, then pass JSON blobs here.
+    Omit keys by passing ``{}``. Unknown keys return an error. ``null`` values are ignored.
 
-    **Profile URL:** Pass the full ``https://www.linkedin.com/in/…`` URL for any member,
-    **or omit / leave empty** to use ``https://www.linkedin.com/in/me/`` so the signed-in
-    user's profile opens (LinkedIn redirects to their public profile).
-
-    Prerequisites (live mode): Chrome with CDP attached and LinkedIn logged in —
-    same as ``scrape_profile``.
+    Does **not** call LinkedIn; only reads current config from disk and writes merged result.
 
     Parameters
     ----------
-    profile_url : str
-        LinkedIn profile to scrape for persona data; empty ⇒ ``/in/me/``.
-    overwrite : bool
-        If true, overwrite non-empty persona and organization.description; if false,
-        only fill missing/empty slots.
-    cdp_url : str
-        Chrome DevTools Protocol endpoint (live mode).
+    persona_json : str
+        JSON object with zero or more of: ``name``, ``role``, ``organization``, ``specialization``.
+    organization_json : str
+        JSON object with zero or more of: ``description`` (other keys rejected).
 
     Returns
     -------
     str
-        JSON with ``ok``, ``updated_fields``, ``profile_url_used``, ``persona``,
-        ``organization``, and diagnostics; or ``ok: false`` and ``error``.
+        JSON ``{ok, path, persona, organization}`` or ``{ok: false, error: ...}``.
     """
-    effective = (profile_url or "").strip() or _DEFAULT_ME_PROFILE_URL
     try:
-        if _mock_mcp_enabled():
-            raw = await _mock.handle_scrape_profile(effective)
-            profile = json.loads(raw)
-        else:
-            logger.info(
-                "sync_conversation_planner_from_linkedin_profile  url=%s  overwrite=%s  cdp=%s",
-                effective,
-                overwrite,
-                cdp_url,
-            )
-            async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-                await li.assert_logged_in()
-                profile = await li.scrape_profile(effective)
-                try:
-                    pu = getattr(getattr(li, "_page", None), "url", None)
-                    if pu:
-                        profile["linkedin_url"] = LinkedInBrowser._canonical_in_profile_url(
-                            pu
-                        )
-                except Exception:
-                    pass
+        pj = persona_json.strip() or "{}"
+        oj = organization_json.strip() or "{}"
 
-        persona, org_desc = _persona_and_org_from_scraped_profile(profile)
-        if not persona.get("name"):
+        persona_patch = json.loads(pj)
+        org_patch = json.loads(oj)
+        if not isinstance(persona_patch, dict):
+            return json.dumps(
+                {"ok": False, "error": "persona_json must be a JSON object"},
+                indent=2,
+                ensure_ascii=False,
+            )
+        if not isinstance(org_patch, dict):
+            return json.dumps(
+                {"ok": False, "error": "organization_json must be a JSON object"},
+                indent=2,
+                ensure_ascii=False,
+            )
+
+        bad_p = sorted(set(persona_patch) - _ALLOWED_PLANNER_PERSONA_KEYS)
+        if bad_p:
             return json.dumps(
                 {
                     "ok": False,
                     "error": (
-                        "Could not read a profile name from LinkedIn — "
-                        "check login, DOM, or pass an explicit profile_url."
+                        "persona_json has unknown keys: "
+                        + ", ".join(repr(k) for k in bad_p)
+                    ),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        bad_o = sorted(set(org_patch) - _ALLOWED_PLANNER_ORGANIZATION_KEYS)
+        if bad_o:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        "organization_json has unknown keys: "
+                        + ", ".join(repr(k) for k in bad_o)
+                    ),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+
+        if not persona_patch and not org_patch:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        "at least one of persona_json or organization_json must be a non-empty object"
                     ),
                 },
                 indent=2,
@@ -1483,12 +1398,56 @@ async def sync_conversation_planner_from_linkedin_profile(
             )
 
         cfg = _load_planner_config_for_merge()
-        updated_fields = _apply_scraped_to_planner_config(
-            cfg,
-            persona,
-            org_desc,
-            overwrite=overwrite,
-        )
+        updated: list[str] = []
+
+        if persona_patch:
+            pnode = cfg.setdefault("persona", {})
+            for key, val in persona_patch.items():
+                if val is None:
+                    continue
+                if not isinstance(val, str):
+                    return json.dumps(
+                        {
+                            "ok": False,
+                            "error": f"persona.{key} must be a string (or null to skip)",
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                pnode[key] = val.strip()
+                updated.append(f"persona.{key}")
+
+        if org_patch:
+            onode = cfg.setdefault("organization", {})
+            for key, val in org_patch.items():
+                if val is None:
+                    continue
+                if not isinstance(val, str):
+                    return json.dumps(
+                        {
+                            "ok": False,
+                            "error": (
+                                "organization.description must be a string (or null to skip)"
+                            ),
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                onode[key] = val.strip()
+                updated.append(f"organization.{key}")
+
+        if not updated:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        "no string fields applied — omit null placeholders or pass at least "
+                        "one non-empty persona/organization field"
+                    ),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
 
         validation_error = _validate_conversation_planner_config(cfg)
         if validation_error:
@@ -1499,27 +1458,30 @@ async def sync_conversation_planner_from_linkedin_profile(
             )
 
         _atomic_write_json(_PLANNER_CONFIG_PATH, cfg)
-        resolved_url = str(profile.get("linkedin_url") or effective).strip()
         logger.info(
-            "sync_conversation_planner_from_linkedin_profile: wrote planner  "
-            "fields=%s  profile=%s",
-            updated_fields,
-            resolved_url,
+            "merge_conversation_planner_identity: wrote %s keys=%s",
+            _PLANNER_CONFIG_PATH,
+            updated,
         )
         return json.dumps(
             {
                 "ok": True,
-                "profile_url_used": resolved_url,
-                "overwrite": overwrite,
-                "updated_fields": updated_fields,
+                "path": str(_PLANNER_CONFIG_PATH),
+                "updated_fields": updated,
                 "persona": cfg.get("persona", {}),
                 "organization": cfg.get("organization", {}),
             },
             indent=2,
             ensure_ascii=False,
         )
+    except json.JSONDecodeError as exc:
+        return json.dumps(
+            {"ok": False, "error": f"invalid JSON: {exc}"},
+            indent=2,
+            ensure_ascii=False,
+        )
     except Exception as exc:
-        logger.exception("sync_conversation_planner_from_linkedin_profile failed")
+        logger.exception("merge_conversation_planner_identity failed")
         return json.dumps(
             {"ok": False, "error": str(exc)},
             indent=2,
