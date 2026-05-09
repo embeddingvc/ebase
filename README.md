@@ -172,16 +172,21 @@ Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is i
 
 ## Runtime Conversation Planner Config
 
-The `conversation-planner` skill supports live runtime configuration from:
+The `conversation-planner` skill supports live runtime configuration from two files (the MCP tool **`get_conversation_planner_config`** returns them merged as one JSON):
 
-- `outreach/config/conversation_planner.json`
+- `outreach/config/conversation_planner.json` — campaign, end goals, message rules, router (tracked in git)
+- `outreach/config/persona.json` — operator **`persona`** and **`organization`** (gitignored; copy from `outreach/config/persona.json.example`)
 
-This file controls:
+`conversation_planner.json` controls:
 
-- outreach persona/profile (`persona`)
 - campaign goal + topic (`campaign`)
 - preferred conversation end outcomes (`conversation_end_goals`)
 - message limits/rules (`message_rules`)
+- routing (`router`)
+
+`persona.json` controls:
+
+- outreach persona/profile (`persona`) and org framing (`organization`)
 
 ### Why this matters
 
@@ -191,13 +196,13 @@ You can change planner behavior (for example profile identity, end-state intent,
 
 You can update config in either way:
 
-1. Edit `outreach/config/conversation_planner.json` directly.
+1. Edit `outreach/config/conversation_planner.json` and/or `outreach/config/persona.json` directly (create `persona.json` from `persona.json.example` if you do not have one).
 2. Use MCP tools:
-   - `get_conversation_planner_config`
-   - `upsert_conversation_planner_config`
-   - `merge_conversation_planner_identity` — shallow-merge LLM-authored `persona` / `organization` JSON after **`parse_profile`** (see Skill `sync-planner-persona-from-linkedin`; the server does not summarize LinkedIn for you).
+   - `get_conversation_planner_config` — merged view of both files
+   - `upsert_conversation_planner_config` — replace **`conversation_planner.json` only** (payload must not include `persona` / `organization`)
+   - `merge_conversation_planner_identity` — shallow-merge LLM-authored `persona` / `organization` into **`persona.json`** after **`parse_profile`** (see Skill `sync-planner-persona-from-linkedin`; the server does not summarize LinkedIn for you).
 
-Both reads/writes are runtime-safe. Planner config is read from disk fresh on each run.
+Reads/writes are runtime-safe. Config is read from disk fresh on each MCP call.
 
 ### Example adjustments
 

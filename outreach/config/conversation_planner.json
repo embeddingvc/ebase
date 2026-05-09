@@ -1,13 +1,4 @@
 {
-  "persona": {
-    "name": "Nova Chen",
-    "role": "virtual team member",
-    "organization": "Embedding VC",
-    "specialization": "AI research and operations"
-  },
-  "organization": {
-    "description": "We back early-stage AI startups and connect top talent with great AI companies."
-  },
   "campaign": {
     "goal": "Recruit strong AI and software talent for portfolio opportunities.",
     "topic": "AI startup opportunities and career exploration",

@@ -1,13 +1,13 @@
 ---
 name: sync-planner-persona-from-linkedin
-description: Refresh conversation planner identity from LinkedIn by calling MCP parse_profile (structured crawl), synthesizing persona and organization prose in your reasoning, then writing config via merge_conversation_planner_identity (never heuristic server-side summarization). Use when the operator sets up persona, syncs from their profile, or wants specialization/description grounded in experience, education, skills, and activity.
+description: Refresh planner identity in outreach/config/persona.json from LinkedIn by calling MCP parse_profile (structured crawl), synthesizing persona and organization prose in your reasoning, then merge_conversation_planner_identity (never heuristic server-side summarization). Use when the operator sets up persona, syncs from their profile, or wants specialization/description grounded in experience, education, skills, and activity.
 ---
 
 # Sync Planner Persona From LinkedIn
 
-Align `outreach/config/conversation_planner.json` **persona** and **organization** with a LinkedIn member profile using **`parse_profile`** for data and **`merge_conversation_planner_identity`** for persistence. Summarization is done **by you** (the Skill / model), not inside the MCP server.
+Align **`outreach/config/persona.json`** (**`persona`** and **`organization`**) with a LinkedIn member profile using **`parse_profile`** for data and **`merge_conversation_planner_identity`** for persistence. Summarization is done **by you** (the Skill / model), not inside the MCP server.
 
-**Filesystem rule:** Never read or write `outreach/config/` via raw paths or shell. Use **`get_conversation_planner_config`**, **`merge_conversation_planner_identity`**, or full **`upsert_conversation_planner_config`** through MCP only.
+**Filesystem rule:** Never read or write `outreach/config/` via raw paths or shell. Use **`get_conversation_planner_config`** (merged read), **`merge_conversation_planner_identity`** (identity write), or **`upsert_conversation_planner_config`** for the **non-identity** planner file only through MCP.
 
 ---
 
@@ -94,7 +94,7 @@ Call **`get_conversation_planner_config`** and ensure `persona` / `organization`
 | `parse_profile` | Source of truth for experience, education, skills, activity, about |
 | `merge_conversation_planner_identity` | Safe partial write of identity fields |
 | `get_conversation_planner_config` | Read-back / optional pre-merge context |
-| `upsert_conversation_planner_config` | Only if the operator needs to replace the **entire** planner file (avoid for routine identity sync) |
+| `upsert_conversation_planner_config` | Only if the operator needs to replace the **entire** `conversation_planner.json` (campaign / rules / router — **not** persona; avoid for routine identity sync) |
 
 Do **not** use **`scrape_profile`** alone for this Skill when you need skills/education/activity depth — use **`parse_profile`**.
 
@@ -102,4 +102,4 @@ Do **not** use **`scrape_profile`** alone for this Skill when you need skills/ed
 
 ## Campaign block
 
-Do **not** overwrite `campaign`, `message_rules`, or `router` unless the operator asks. **`merge_conversation_planner_identity`** touches only `persona` and `organization`.
+Do **not** overwrite `campaign`, `message_rules`, or `router` unless the operator asks. **`merge_conversation_planner_identity`** writes only **`persona.json`** (`persona` + `organization`); it never edits `conversation_planner.json`.

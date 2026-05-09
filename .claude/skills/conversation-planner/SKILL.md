@@ -33,9 +33,13 @@ Before planning any message, call MCP tool `get_conversation_planner_config` and
 the source of truth for operator profile, campaign goal/topic, and desired end states. Do not cache
 across runs; always read fresh so file edits apply immediately without skill reload or server restart.
 
-Expected config path (server-managed): `outreach/config/conversation_planner.json`
+Server-managed files:
+- Planner (campaign, end goals, message rules, router): `outreach/config/conversation_planner.json`
+- Operator identity (**`persona`**, **`organization`**): `outreach/config/persona.json` (typically gitignored — copy `persona.json.example` locally)
 
-**Initializing or refreshing persona from LinkedIn:** Follow the dedicated Skill **`sync-planner-persona-from-linkedin`**: call MCP **`parse_profile`**, synthesize `persona` + `organization` copy from the v2 envelope (experience, education, skills, activity, about), then call **`merge_conversation_planner_identity`** to write only those fields. Do not rely on ad-hoc scraping for a full identity refresh when depth matters.
+The MCP **`get_conversation_planner_config`** response merges both so you always have one JSON with `persona` + `organization` + the rest.
+
+**Initializing or refreshing persona from LinkedIn:** Follow the dedicated Skill **`sync-planner-persona-from-linkedin`**: call MCP **`parse_profile`**, synthesize `persona` + `organization` copy from the v2 envelope (experience, education, skills, activity, about), then call **`merge_conversation_planner_identity`** to persist into **`persona.json`** only those fields. Do not rely on ad-hoc scraping for a full identity refresh when depth matters.
 
 Use config fields when composing:
 - `persona.name`, `persona.role`, `persona.organization`, `persona.specialization`
@@ -74,7 +78,7 @@ allows it; rely on documented fields below and MCP-returned JSON.
 | `save_connection` | Upsert one row in the connections list (used heavily by send-connection-request; planner may use after intros). |
 | `append_action_log` | Append one JSON object line to the actions log (`entry` = stringified JSON). |
 | `append_planned_message_log` | Append one PlannedMessage object (`entry` = stringified JSON). |
-| `merge_conversation_planner_identity` | Shallow-merge `persona` and/or `organization` JSON blobs into planner config after you distill copy (typically following Skill `sync-planner-persona-from-linkedin`). |
+| `merge_conversation_planner_identity` | Shallow-merge `persona` and/or `organization` JSON blobs into `outreach/config/persona.json` after you distill copy (typically following Skill `sync-planner-persona-from-linkedin`). |
 | `save_outreach_report` | Write markdown body for end-of-sequence reports (`prospect_id`, `content`). |
 | `remove_pending_queue_entry` | Remove a prospect from `pending.json` when the pipeline uses the queue. |
 

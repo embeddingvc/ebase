@@ -48,7 +48,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
   [all modes — outreach filesystem; paths are resolved inside the server]
     get_connections           Return outreach/connections.json as JSON text.
     get_conversation_planner_config Return runtime planner config JSON.
-    merge_conversation_planner_identity Merge persona / organization blobs into planner JSON (filesystem only; host LLM summarizes first).
+    merge_conversation_planner_identity Merge persona / organization into outreach/config/persona.json (filesystem only; host LLM summarizes first).
     get_prospect              Return outreach/prospects/<id>.json as text.
     get_conversation          Return outreach/conversations/<id>.json as text.
     upsert_conversation_planner_config Write runtime planner config from JSON string.
@@ -69,6 +69,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import re
@@ -736,9 +737,14 @@ def _iso_now() -> str:
 
 
 _PLANNER_CONFIG_PATH = _ROOT / "outreach" / "config" / "conversation_planner.json"
+_PERSONA_PATH = _ROOT / "outreach" / "config" / "persona.json"
+
+_ALLOWED_PLANNER_PERSONA_KEYS = frozenset({"name", "role", "organization", "specialization"})
+_ALLOWED_PLANNER_ORGANIZATION_KEYS = frozenset({"description"})
 
 
-def _default_conversation_planner_config() -> dict:
+def _default_planner_identity() -> dict:
+    """Default persona + organization when persona.json is missing or partial."""
     return {
         "persona": {
             "name": "Nova Chen",
@@ -751,6 +757,62 @@ def _default_conversation_planner_config() -> dict:
                 "We back early-stage AI startups and connect top talent with great AI companies."
             ),
         },
+    }
+
+
+def _load_planner_identity() -> dict:
+    """
+    Load merged identity for MCP responses and merges.
+
+    Reads ``outreach/config/persona.json`` when present (gitignored per clone);
+    unknown keys are ignored. Missing inner keys are filled from defaults.
+    """
+    base = copy.deepcopy(_default_planner_identity())
+    if not _PERSONA_PATH.exists():
+        return base
+    try:
+        data = json.loads(_PERSONA_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.exception("_load_planner_identity: invalid or unreadable %s", _PERSONA_PATH)
+        return base
+    if not isinstance(data, dict):
+        return base
+    p_raw = data.get("persona")
+    o_raw = data.get("organization")
+    if isinstance(p_raw, dict):
+        for key, val in p_raw.items():
+            if key in _ALLOWED_PLANNER_PERSONA_KEYS and isinstance(val, str):
+                base["persona"][key] = val
+            elif key in _ALLOWED_PLANNER_PERSONA_KEYS and val is None:
+                continue
+    if isinstance(o_raw, dict):
+        for key, val in o_raw.items():
+            if key in _ALLOWED_PLANNER_ORGANIZATION_KEYS and isinstance(val, str):
+                base["organization"][key] = val
+            elif key in _ALLOWED_PLANNER_ORGANIZATION_KEYS and val is None:
+                continue
+    return base
+
+
+def _strip_legacy_identity_from_core(cfg: dict) -> None:
+    """Drop persona/organization from on-disk planner JSON (legacy placement)."""
+    cfg.pop("persona", None)
+    cfg.pop("organization", None)
+
+
+def _compose_public_planner_config(core: dict) -> dict:
+    """Merge core planner fields with identity for get_conversation_planner_config."""
+    identity = _load_planner_identity()
+    return {
+        "persona": identity["persona"],
+        "organization": identity["organization"],
+        **core,
+    }
+
+
+def _default_conversation_planner_config() -> dict:
+    """Planner defaults without persona (those live in persona.json)."""
+    return {
         "campaign": {
             "goal": "Recruit strong AI and software talent for portfolio opportunities.",
             "topic": "AI startup opportunities and career exploration",
@@ -777,8 +839,8 @@ def _default_conversation_planner_config() -> dict:
             ],
         },
         "message_rules": {
-            "connection_note_char_limit": 300,
-            "followup_char_limit": 500,
+            "connection_note_char_limit": 200,
+            "followup_char_limit": 300,
             "must_include_first_name": True,
             "banned_phrases": [
                 "I came across your profile",
@@ -825,9 +887,14 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
     if not isinstance(config, dict):
         return "config must be a JSON object"
 
+    if "persona" in config or "organization" in config:
+        return (
+            "persona and organization are stored in outreach/config/persona.json; "
+            "remove them from this payload and use merge_conversation_planner_identity, "
+            "or edit persona.json directly"
+        )
+
     for key in (
-        "persona",
-        "organization",
         "campaign",
         "conversation_end_goals",
         "message_rules",
@@ -879,16 +946,6 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
             return "router.signal_routes must be an object"
 
     return None
-
-
-_ALLOWED_PLANNER_PERSONA_KEYS = frozenset({"name", "role", "organization", "specialization"})
-_ALLOWED_PLANNER_ORGANIZATION_KEYS = frozenset({"description"})
-
-
-def _load_planner_config_for_merge() -> dict:
-    if not _PLANNER_CONFIG_PATH.exists():
-        return _default_conversation_planner_config()
-    return json.loads(_PLANNER_CONFIG_PATH.read_text(encoding="utf-8"))
 
 
 def _normalize_prospect_id_slug(raw: str | None) -> str | None:
@@ -1276,17 +1333,31 @@ async def remove_pending_queue_entry(prospect_id: str) -> str:
 @mcp.tool()
 async def get_conversation_planner_config() -> str:
     """
-    Read outreach/config/conversation_planner.json from the project root.
+    Read planner config from outreach/config/conversation_planner.json and identity
+    from outreach/config/persona.json (optional; defaults apply if absent).
 
-    Returns the current planner runtime config. Reads from disk on every call so
-    manual file edits are reflected immediately.
+    Returns a single merged JSON object (persona + organization + campaign, rules,
+    router) so callers keep one MCP read. Reads from disk on every call so manual
+    edits are reflected immediately.
     """
     try:
         if not _PLANNER_CONFIG_PATH.exists():
-            default_cfg = _default_conversation_planner_config()
-            _atomic_write_json(_PLANNER_CONFIG_PATH, default_cfg)
-            return json.dumps(default_cfg, indent=2, ensure_ascii=False) + "\n"
-        return _PLANNER_CONFIG_PATH.read_text(encoding="utf-8")
+            core = _default_conversation_planner_config()
+            _atomic_write_json(_PLANNER_CONFIG_PATH, core)
+        else:
+            core = json.loads(_PLANNER_CONFIG_PATH.read_text(encoding="utf-8"))
+            if not isinstance(core, dict):
+                return (
+                    "error: "
+                    + str(_PLANNER_CONFIG_PATH)
+                    + " must contain a JSON object at top level"
+                )
+            _strip_legacy_identity_from_core(core)
+        err = _validate_conversation_planner_config(core)
+        if err:
+            return f"error: {err}"
+        merged = _compose_public_planner_config(core)
+        return json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
     except Exception as exc:
         logger.exception("get_conversation_planner_config failed")
         return f"error: {exc}"
@@ -1297,6 +1368,8 @@ async def upsert_conversation_planner_config(config: str) -> str:
     """
     Write outreach/config/conversation_planner.json from JSON string input.
 
+    Does not accept ``persona`` or ``organization`` — those live in
+    ``outreach/config/persona.json`` (see ``merge_conversation_planner_identity``).
     Performs lightweight structural validation and writes atomically so runtime
     reads always see a complete file.
     """
@@ -1319,13 +1392,13 @@ async def merge_conversation_planner_identity(
     organization_json: str = "{}",
 ) -> str:
     """
-    Shallow-merge ``persona`` and/or ``organization`` into ``conversation_planner.json``.
+    Shallow-merge ``persona`` and/or ``organization`` into ``outreach/config/persona.json``.
 
     Intended for Skills / LLM-authored updates: call MCP ``parse_profile`` first (host model
     reads the v2 envelope), decide ``persona`` + ``organization`` copy, then pass JSON blobs here.
     Omit keys by passing ``{}``. Unknown keys return an error. ``null`` values are ignored.
 
-    Does **not** call LinkedIn; only reads current config from disk and writes merged result.
+    Does **not** call LinkedIn; only merges into ``persona.json`` (fills missing fields from defaults).
 
     Parameters
     ----------
@@ -1397,7 +1470,7 @@ async def merge_conversation_planner_identity(
                 ensure_ascii=False,
             )
 
-        cfg = _load_planner_config_for_merge()
+        cfg = _load_planner_identity()
         updated: list[str] = []
 
         if persona_patch:
@@ -1449,24 +1522,16 @@ async def merge_conversation_planner_identity(
                 ensure_ascii=False,
             )
 
-        validation_error = _validate_conversation_planner_config(cfg)
-        if validation_error:
-            return json.dumps(
-                {"ok": False, "error": validation_error},
-                indent=2,
-                ensure_ascii=False,
-            )
-
-        _atomic_write_json(_PLANNER_CONFIG_PATH, cfg)
+        _atomic_write_json(_PERSONA_PATH, cfg)
         logger.info(
             "merge_conversation_planner_identity: wrote %s keys=%s",
-            _PLANNER_CONFIG_PATH,
+            _PERSONA_PATH,
             updated,
         )
         return json.dumps(
             {
                 "ok": True,
-                "path": str(_PLANNER_CONFIG_PATH),
+                "path": str(_PERSONA_PATH),
                 "updated_fields": updated,
                 "persona": cfg.get("persona", {}),
                 "organization": cfg.get("organization", {}),

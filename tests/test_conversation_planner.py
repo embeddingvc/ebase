@@ -573,12 +573,16 @@ def main():
     else:
         with open(PLANNER_CONFIG_PATH) as f:
             cfg = json.load(f)
+        for forbidden in ("persona", "organization"):
+            if forbidden in cfg:
+                static_failures.append(
+                    f"{forbidden} must live in outreach/config/persona.json, not conversation_planner.json"
+                )
         for required_key in (
-            "persona",
-            "organization",
             "campaign",
             "conversation_end_goals",
             "message_rules",
+            "router",
         ):
             if required_key not in cfg:
                 static_failures.append(f"Config missing key: {required_key}")
