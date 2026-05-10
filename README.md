@@ -83,6 +83,22 @@ Apple ships **GNU Make** with the Xcode Command Line Tools. If `make --version` 
 
 You can still use **`uv`** commands everywhere if you prefer not to install the Command Line Tools; `make` is only a convenience wrapper around those commands.
 
+## One-command install (clone, deps, MCP, skills, Chrome)
+
+From any directory, download and run the installer (uses [bash](https://www.gnu.org/software/bash/)):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/huangruoqi/LinkedIn-Outreach/main/install.sh | bash
+```
+
+By default this clones or updates the repo at **`~/LinkedIn-Outreach`**. Override the directory with **`LINKEDIN_OUTREACH_DIR`**, the remote URL with **`LINKEDIN_OUTREACH_REPO`** (for forks), or **`git clone`** the repo and run **`./install.sh`** from the repository root so an existing clone is used instead.
+
+The script does **not** require **Make** (suitable for a fresh Mac before Xcode Command Line Tools). It:
+
+- Installs **[uv](https://docs.astral.sh/uv/)** if it is missing, then runs **`uv sync`** and **`playwright install chromium`** (same as **`make install`**).
+- If the **[Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI** (`claude`) is on your **`PATH`**, registers the LinkedIn stdio MCP server (same as **`make claude-install`**; skills live under **`.claude/skills/`** in the repo). If `claude` is not installed, it prints the exact shell commands to run later.
+- Launches **Google Chrome** on macOS at the default path with remote debugging (CDP) on port **9222** (same idea as **`make browser`). **Sign in to LinkedIn in that Chrome window.** Playwright automation attaches to that live Chrome session.
+
 ## Install the project
 
 From the repository root:
@@ -90,6 +106,8 @@ From the repository root:
 ```bash
 make install
 ```
+
+Or use **`./install.sh`** from the repo root (skips cloning; uses **`uv`** and **`claude`** only—no **Make**).
 
 This will:
 
