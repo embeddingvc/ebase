@@ -11,11 +11,11 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     simulates complete conversations from connection request to end state.
 
     Workflow:
-      1. list_test_cases()                    — see available scenarios
-      2. load_test_case(id, profile_url)      — reset and configure a session
-      3. send_connection_request(url, note)   — opens the conversation
-      4. [conversation-planner skill loop]    — fetch → plan → send, repeat
-      5. get_mock_state(url)                  — inspect progress at any point
+      1. send_connection_request(url, note)   — opens the conversation
+      2. [conversation-planner skill loop]    — fetch → plan → send, repeat
+
+    Test code configures scenarios via tools/mock.py (e.g. handle_load_test_case);
+    those helpers are not exposed as MCP tools.
 
   LIVE MODE  (_mock_mcp_enabled() returns False)
     Drives a real Chrome browser via Playwright CDP.
@@ -27,11 +27,6 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
       uv run tools/server.py
 
 ── Tools ─────────────────────────────────────────────────────────────────────
-
-  [mock-only management]
-    list_test_cases           List built-in test cases with descriptions.
-    load_test_case            Load / reset a test case for a profile URL.
-    get_mock_state            Inspect current session state for debugging.
 
   [all modes — LinkedIn actions]
     scrape_profile            Scrape a profile → structured JSON.
@@ -124,85 +119,6 @@ _browse_lock = asyncio.Lock()
 def _mock_mcp_enabled() -> bool:
     """Return True to run in mock mode (no browser, scripted responses)."""
     return False
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# MOCK-ONLY MANAGEMENT TOOLS
-# ═════════════════════════════════════════════════════════════════════════════
-
-@mcp.tool()
-async def list_test_cases() -> str:
-    """
-    [MOCK ONLY] Return all available built-in test cases.
-
-    Each entry includes the test case ID, a plain-English description of the
-    scenario, the expected end condition (resume_shared / not_interested /
-    timeout), and the number of scripted prospect replies.
-
-    Returns
-    -------
-    str
-        JSON array of test case summaries.
-    """
-    return await _mock.handle_list_test_cases()
-
-
-@mcp.tool()
-async def load_test_case(
-    test_case_id: str,
-    profile_url: str,
-) -> str:
-    """
-    [MOCK ONLY] Load (or reset) a predefined test case for a profile URL.
-
-    Optional if you want the default Alex Chen ``happy_path`` scenario (auto-created on first
-    LinkedIn tool call for that URL).  Required to use any other scenario.  Calling it again
-    on the same URL resets the session from scratch.
-
-    Available test case IDs
-    -----------------------
-    happy_path      4-turn conversation; prospect shares resume at the end.
-    not_interested  Prospect declines politely after the connection note.
-    no_reply        Prospect replies once then goes silent (timeout scenario).
-    ghosted_cold    Prospect never accepts the connection request.
-    eager_referral  Prospect is actively job-seeking; shares resume by turn 2.
-
-    Call list_test_cases() for full descriptions and reply counts.
-
-    Parameters
-    ----------
-    test_case_id : str
-        One of the IDs listed above.
-    profile_url : str
-        The LinkedIn profile URL to associate with this session.
-
-    Returns
-    -------
-    str
-        Confirmation with a human-readable summary of the loaded scenario.
-    """
-    return await _mock.handle_load_test_case(test_case_id, profile_url)
-
-
-@mcp.tool()
-async def get_mock_state(profile_url: str) -> str:
-    """
-    [MOCK ONLY] Inspect the current conversation state for a profile URL.
-
-    Returns session metadata: test case ID, messages sent, history length,
-    remaining scripted replies, and a preview of the full conversation so far.
-
-    Parameters
-    ----------
-    profile_url : str
-        The LinkedIn profile URL to inspect.
-
-    Returns
-    -------
-    str
-        JSON object with session state and history preview.
-    """
-    return await _mock.handle_get_mock_state(profile_url)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -500,7 +416,7 @@ async def fetch_chat_history(
 
     In mock mode: returns the accumulated conversation history for that URL (starts empty
     until ``send_connection_request`` / ``send_message``).  Default session uses the Alex Chen
-    ``happy_path`` script unless ``load_test_case`` chose another scenario.
+    ``happy_path`` script unless tests preconfigured another scenario via ``mock.handle_load_test_case``.
 
     Parameters
     ----------
@@ -1561,10 +1477,8 @@ if __name__ == "__main__":
         logger.warning(
             "LinkedIn MCP server starting in MOCK MODE — "
             "no browser actions are performed; responses use the Alex Chen happy_path fixture by default.\n"
-            "  • list_test_cases()              — view available scenarios\n"
-            "  • load_test_case(id, url)        — optional; switch from default happy_path\n"
             "  • send_connection_request(url)   — begin the conversation\n"
             "  • [conversation-planner loop]    — fetch → plan → send\n"
-            "  • get_mock_state(url)            — inspect progress at any time"
+            "  Test scenarios: use tools/mock.py (handle_load_test_case, etc.); not MCP tools."
         )
     mcp.run(transport="stdio")

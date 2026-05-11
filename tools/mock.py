@@ -7,9 +7,9 @@ MCP.  :func:`handle_parse_profile` imports small slot-formatting helpers from
 other handlers stay free of Playwright.
 
 LinkedIn tool mocks (``scrape_profile``, ``is_first_degree_connection``, ``send_connection_request``,
-``send_message``, ``fetch_chat_history``) always centre on the ``_ALEX_CHEN`` fixture: if ``load_test_case``
-was not called, a session is auto-created from ``happy_path``, which uses that prospect
-and its scripted replies. Other scenarios still require ``load_test_case`` first.
+``send_message``, ``fetch_chat_history``) always centre on the ``_ALEX_CHEN`` fixture: if
+``handle_load_test_case`` was not used first (tests only), a session is auto-created from ``happy_path``,
+which uses that prospect and its scripted replies. Other scenarios require ``handle_load_test_case`` first.
 
 Public surface
 ──────────────
@@ -22,10 +22,10 @@ Public surface
     normalise_url(url)                   → str
     get_session(profile_url)             → MockSession | None
 
-  Async handlers (one per MCP tool, called by server.py when in mock mode)
-    handle_list_test_cases()             → str
-    handle_load_test_case(id, url)       → str
-    handle_get_mock_state(url)           → str
+  Async handlers (called by server.py when in mock mode; test-only helpers are not MCP tools)
+    handle_list_test_cases()             → str   (tests / inspection only)
+    handle_load_test_case(id, url)       → str   (tests / inspection only)
+    handle_get_mock_state(url)           → str   (tests / inspection only)
     handle_scrape_profile(url)           → str
     handle_parse_profile(url)          → str
     handle_is_first_degree_connection(url) → str
@@ -99,7 +99,7 @@ _ALEX_CHEN: dict[str, Any] = {
     "scraped_at": "2026-03-24T00:00:00Z",
 }
 
-# Default mock persona for all LinkedIn tools when ``load_test_case`` was not called first.
+# Default mock persona for all LinkedIn tools when ``handle_load_test_case`` was not called first.
 # ``happy_path`` uses ``_ALEX_CHEN`` as its prospect and scripted replies.
 _DEFAULT_MOCK_TEST_CASE_ID = "happy_path"
 
@@ -340,7 +340,7 @@ def get_session(profile_url: str) -> MockSession | None:
 def ensure_default_mock_session(profile_url: str) -> MockSession:
     """
     Return the session for profile_url, creating one from ``_DEFAULT_MOCK_TEST_CASE_ID``
-    (``happy_path`` → _ALEX_CHEN) if ``load_test_case`` was never called.
+    (``happy_path`` → _ALEX_CHEN) if ``handle_load_test_case`` was never called.
     """
     key = normalise_url(profile_url)
     existing = sessions.get(key)
@@ -425,7 +425,7 @@ async def handle_load_test_case(test_case_id: str, profile_url: str) -> str:
         return (
             f"Unknown test case '{test_case_id}'.\n"
             f"Available: {available}\n"
-            "Call list_test_cases() for full details."
+            "Use await handle_list_test_cases() for full details."
         )
 
     tc = TEST_CASES[test_case_id]
@@ -435,7 +435,7 @@ async def handle_load_test_case(test_case_id: str, profile_url: str) -> str:
         profile_url=profile_url,
         connection_accepted=tc["connection_accepted"],
     )
-    logger.info("load_test_case  test_case=%s  profile=%s", test_case_id, profile_url)
+    logger.info("handle_load_test_case  test_case=%s  profile=%s", test_case_id, profile_url)
 
     replies = tc.get("replies", [])
     total = len(replies)
@@ -461,7 +461,7 @@ async def handle_get_mock_state(profile_url: str) -> str:
             {
                 "error": (
                     f"No mock session found for {profile_url!r}. "
-                    "Call load_test_case first."
+                    "Call await handle_load_test_case(...) first."
                 )
             },
             indent=2,
@@ -714,7 +714,7 @@ async def handle_send_connection_request(profile_url: str, note: str) -> str:
     if session.messages_sent > 0:
         return (
             "[MOCK] Connection request already sent for this session. "
-            "Call load_test_case to reset."
+            "Call await handle_load_test_case(...) with the same URL to reset."
         )
 
     logger.info(
