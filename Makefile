@@ -40,7 +40,7 @@ PID_FILE := outreach/storage/worker.pid
 # Claude Code CLI (https://docs.anthropic.com/en/docs/claude-code)
 CLAUDE_MCP_SERVER_NAME := linkedin
 # Canonical skill directories (tracked in git); override with make SKILL_SRC=path/to/skills
-SKILL_SRC := .claude/skills
+SKILL_SRC := outreach/skills
 # Claude Code global skills dir (default claude-install syncs project skills here)
 USER_CLAUDE_SKILLS := $(HOME)/.claude/skills
 # Set LOCAL=1 or CLAUDE_INSTALL_LOCAL=1 for project-only MCP (--scope local) and no copy to $(USER_CLAUDE_SKILLS)

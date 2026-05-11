@@ -7,7 +7,7 @@ Each test run is saved as a dated log file in outreach/logs/.
 
 Run:
     # Requires ANTHROPIC_API_KEY (in .env or exported) and the skill copy under
-    # .claude/skills (run `make claude-install` from the repo root once).
+    # outreach/skills (run `make claude-install` from the repo root once).
     cd <project-root>
     uv run python tests/test_conversation_planner.py
 
@@ -34,7 +34,9 @@ except ImportError:
 
 BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES_DIR = os.path.join(BASE_DIR, "tests", "fixtures", "conversation-planner")
-SKILL_PATH   = os.path.join(BASE_DIR, ".claude", "skills", "conversation-planner", "SKILL.md")
+SKILL_PATH   = os.path.join(
+    BASE_DIR, "outreach", "skills", "conversation-planner", "SKILL.md"
+)
 LOGS_DIR     = os.path.join(BASE_DIR, "outreach", "logs")
 PLANNER_CONFIG_PATH = os.path.join(
     BASE_DIR, "outreach", "config", "conversation_planner.json"

@@ -102,7 +102,7 @@ By default this clones or updates the repo at **`~/LinkedIn-Outreach`**. Overrid
 The script does **not** require **Make** (suitable for a fresh Mac before Xcode Command Line Tools). It:
 
 - Installs **[uv](https://docs.astral.sh/uv/)** if it is missing, then runs **`uv sync`** and **`playwright install chromium`** (same as **`make install`**).
-- **Default:** registers the LinkedIn MCP with Claude Code **`--scope user`** (all projects; stored in **`~/.claude.json`**). Copies each skill under **`.claude/skills/<name>/`** (with **`SKILL.md`**) into **`~/.claude/skills/<name>/`**. Set **`LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0`** to skip the skill copy only.
+- **Default:** registers the LinkedIn MCP with Claude Code **`--scope user`** (all projects; stored in **`~/.claude.json`**). Copies each skill under **`outreach/skills/<name>/`** (with **`SKILL.md`**) into **`~/.claude/skills/<name>/`**. Set **`LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0`** to skip the skill copy only.
 - **`--local`** (or **`LINKEDIN_OUTREACH_INSTALL_LOCAL=1`**): MCP **`--scope local`** only (this absolute project path); **does not** copy skills to **`~/.claude/skills`**. Same idea as **`make claude-install LOCAL=1`**.
 - If **`claude`** is missing, it prints next steps. **`./install.sh --help`** lists options.
 - Launches **Google Chrome** on macOS at the default path with remote debugging (CDP) on port **9222** (same idea as **`make browser`). **Sign in to LinkedIn in that Chrome window.** Playwright automation attaches to that live Chrome session.
@@ -140,7 +140,7 @@ Then log into LinkedIn in the Chrome window (first time per profile) and use eit
 
 - **Claude CLI** (recommended for installation)
   - **`make claude-install`** — default: **`--scope user`** MCP + sync skills to **`~/.claude/skills`**
-  - **`make claude-install LOCAL=1`** — **`--scope local`** MCP only; skills stay under **`.claude/skills/`** in the repo
+  - **`make claude-install LOCAL=1`** — **`--scope local`** MCP only; skills stay under **`outreach/skills/`** in the repo
 - **Claude + MCP tools** 
 - **Queue files + worker** (recommended for batch automation).
 

@@ -14,7 +14,7 @@ DEFAULT_DIR="${LINKEDIN_OUTREACH_DIR:-${HOME}/LinkedIn-Outreach}"
 CDP_PORT="${CDP_PORT:-9222}"
 CHROME_PROFILE="${CHROME_PROFILE:-${HOME}/.linkedin-chrome-profile}"
 CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
-SKILL_SRC="${SKILL_SRC:-.claude/skills}"
+SKILL_SRC="${SKILL_SRC:-outreach/skills}"
 USER_CLAUDE_SKILLS="${USER_CLAUDE_SKILLS:-${HOME}/.claude/skills}"
 # Set to 0 to skip copying skills into ~/.claude/skills (ignored when --local / INSTALL_LOCAL)
 LINKEDIN_OUTREACH_SYNC_SKILLS_HOME="${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME:-1}"
@@ -30,17 +30,18 @@ Usage: install.sh [options]
 
   Default (global):
     - Register LinkedIn MCP with Claude Code --scope user (available in all projects).
-    - Copy repo skills (.claude/skills/<name>/) → ~/.claude/skills/<name>/ (unless disabled).
+    - Copy repo skills (outreach/skills/<name>/) → ~/.claude/skills/<name>/ (unless disabled).
 
   --local
     - Register MCP with --scope local only (this absolute project path in ~/.claude.json).
-    - Do not copy skills to ~/.claude/skills (repo .claude/skills only).
+    - Do not copy skills to ~/.claude/skills (repo outreach/skills only).
 
   Environment (same as --local when set to 1):
     LINKEDIN_OUTREACH_INSTALL_LOCAL=1
 
   Other:
     LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
+    SKILL_SRC   Override repo skill directory (default: outreach/skills).
     LINKEDIN_OUTREACH_DIR, LINKEDIN_OUTREACH_REPO, USER_CLAUDE_SKILLS, …
 
   curl | bash with flags:
