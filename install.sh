@@ -2,6 +2,9 @@
 # LinkedIn Outreach — clone (if needed), Python env + Playwright Chromium,
 # Claude Code MCP registration, and Chrome with CDP for LinkedIn sign-in.
 # Does not require GNU Make (friendly to a fresh macOS install).
+#
+# Default: Claude MCP --scope user (all projects); sync skills → ~/.claude/skills
+#   ./install.sh --local  → MCP --scope local (this project path only); no home skill sync
 set -euo pipefail
 
 REPO_URL="${LINKEDIN_OUTREACH_REPO:-https://github.com/huangruoqi/LinkedIn-Outreach.git}"
@@ -12,9 +15,60 @@ CDP_PORT="${CDP_PORT:-9222}"
 CHROME_PROFILE="${CHROME_PROFILE:-${HOME}/.linkedin-chrome-profile}"
 CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
 SKILL_SRC="${SKILL_SRC:-.claude/skills}"
+USER_CLAUDE_SKILLS="${USER_CLAUDE_SKILLS:-${HOME}/.claude/skills}"
+# Set to 0 to skip copying skills into ~/.claude/skills (ignored when --local / INSTALL_LOCAL)
+LINKEDIN_OUTREACH_SYNC_SKILLS_HOME="${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME:-1}"
+# 1 = MCP local scope + project skills only (same as ./install.sh --local)
+INSTALL_LOCAL="${LINKEDIN_OUTREACH_INSTALL_LOCAL:-0}"
 
 info() { printf '%s\n' "[install] $*"; }
 warn() { printf '%s\n' "[install] $*" >&2; }
+
+usage() {
+  cat <<'EOF'
+Usage: install.sh [options]
+
+  Default (global):
+    - Register LinkedIn MCP with Claude Code --scope user (available in all projects).
+    - Copy repo skills (.claude/skills/<name>/) → ~/.claude/skills/<name>/ (unless disabled).
+
+  --local
+    - Register MCP with --scope local only (this absolute project path in ~/.claude.json).
+    - Do not copy skills to ~/.claude/skills (repo .claude/skills only).
+
+  Environment (same as --local when set to 1):
+    LINKEDIN_OUTREACH_INSTALL_LOCAL=1
+
+  Other:
+    LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
+    LINKEDIN_OUTREACH_DIR, LINKEDIN_OUTREACH_REPO, USER_CLAUDE_SKILLS, …
+
+  curl | bash with flags:
+    curl -fsSL …/install.sh | bash -s -- --local
+
+  -h, --help   Show this message.
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --local)
+        INSTALL_LOCAL=1
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *)
+        warn "Unknown option: $1"
+        usage >&2
+        exit 1
+        ;;
+    esac
+  done
+}
 
 repo_root_from_pyproject() {
   local dir="$1"
@@ -71,7 +125,6 @@ ensure_repo() {
   REPO_ROOT="${DEFAULT_DIR}"
 }
 
-# Equivalent to: make install  (uv sync + playwright install chromium)
 install_project_deps() {
   cd "${REPO_ROOT}"
   info "Installing Python dependencies and Playwright Chromium…"
@@ -79,31 +132,78 @@ install_project_deps() {
   uv run playwright install chromium
 }
 
-# Equivalent to: make claude-install  (stdio MCP; skills live in SKILL_SRC)
+sync_claude_skills_to_home() {
+  if [[ "${INSTALL_LOCAL}" == "1" ]]; then
+    info "Skipping sync to ${USER_CLAUDE_SKILLS} (--local / INSTALL_LOCAL: project ${SKILL_SRC}/ only)"
+    return 0
+  fi
+  [[ "${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME}" == "1" ]] || {
+    info "Skipping sync to ${USER_CLAUDE_SKILLS} (LINKEDIN_OUTREACH_SYNC_SKILLS_HOME != 1)"
+    return 0
+  }
+
+  local src="${REPO_ROOT}/${SKILL_SRC}"
+  if [[ ! -d "${src}" ]]; then
+    warn "Skill source missing: ${src}"
+    return 0
+  fi
+
+  mkdir -p "${USER_CLAUDE_SKILLS}"
+  local synced=0
+  local d n
+  shopt -s nullglob
+  for d in "${src}"/*/; do
+    [[ -d "${d}" ]] || continue
+    [[ -f "${d}/SKILL.md" ]] || continue
+    n="$(basename "${d}")"
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a --delete "${d}" "${USER_CLAUDE_SKILLS}/${n}/"
+    else
+      rm -rf "${USER_CLAUDE_SKILLS}/${n}"
+      mkdir -p "${USER_CLAUDE_SKILLS}/${n}"
+      cp -a "${d}/." "${USER_CLAUDE_SKILLS}/${n}/"
+    fi
+    synced=$((synced + 1))
+  done
+  shopt -u nullglob
+
+  if [[ "${synced}" -eq 0 ]]; then
+    warn "No skill directories with SKILL.md under ${src}"
+  else
+    info "Synced ${synced} skill(s) → ${USER_CLAUDE_SKILLS}/"
+  fi
+}
+
 register_claude_mcp() {
   cd "${REPO_ROOT}"
   if ! command -v claude >/dev/null 2>&1; then
     printf '\n%s\n\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     warn "Claude Code CLI ('claude') is not installed or not on PATH."
-    warn "Install Claude Code, then register the MCP server from this repo:"
-    warn "  cd \"${REPO_ROOT}\""
-    warn "  mkdir -p \"${SKILL_SRC}\""
-    warn "  claude mcp remove --scope local ${CLAUDE_MCP_SERVER_NAME} 2>/dev/null || true"
-    warn "  claude mcp add --transport stdio --scope local ${CLAUDE_MCP_SERVER_NAME} -- \\"
-    warn "    uv run --project \"${REPO_ROOT}\" \"${REPO_ROOT}/tools/server.py\""
+    warn "After installing Claude Code, from this repo run:"
+    warn "  cd \"${REPO_ROOT}\" && ./install.sh              # user MCP + skills → ~/.claude/skills"
+    warn "  cd \"${REPO_ROOT}\" && ./install.sh --local     # local MCP; skills stay in repo only"
+    warn "  # or: make claude-install   /   make claude-install LOCAL=1"
     warn "Docs: https://docs.anthropic.com/en/docs/claude-code"
     printf '%s\n\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     return 0
   fi
 
   mkdir -p "${REPO_ROOT}/${SKILL_SRC}"
+  claude mcp remove --scope user "${CLAUDE_MCP_SERVER_NAME}" 2>/dev/null || true
   claude mcp remove --scope local "${CLAUDE_MCP_SERVER_NAME}" 2>/dev/null || true
-  claude mcp add --transport stdio --scope local "${CLAUDE_MCP_SERVER_NAME}" -- \
-    uv run --project "${REPO_ROOT}" "${REPO_ROOT}/tools/server.py"
-  info "Claude Code: MCP '${CLAUDE_MCP_SERVER_NAME}' registered (local scope). Skills: ${SKILL_SRC}/ — check: claude mcp list"
+  claude mcp remove --scope project "${CLAUDE_MCP_SERVER_NAME}" 2>/dev/null || true
+
+  if [[ "${INSTALL_LOCAL}" == "1" ]]; then
+    claude mcp add --transport stdio --scope local "${CLAUDE_MCP_SERVER_NAME}" -- \
+      uv run --project "${REPO_ROOT}" "${REPO_ROOT}/tools/server.py"
+    info "Claude Code: MCP '${CLAUDE_MCP_SERVER_NAME}' (--scope local, this project path only). Check: claude mcp list"
+  else
+    claude mcp add --transport stdio --scope user "${CLAUDE_MCP_SERVER_NAME}" -- \
+      uv run --project "${REPO_ROOT}" "${REPO_ROOT}/tools/server.py"
+    info "Claude Code: MCP '${CLAUDE_MCP_SERVER_NAME}' (--scope user, all projects). Check: claude mcp list"
+  fi
 }
 
-# Resolve Chrome: macOS default install path first (fresh Mac), then Linux common names.
 chrome_binary() {
   local mac_chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
   if [[ "$(uname -s)" == "Darwin" ]] && [[ -x "${mac_chrome}" ]]; then
@@ -125,7 +225,6 @@ chrome_binary() {
   printf ''
 }
 
-# Equivalent to: make browser
 launch_chrome_cdp() {
   local chrome
   chrome="$(chrome_binary)"
@@ -159,14 +258,27 @@ main() {
   REPO_ROOT="$(cd "${REPO_ROOT}" && pwd)"
   export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 
+  if [[ "${INSTALL_LOCAL}" == "1" ]]; then
+    info "Mode: --local (MCP local scope; skills not copied to ${USER_CLAUDE_SKILLS})"
+  else
+    info "Mode: global (MCP user scope; skills → ${USER_CLAUDE_SKILLS})"
+  fi
+
   install_project_deps
+  sync_claude_skills_to_home
   register_claude_mcp
   launch_chrome_cdp
 
   info "Setup finished."
   info "Repo: ${REPO_ROOT}"
   info "Optional: cp .env.example .env"
-  info "Day-to-day you can use Make from the repo if you install Xcode CLI tools: make run, make browser, …"
+  if [[ "${INSTALL_LOCAL}" == "1" ]]; then
+    info "Open this exact folder as the workspace so local MCP matches ~/.claude.json."
+  else
+    info "LinkedIn MCP is registered for all projects; skills are under ${USER_CLAUDE_SKILLS}/."
+  fi
+  info "Day-to-day you can use Make if you install Xcode CLI tools: make run, make browser, …"
 }
 
-main "$@"
+parse_args "$@"
+main

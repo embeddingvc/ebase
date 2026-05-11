@@ -8,8 +8,8 @@
 #  make test       Run the full exploration test suite
 #  make smoke      Run smoke tests only (no credentials needed)
 #  make install    Install Python dependencies + Playwright browsers
-#  make claude-install   Register MCP for Claude Code (skills live in $(SKILL_SRC); https://docs.anthropic.com/en/docs/claude-code)
-#  make claude-cleanup   Undo claude-install (local MCP entry only; skills under $(SKILL_SRC) are not removed)
+#  make claude-install   Sync skills + register MCP (default: user scope + ~/.claude/skills; LOCAL=1: local MCP only)
+#  make claude-cleanup   Remove linkedin MCP from user/local/project scopes; does not delete skill dirs
 #  make logs       Tail the worker output log
 #  make queue      Pretty-print the pending job queue
 #  make status     Show whether Chrome + worker are running
@@ -41,6 +41,13 @@ PID_FILE := outreach/storage/worker.pid
 CLAUDE_MCP_SERVER_NAME := linkedin
 # Canonical skill directories (tracked in git); override with make SKILL_SRC=path/to/skills
 SKILL_SRC := .claude/skills
+# Claude Code global skills dir (default claude-install syncs project skills here)
+USER_CLAUDE_SKILLS := $(HOME)/.claude/skills
+# Set LOCAL=1 or CLAUDE_INSTALL_LOCAL=1 for project-only MCP (--scope local) and no copy to $(USER_CLAUDE_SKILLS)
+CLAUDE_INSTALL_LOCAL ?= 0
+ifneq ($(LOCAL),)
+override CLAUDE_INSTALL_LOCAL := $(LOCAL)
+endif
 
 .PHONY: run browser server stop test test_conversation smoke install logs queue status help \
 	claude-install claude-cleanup
@@ -119,22 +126,47 @@ install: ## Install Python deps + Playwright Chromium browser
 	uv sync
 	uv run playwright install chromium
 
-claude-install: ## Ensure $(SKILL_SRC) exists + add stdio MCP (local scope; uses `claude mcp add`)
+claude-install: ## Default: sync $(SKILL_SRC) → $(USER_CLAUDE_SKILLS) + MCP --scope user | LOCAL=1: local MCP only, no home sync
 	@command -v claude >/dev/null 2>&1 || { printf '%s\n' 'Claude Code CLI not found in PATH. Install: https://docs.anthropic.com/en/docs/claude-code' >&2; exit 1; }
 	@command -v uv >/dev/null 2>&1 || { printf '%s\n' 'uv not found. Run: make install' >&2; exit 1; }
 	@mkdir -p "$(CURDIR)/$(SKILL_SRC)"
+	@if [ "$(CLAUDE_INSTALL_LOCAL)" = "1" ]; then \
+	  printf '%s\n' "[claude-install] LOCAL=1: MCP --scope local; skills stay in $(SKILL_SRC)/ only"; \
+	else \
+	  mkdir -p "$(USER_CLAUDE_SKILLS)"; \
+	  cd "$(CURDIR)" && for d in $(SKILL_SRC)/*/; do \
+	    [ -d "$$d" ] || continue; \
+	    [ -f "$$d/SKILL.md" ] || continue; \
+	    n=$$(basename "$$d"); \
+	    if command -v rsync >/dev/null 2>&1; then \
+	      rsync -a --delete "$$d" "$(USER_CLAUDE_SKILLS)/$$n/"; \
+	    else \
+	      rm -rf "$(USER_CLAUDE_SKILLS)/$$n"; mkdir -p "$(USER_CLAUDE_SKILLS)/$$n"; \
+	      cp -a "$${d%/}/." "$(USER_CLAUDE_SKILLS)/$$n/"; \
+	    fi; \
+	  done; \
+	fi
+	@claude mcp remove --scope user $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
 	@claude mcp remove --scope local $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
-	@cd "$(CURDIR)" && claude mcp add --transport stdio --scope local $(CLAUDE_MCP_SERVER_NAME) -- \
-	  uv run --project "$(CURDIR)" "$(CURDIR)/tools/server.py"
-	@printf '%s\n' "Claude Code: skills in $(SKILL_SRC)/; MCP '$(CLAUDE_MCP_SERVER_NAME)' (local scope). Check: claude mcp list"
+	@cd "$(CURDIR)" && claude mcp remove --scope project $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
+	@if [ "$(CLAUDE_INSTALL_LOCAL)" = "1" ]; then \
+	  cd "$(CURDIR)" && claude mcp add --transport stdio --scope local $(CLAUDE_MCP_SERVER_NAME) -- \
+	    uv run --project "$(CURDIR)" "$(CURDIR)/tools/server.py"; \
+	  printf '%s\n' "Claude Code: MCP '$(CLAUDE_MCP_SERVER_NAME)' (--scope local). Check: claude mcp list"; \
+	else \
+	  cd "$(CURDIR)" && claude mcp add --transport stdio --scope user $(CLAUDE_MCP_SERVER_NAME) -- \
+	    uv run --project "$(CURDIR)" "$(CURDIR)/tools/server.py"; \
+	  printf '%s\n' "Claude Code: synced skills → $(USER_CLAUDE_SKILLS)/; MCP '$(CLAUDE_MCP_SERVER_NAME)' (--scope user). Check: claude mcp list"; \
+	fi
 
-claude-cleanup: ## Remove local MCP entry (also clears project-scoped name if present); does not delete $(SKILL_SRC)
+claude-cleanup: ## Remove linkedin MCP from user/local/project scopes; does not delete $(SKILL_SRC) or $(USER_CLAUDE_SKILLS)
+	@claude mcp remove --scope user $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
 	@claude mcp remove --scope local $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
 	@cd "$(CURDIR)" && claude mcp remove --scope project $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
 	@cd "$(CURDIR)" && python3 -c "import json, pathlib; p=pathlib.Path('.mcp.json'); \
 	  p.is_file() or exit(); d=json.loads(p.read_text()); \
 	  (not (d.get('mcpServers') or {})) and p.unlink()" 2>/dev/null || true
-	@printf '%s\n' "Claude Code: removed MCP '$(CLAUDE_MCP_SERVER_NAME)' (local/project); left $(SKILL_SRC)/ untouched"
+	@printf '%s\n' "Claude Code: removed MCP '$(CLAUDE_MCP_SERVER_NAME)' (user/local/project); left $(SKILL_SRC)/ and $(USER_CLAUDE_SKILLS)/ untouched"
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
