@@ -57,8 +57,31 @@ flowchart TB
   end
 ```
 
-## Prerequisites
+## One-command install (clone, deps, MCP, skills, Chrome)
 
+From any directory, download and run the installer (uses [bash](https://www.gnu.org/software/bash/)):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/huangruoqi/LinkedIn-Outreach/main/install.sh | bash
+```
+
+Project-only MCP and no copy of skills to your home directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/huangruoqi/LinkedIn-Outreach/main/install.sh | bash -s -- --local
+```
+
+By default this clones or updates the repo at **`~/LinkedIn-Outreach`**. Override the directory with **`LINKEDIN_OUTREACH_DIR`**, the remote URL with **`LINKEDIN_OUTREACH_REPO`** (for forks), or **`git clone`** the repo and run **`./install.sh`** from the repository root so an existing clone is used instead.
+
+The script does **not** require **Make** (suitable for a fresh Mac before Xcode Command Line Tools). It:
+
+- Installs **[uv](https://docs.astral.sh/uv/)** if it is missing, then runs **`uv sync`** and **`playwright install chromium`** (same as **`make install`**).
+- **Default:** registers the LinkedIn MCP with Claude Code **`--scope user`** (all projects; stored in **`~/.claude.json`**). Copies each skill under **`outreach/skills/<name>/`** (with **`SKILL.md`**) into **`~/.claude/skills/<name>/`**. Set **`LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0`** to skip the skill copy only.
+- **`--local`** (or **`LINKEDIN_OUTREACH_INSTALL_LOCAL=1`**): MCP **`--scope local`** only (this absolute project path); **does not** copy skills to **`~/.claude/skills`**. Same idea as **`make claude-install LOCAL=1`**.
+- If **`claude`** is missing, it prints next steps. **`./install.sh --help`** lists options.
+- Launches **Google Chrome** on macOS at the default path with remote debugging (CDP) on port **9222** (same idea as **`make browser`). **Sign in to LinkedIn in that Chrome window.** Playwright automation attaches to that live Chrome session.
+
+## Manual Install Prerequisites
 - **Python** 3.10 or newer  
 - **[uv](https://docs.astral.sh/uv/)** (recommended) for environments and `uv run`  
 - **Google Chrome** (live mode): used with remote debugging so Playwright can attach  
@@ -83,29 +106,6 @@ Apple ships **GNU Make** with the Xcode Command Line Tools. If `make --version` 
 
 You can still use **`uv`** commands everywhere if you prefer not to install the Command Line Tools; `make` is only a convenience wrapper around those commands.
 
-## One-command install (clone, deps, MCP, skills, Chrome)
-
-From any directory, download and run the installer (uses [bash](https://www.gnu.org/software/bash/)):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/huangruoqi/LinkedIn-Outreach/main/install.sh | bash
-```
-
-Project-only MCP and no copy of skills to your home directory:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/huangruoqi/LinkedIn-Outreach/main/install.sh | bash -s -- --local
-```
-
-By default this clones or updates the repo at **`~/LinkedIn-Outreach`**. Override the directory with **`LINKEDIN_OUTREACH_DIR`**, the remote URL with **`LINKEDIN_OUTREACH_REPO`** (for forks), or **`git clone`** the repo and run **`./install.sh`** from the repository root so an existing clone is used instead.
-
-The script does **not** require **Make** (suitable for a fresh Mac before Xcode Command Line Tools). It:
-
-- Installs **[uv](https://docs.astral.sh/uv/)** if it is missing, then runs **`uv sync`** and **`playwright install chromium`** (same as **`make install`**).
-- **Default:** registers the LinkedIn MCP with Claude Code **`--scope user`** (all projects; stored in **`~/.claude.json`**). Copies each skill under **`outreach/skills/<name>/`** (with **`SKILL.md`**) into **`~/.claude/skills/<name>/`**. Set **`LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0`** to skip the skill copy only.
-- **`--local`** (or **`LINKEDIN_OUTREACH_INSTALL_LOCAL=1`**): MCP **`--scope local`** only (this absolute project path); **does not** copy skills to **`~/.claude/skills`**. Same idea as **`make claude-install LOCAL=1`**.
-- If **`claude`** is missing, it prints next steps. **`./install.sh --help`** lists options.
-- Launches **Google Chrome** on macOS at the default path with remote debugging (CDP) on port **9222** (same idea as **`make browser`). **Sign in to LinkedIn in that Chrome window.** Playwright automation attaches to that live Chrome session.
 
 ## Install the project
 
