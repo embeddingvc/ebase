@@ -10,6 +10,7 @@
 #  make install    Install Python dependencies + Playwright browsers
 #  make claude-install   Sync skills + register MCP (default: user scope + ~/.claude/skills; LOCAL=1: local MCP only)
 #  make claude-cleanup   Remove linkedin MCP from user/local/project scopes; does not delete skill dirs
+#  make web          Claude cowork-style web UI wrapping `claude -p` (localhost)
 #  make logs       Tail the worker output log
 #  make queue      Pretty-print the pending job queue
 #  make status     Show whether Chrome + worker are running
@@ -36,6 +37,8 @@ endif
 LOG_DIR  := outreach/logs
 LOG_FILE := $(LOG_DIR)/worker.log
 PID_FILE := outreach/storage/worker.pid
+WEB_HOST ?= 127.0.0.1
+WEB_PORT ?= 3847
 
 # Claude Code CLI (https://docs.anthropic.com/en/docs/claude-code)
 CLAUDE_MCP_SERVER_NAME := linkedin
@@ -49,7 +52,7 @@ ifneq ($(LOCAL),)
 override CLAUDE_INSTALL_LOCAL := $(LOCAL)
 endif
 
-.PHONY: run browser server stop test test_conversation smoke install logs queue status help \
+.PHONY: run browser server stop test test_conversation smoke install logs queue status help web \
 	claude-install claude-cleanup
 
 # ── Default target ────────────────────────────────────────────────────────────
@@ -197,6 +200,10 @@ status: ## Show whether Chrome + worker are currently running
 	else \
 	  echo "  ❌  Not running  (start with: make server)"; \
 	fi
+
+web: ## Start Claude cowork web UI (WEB_HOST / WEB_PORT)
+	@echo "[web] http://$(WEB_HOST):$(WEB_PORT)/"
+	@cd "$(CURDIR)" && uv run uvicorn web.server:app --host "$(WEB_HOST)" --port "$(WEB_PORT)"
 
 help: ## List all targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
