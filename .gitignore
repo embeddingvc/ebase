@@ -27,5 +27,9 @@ outreach/logs/actions.jsonl
 outreach/connections.json
 outreach/generated/
 
+# gstack (installed per-machine via git clone + setup)
+.claude/skills/gstack
+CLAUDE.md
+
 # Claude Code project-scoped MCP (paths are machine-specific; created by install.sh / make claude-install)
 .mcp.json
