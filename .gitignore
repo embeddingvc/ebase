@@ -20,6 +20,9 @@ logs/
 # Local outreach identity (copy persona.json.example → persona.json)
 outreach/config/persona.json
 
+# Outreach action logs
+outreach/logs/actions.jsonl
+
 # Local generated/user-specific outreach data
 outreach/connections.json
 outreach/generated/
