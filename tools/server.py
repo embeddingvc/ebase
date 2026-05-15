@@ -41,19 +41,22 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     browse_forever            Start a background human-like browsing session.
 
   [all modes — outreach filesystem; paths are resolved inside the server]
-    get_connections           Return outreach/connections.json as JSON text.
+    Same relative layout as under outreach/; in MOCK MODE data is rooted at
+    outreach/mock/ so tests do not write into the live outreach/ tree.
+
+    get_connections           Return .../connections.json as JSON text.
     get_conversation_planner_config Return runtime planner config JSON.
-    merge_conversation_planner_identity Merge persona / organization into outreach/config/persona.json (filesystem only; host LLM summarizes first).
-    get_prospect              Return outreach/prospects/<id>.json as text.
-    get_conversation          Return outreach/conversations/<id>.json as text.
+    merge_conversation_planner_identity Merge persona / organization into .../config/persona.json (filesystem only; host LLM summarizes first).
+    get_prospect              Return .../prospects/<id>.json as text.
+    get_conversation          Return .../conversations/<id>.json as text.
     upsert_conversation_planner_config Write runtime planner config from JSON string.
-    upsert_prospect           Write outreach/prospects/<id>.json from JSON string.
-    save_connection           Upsert one row in outreach/connections.json.
-    upsert_conversation       Write outreach/conversations/<id>.json from JSON string.
-    append_action_log         Append one JSON line to outreach/logs/actions.jsonl.
+    upsert_prospect           Write .../prospects/<id>.json from JSON string.
+    save_connection           Upsert one row in .../connections.json.
+    upsert_conversation       Write .../conversations/<id>.json from JSON string.
+    append_action_log         Append one JSON line to .../logs/actions.jsonl.
     append_planned_message_log Append one JSON line to planned_messages.jsonl.
-    save_outreach_report      Write outreach/storage/reports/<id>.md.
-    remove_pending_queue_entry Remove a prospect from outreach/queue/pending.json.
+    save_outreach_report      Write .../storage/reports/<id>.md.
+    remove_pending_queue_entry Remove a prospect from .../queue/pending.json.
 
 ── Mock logic ────────────────────────────────────────────────────────────────
 
@@ -119,6 +122,18 @@ _browse_lock = asyncio.Lock()
 def _mock_mcp_enabled() -> bool:
     """Return True to run in mock mode (no browser, scripted responses)."""
     return False
+
+
+def _outreach_base() -> Path:
+    """
+    Root directory for outreach filesystem MCP tools.
+
+    Live mode uses ``outreach/``; mock mode uses ``outreach/mock/`` so scripted
+    runs do not overwrite operator data under ``outreach/``.
+    """
+    if _mock_mcp_enabled():
+        return _ROOT / "outreach" / "mock"
+    return _ROOT / "outreach"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -640,8 +655,8 @@ async def browse_forever(
 
 # ═════════════════════════════════════════════════════════════════════════════
 # OUTREACH FILE-MANAGEMENT TOOLS
-# These tools always write to the correct project folder (_ROOT) so skills
-# never need to guess paths or run bash scripts.
+# These tools always write under _outreach_base() (outreach/ or outreach/mock/)
+# so skills never need to guess paths or run bash scripts.
 # ═════════════════════════════════════════════════════════════════════════════
 
 import tempfile
@@ -652,8 +667,12 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-_PLANNER_CONFIG_PATH = _ROOT / "outreach" / "config" / "conversation_planner.json"
-_PERSONA_PATH = _ROOT / "outreach" / "config" / "persona.json"
+def _planner_config_path() -> Path:
+    return _outreach_base() / "config" / "conversation_planner.json"
+
+
+def _persona_path() -> Path:
+    return _outreach_base() / "config" / "persona.json"
 
 _ALLOWED_PLANNER_PERSONA_KEYS = frozenset({"name", "role", "organization", "specialization"})
 _ALLOWED_PLANNER_ORGANIZATION_KEYS = frozenset({"description"})
@@ -680,16 +699,17 @@ def _load_planner_identity() -> dict:
     """
     Load merged identity for MCP responses and merges.
 
-    Reads ``outreach/config/persona.json`` when present (gitignored per clone);
+    Reads ``persona.json`` under the active outreach data root when present;
     unknown keys are ignored. Missing inner keys are filled from defaults.
     """
     base = copy.deepcopy(_default_planner_identity())
-    if not _PERSONA_PATH.exists():
+    persona_path = _persona_path()
+    if not persona_path.exists():
         return base
     try:
-        data = json.loads(_PERSONA_PATH.read_text(encoding="utf-8"))
+        data = json.loads(persona_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        logger.exception("_load_planner_identity: invalid or unreadable %s", _PERSONA_PATH)
+        logger.exception("_load_planner_identity: invalid or unreadable %s", persona_path)
         return base
     if not isinstance(data, dict):
         return base
@@ -805,7 +825,7 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
 
     if "persona" in config or "organization" in config:
         return (
-            "persona and organization are stored in outreach/config/persona.json; "
+            "persona and organization are stored in persona.json (under the active outreach data root); "
             "remove them from this payload and use merge_conversation_planner_identity, "
             "or edit persona.json directly"
         )
@@ -901,9 +921,9 @@ def _sanitize_connection_name(name: str | None) -> str:
 
 def _lookup_connection_name(profile_url: str) -> str | None:
     """
-    Read clean name for a profile URL from outreach/connections.json.
+    Read clean name for a profile URL from connections.json under the active outreach root.
     """
-    path = _ROOT / "outreach" / "connections.json"
+    path = _outreach_base() / "connections.json"
     try:
         if not path.exists():
             return None
@@ -940,10 +960,10 @@ def _atomic_write_json(path: Path, data: object) -> None:
 @mcp.tool()
 async def get_connections() -> str:
     """
-    Read outreach/connections.json from the project root (the folder that contains
-    tools/server.py). Skills must use this instead of constructing paths.
+    Read connections.json from the active outreach data directory (outreach/ or
+    outreach/mock/ when mock MCP is enabled). Skills must use this instead of constructing paths.
     """
-    path = _ROOT / "outreach" / "connections.json"
+    path = _outreach_base() / "connections.json"
     try:
         if not path.exists():
             return json.dumps({"connections": []}, indent=2, ensure_ascii=False) + "\n"
@@ -955,8 +975,8 @@ async def get_connections() -> str:
 
 @mcp.tool()
 async def get_prospect(prospect_id: str) -> str:
-    """Read outreach/prospects/<prospect_id>.json as UTF-8 text."""
-    path = _ROOT / "outreach" / "prospects" / f"{prospect_id}.json"
+    """Read prospects/<prospect_id>.json under the active outreach data root as UTF-8 text."""
+    path = _outreach_base() / "prospects" / f"{prospect_id}.json"
     try:
         if not path.exists():
             return f"error: prospect not found: {prospect_id}"
@@ -968,8 +988,8 @@ async def get_prospect(prospect_id: str) -> str:
 
 @mcp.tool()
 async def get_conversation(prospect_id: str) -> str:
-    """Read outreach/conversations/<prospect_id>.json as UTF-8 text."""
-    path = _ROOT / "outreach" / "conversations" / f"{prospect_id}.json"
+    """Read conversations/<prospect_id>.json under the active outreach data root as UTF-8 text."""
+    path = _outreach_base() / "conversations" / f"{prospect_id}.json"
     try:
         if not path.exists():
             return f"error: conversation not found: {prospect_id}"
@@ -989,7 +1009,7 @@ async def save_connection(
     connection_status: str = "pending",
 ) -> str:
     """
-    Upsert a connection entry in outreach/connections.json inside the project folder.
+    Upsert a connection entry in connections.json under the active outreach data root.
 
     Always writes to the correct project folder regardless of which directory the
     skill or scheduled task runs from.  If an entry with the same profile_url already
@@ -1004,7 +1024,7 @@ async def save_connection(
     title : str
         Job title / headline scraped from the profile.
     prospect_id : str | None
-        Pipeline prospect ID (must match outreach/prospects/<id>.json). If omitted or null, the id is
+        Pipeline prospect ID (must match prospects/<id>.json under the active outreach root). If omitted or null, the id is
         taken from an existing row for the same profile_url, else derived from the URL path
         (``/in/handle/`` → ``handle`` with hyphens → underscores). This keeps batch conversation-planner
         runs working after ad-hoc connection sends.
@@ -1018,7 +1038,7 @@ async def save_connection(
     str
         Confirmation string on success, or an error description.
     """
-    path = _ROOT / "outreach" / "connections.json"
+    path = _outreach_base() / "connections.json"
     try:
         if path.exists():
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -1073,12 +1093,12 @@ async def upsert_conversation(
     conversation: str,
 ) -> str:
     """
-    Write (create or overwrite) a conversation JSON file in outreach/conversations/.
+    Write (create or overwrite) a conversation JSON file under conversations/.
 
     Parameters
     ----------
     prospect_id : str
-        The prospect ID — file will be saved as outreach/conversations/<prospect_id>.json.
+        The prospect ID — file will be saved as conversations/<prospect_id>.json under the active outreach root.
     conversation : str
         Full JSON string of the conversation object (must match conversation.schema.json).
 
@@ -1087,7 +1107,7 @@ async def upsert_conversation(
     str
         "ok" on success, or an error description.
     """
-    path = _ROOT / "outreach" / "conversations" / f"{prospect_id}.json"
+    path = _outreach_base() / "conversations" / f"{prospect_id}.json"
     try:
         data = json.loads(conversation)
         _atomic_write_json(path, data)
@@ -1104,7 +1124,7 @@ async def upsert_prospect(
     prospect: str,
 ) -> str:
     """
-    Write (create or overwrite) outreach/prospects/<prospect_id>.json.
+    Write (create or overwrite) prospects/<prospect_id>.json under the active outreach root.
 
     Parameters
     ----------
@@ -1113,7 +1133,7 @@ async def upsert_prospect(
     prospect : str
         Full JSON string of the prospect object (prospect.schema.json).
     """
-    path = _ROOT / "outreach" / "prospects" / f"{prospect_id}.json"
+    path = _outreach_base() / "prospects" / f"{prospect_id}.json"
     try:
         data = json.loads(prospect)
         _atomic_write_json(path, data)
@@ -1129,7 +1149,7 @@ async def append_action_log(
     entry: str,
 ) -> str:
     """
-    Append one JSON entry to outreach/logs/actions.jsonl in the project folder.
+    Append one JSON entry to logs/actions.jsonl under the active outreach data root.
 
     Parameters
     ----------
@@ -1142,7 +1162,7 @@ async def append_action_log(
     str
         "ok" on success, or an error description.
     """
-    path = _ROOT / "outreach" / "logs" / "actions.jsonl"
+    path = _outreach_base() / "logs" / "actions.jsonl"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         parsed = json.loads(entry)  # validate it's real JSON before writing
@@ -1160,7 +1180,7 @@ async def append_planned_message_log(
     entry: str,
 ) -> str:
     """
-    Append one JSON entry to outreach/logs/planned_messages.jsonl in the project folder.
+    Append one JSON entry to logs/planned_messages.jsonl under the active outreach data root.
 
     Parameters
     ----------
@@ -1172,7 +1192,7 @@ async def append_planned_message_log(
     str
         "ok" on success, or an error description.
     """
-    path = _ROOT / "outreach" / "logs" / "planned_messages.jsonl"
+    path = _outreach_base() / "logs" / "planned_messages.jsonl"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         parsed = json.loads(entry)
@@ -1191,12 +1211,12 @@ async def save_outreach_report(
     content: str,
 ) -> str:
     """
-    Save an end-of-sequence outreach report to outreach/storage/reports/ in the project folder.
+    Save an end-of-sequence outreach report to storage/reports/ under the active outreach root.
 
     Parameters
     ----------
     prospect_id : str
-        Used as the filename: outreach/storage/reports/<prospect_id>.md
+        Used as the filename: storage/reports/<prospect_id>.md
     content : str
         Full markdown content of the report.
 
@@ -1205,7 +1225,7 @@ async def save_outreach_report(
     str
         "ok — saved <path>" on success, or an error description.
     """
-    path = _ROOT / "outreach" / "storage" / "reports" / f"{prospect_id}.md"
+    path = _outreach_base() / "storage" / "reports" / f"{prospect_id}.md"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
@@ -1219,10 +1239,10 @@ async def save_outreach_report(
 @mcp.tool()
 async def remove_pending_queue_entry(prospect_id: str) -> str:
     """
-    Remove every queue item with matching ``prospect_id`` from outreach/queue/pending.json.
+    Remove every queue item with matching ``prospect_id`` from queue/pending.json under the active outreach root.
     No-op if the file is missing or the id is not present.
     """
-    path = _ROOT / "outreach" / "queue" / "pending.json"
+    path = _outreach_base() / "queue" / "pending.json"
     try:
         if not path.exists():
             return "ok — no pending queue file"
@@ -1249,23 +1269,24 @@ async def remove_pending_queue_entry(prospect_id: str) -> str:
 @mcp.tool()
 async def get_conversation_planner_config() -> str:
     """
-    Read planner config from outreach/config/conversation_planner.json and identity
-    from outreach/config/persona.json (optional; defaults apply if absent).
+    Read planner config from config/conversation_planner.json and identity from
+    config/persona.json under the active outreach data root (optional; defaults apply if absent).
 
     Returns a single merged JSON object (persona + organization + campaign, rules,
     router) so callers keep one MCP read. Reads from disk on every call so manual
     edits are reflected immediately.
     """
     try:
-        if not _PLANNER_CONFIG_PATH.exists():
+        planner_path = _planner_config_path()
+        if not planner_path.exists():
             core = _default_conversation_planner_config()
-            _atomic_write_json(_PLANNER_CONFIG_PATH, core)
+            _atomic_write_json(planner_path, core)
         else:
-            core = json.loads(_PLANNER_CONFIG_PATH.read_text(encoding="utf-8"))
+            core = json.loads(planner_path.read_text(encoding="utf-8"))
             if not isinstance(core, dict):
                 return (
                     "error: "
-                    + str(_PLANNER_CONFIG_PATH)
+                    + str(planner_path)
                     + " must contain a JSON object at top level"
                 )
             _strip_legacy_identity_from_core(core)
@@ -1282,10 +1303,10 @@ async def get_conversation_planner_config() -> str:
 @mcp.tool()
 async def upsert_conversation_planner_config(config: str) -> str:
     """
-    Write outreach/config/conversation_planner.json from JSON string input.
+    Write config/conversation_planner.json under the active outreach data root from JSON string input.
 
     Does not accept ``persona`` or ``organization`` — those live in
-    ``outreach/config/persona.json`` (see ``merge_conversation_planner_identity``).
+    ``config/persona.json`` (see ``merge_conversation_planner_identity``).
     Performs lightweight structural validation and writes atomically so runtime
     reads always see a complete file.
     """
@@ -1294,9 +1315,10 @@ async def upsert_conversation_planner_config(config: str) -> str:
         validation_error = _validate_conversation_planner_config(parsed)
         if validation_error:
             return f"error: {validation_error}"
-        _atomic_write_json(_PLANNER_CONFIG_PATH, parsed)
-        logger.info("upsert_conversation_planner_config: wrote %s", _PLANNER_CONFIG_PATH)
-        return f"ok — wrote {_PLANNER_CONFIG_PATH}"
+        planner_path = _planner_config_path()
+        _atomic_write_json(planner_path, parsed)
+        logger.info("upsert_conversation_planner_config: wrote %s", planner_path)
+        return f"ok — wrote {planner_path}"
     except Exception as exc:
         logger.exception("upsert_conversation_planner_config failed")
         return f"error: {exc}"
@@ -1308,7 +1330,7 @@ async def merge_conversation_planner_identity(
     organization_json: str = "{}",
 ) -> str:
     """
-    Shallow-merge ``persona`` and/or ``organization`` into ``outreach/config/persona.json``.
+    Shallow-merge ``persona`` and/or ``organization`` into ``config/persona.json`` under the active outreach data root.
 
     Intended for Skills / LLM-authored updates: call MCP ``parse_profile`` first (host model
     reads the v2 envelope), decide ``persona`` + ``organization`` copy, then pass JSON blobs here.
@@ -1438,16 +1460,17 @@ async def merge_conversation_planner_identity(
                 ensure_ascii=False,
             )
 
-        _atomic_write_json(_PERSONA_PATH, cfg)
+        persona_path = _persona_path()
+        _atomic_write_json(persona_path, cfg)
         logger.info(
             "merge_conversation_planner_identity: wrote %s keys=%s",
-            _PERSONA_PATH,
+            persona_path,
             updated,
         )
         return json.dumps(
             {
                 "ok": True,
-                "path": str(_PERSONA_PATH),
+                "path": str(persona_path),
                 "updated_fields": updated,
                 "persona": cfg.get("persona", {}),
                 "organization": cfg.get("organization", {}),
@@ -1477,8 +1500,10 @@ if __name__ == "__main__":
         logger.warning(
             "LinkedIn MCP server starting in MOCK MODE — "
             "no browser actions are performed; responses use the Alex Chen happy_path fixture by default.\n"
+            "  • Outreach filesystem tools read/write under %s (not outreach/).\n"
             "  • send_connection_request(url)   — begin the conversation\n"
             "  • [conversation-planner loop]    — fetch → plan → send\n"
-            "  Test scenarios: use tools/mock.py (handle_load_test_case, etc.); not MCP tools."
+            "  Test scenarios: use tools/mock.py (handle_load_test_case, etc.); not MCP tools.",
+            _outreach_base(),
         )
     mcp.run(transport="stdio")
