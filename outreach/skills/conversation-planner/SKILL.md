@@ -264,7 +264,6 @@ Use the table below to determine which step to execute (or whether to end withou
 | No messages sent | null | Send Step 1 |
 | Step 1 sent, prospect replied positively | 1 | Send Step 2 |
 | Step 1 sent, no reply after ≥ timeout | 1 | End — `no_response` |
-| Step 1 sent via connection note, no reply yet | 1 | Wait — do nothing |
 | Step 2 sent, prospect replied | 2 | Send Step 3 |
 | Step 2 sent, no reply after ≥ timeout | 2 | End — `no_response` |
 | Step 3 sent, prospect replied | 3 | Send Step 4 |

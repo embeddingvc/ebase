@@ -89,7 +89,7 @@ _ALEX_CHEN: dict[str, Any] = {
     ],
     "connection_status": "none",
     "outreach_stage": "cold",
-    "end_goal": "obtain_resume",
+    "end_goal": "schedule_meeting",
     "outreach_topic": "Series A ML infra roles in the portfolio",
     "target_action": None,
     "notes": (
@@ -134,7 +134,7 @@ TEST_CASES: dict[str, dict[str, Any]] = {
         ),
         "prospect": _ALEX_CHEN,
         "connection_accepted": True,
-        "end_condition": "resume_shared",
+        "end_condition": "meeting_scheduled",
         "replies": [
             # [0] reply to connection note
             {
@@ -142,7 +142,6 @@ TEST_CASES: dict[str, dict[str, Any]] = {
                     "Thanks Nova! Yeah I'm always curious what's out there. "
                     "What kind of companies are you working with?"
                 ),
-                "attachments": [],
             },
             # [1] reply to first DM (career question)
             {
@@ -151,7 +150,6 @@ TEST_CASES: dict[str, dict[str, Any]] = {
                     "to work on something earlier stage. The architecture migration was fun "
                     "but I miss the 0-to-1 feeling. Been looking at some ML infra teams."
                 ),
-                "attachments": [],
             },
             # [2] reply to second DM (join vs build)
             {
@@ -160,107 +158,10 @@ TEST_CASES: dict[str, dict[str, Any]] = {
                     "something. Ideally a Series A company where I can own a big chunk of "
                     "the infra. Definitely open to hearing about what's in your network."
                 ),
-                "attachments": [],
             },
             # [3] reply to third DM (resume request)
             {
-                "text": "Sure, here you go!",
-                "attachments": [
-                    {
-                        "type": "resume",
-                        "url": "https://linkedin.com/dms/alex_chen_resume.pdf",
-                        "filename": "alex_chen_resume.pdf",
-                    }
-                ],
-            },
-        ],
-    },
-
-    # ── 2. Not interested ─────────────────────────────────────────────────────
-    "not_interested": {
-        "description": (
-            "Prospect politely declines right after the connection note. "
-            "Planner should recognise the rejection and close the conversation."
-        ),
-        "prospect": _ALEX_CHEN,
-        "connection_accepted": True,
-        "end_condition": "not_interested",
-        "replies": [
-            # [0] reply to connection note
-            {
-                "text": (
-                    "Hey Nova, thanks for reaching out but I'm not looking for anything "
-                    "new right now. Happy at Stripe and plan to stay for a while. Best of luck!"
-                ),
-                "attachments": [],
-            },
-        ],
-    },
-
-    # ── 3. No reply / timeout ─────────────────────────────────────────────────
-    "no_reply": {
-        "description": (
-            "Prospect replies once to show mild interest then goes silent. "
-            "Planner should send a gentle follow-up then eventually time out."
-        ),
-        "prospect": _ALEX_CHEN,
-        "connection_accepted": True,
-        "end_condition": "timeout",
-        "replies": [
-            # [0] reply to connection note
-            {
-                "text": "Thanks Nova! Yeah I'm always curious what's out there.",
-                "attachments": [],
-            },
-            None,   # [1] silent after first DM
-            None,   # [2] silent after second DM — planner should give up
-        ],
-    },
-
-    # ── 4. Ghosted — never accepted ───────────────────────────────────────────
-    "ghosted_cold": {
-        "description": (
-            "Prospect never accepts the connection request. "
-            "fetch_chat_history returns an empty thread; "
-            "planner should eventually mark as timed-out."
-        ),
-        "prospect": _ALEX_CHEN,
-        "connection_accepted": False,
-        "end_condition": "timeout",
-        "replies": [],
-    },
-
-    # ── 5. Eager referral — fast convert ─────────────────────────────────────
-    "eager_referral": {
-        "description": (
-            "Prospect is actively job-seeking and converts after just one follow-up. "
-            "Shares resume on turn 2 without much prompting."
-        ),
-        "prospect": _ALEX_CHEN,
-        "connection_accepted": True,
-        "end_condition": "resume_shared",
-        "replies": [
-            # [0] reply to connection note
-            {
-                "text": (
-                    "Nova! Perfect timing — I've actually been actively looking. "
-                    "I'd love to hear what you have. Can I send you my resume directly?"
-                ),
-                "attachments": [],
-            },
-            # [1] reply to first DM (invite to share)
-            {
-                "text": (
-                    "Here's my resume. I'm particularly interested in ML infra or platform "
-                    "engineering roles at Series A or B. Let me know what fits!"
-                ),
-                "attachments": [
-                    {
-                        "type": "resume",
-                        "url": "https://linkedin.com/dms/alex_chen_resume_v2.pdf",
-                        "filename": "alex_chen_resume_v2.pdf",
-                    }
-                ],
+                "text": "Hey I would love to meet sometime for a more thorough conversation. I'm available anytime next week.",
             },
         ],
     },
@@ -285,19 +186,12 @@ class MockSession:
     messages_sent
         Count of operator bubbles in ``history`` after each tool call (synced for
         mock state previews).  The connection note counts as one operator message.
-
-    connection_note_posted
-        True after a successful mock ``send_connection_request`` added the note to
-        ``history``.  Used so a DM sent as the thread opener (no connection step)
-        maps to ``replies[1]``, not ``replies[0]`` (which is the scripted reply
-        to the connection note).
     """
     test_case_id: str
     profile_url: str
     connection_accepted: bool = False
     history: list[dict[str, Any]] = field(default_factory=list)
     messages_sent: int = 0
-    connection_note_posted: bool = False
     ended: bool = False
     ended_reason: str | None = None
     loaded_at: str = field(
@@ -677,27 +571,11 @@ async def handle_parse_profile(profile_url: str) -> str:
 async def handle_is_first_degree_connection(profile_url: str) -> str:
     """
     Return whether the mock session is in a 1st-degree (DM-ready) state.
-
-    Requires ``connection_accepted`` on the test case, and either a recorded
-    connection invite (``connection_note_posted``) or any thread history, so a
-    cold ``happy_path`` session before ``send_connection_request`` stays false.
     """
-    session = ensure_default_mock_session(profile_url)
-    key = normalise_url(profile_url)
-    if not session.connection_accepted:
-        first = False
-    else:
-        first = session.connection_note_posted or len(session.history) > 0
-    logger.info(
-        "is_first_degree_connection MOCK (test case: %s)  url=%s  → %s",
-        session.test_case_id,
-        profile_url,
-        first,
-    )
     return json.dumps(
         {
-            "first_degree": first,
-            "profile_url": key or (profile_url or "").strip(),
+            "first_degree": True,
+            "profile_url": profile_url,
         },
         ensure_ascii=False,
         indent=2,
@@ -723,14 +601,10 @@ async def handle_send_connection_request(profile_url: str, note: str) -> str:
     )
 
     if session.connection_accepted:
-        session.history.append({"message": note, "self": True})
-        session.connection_note_posted = True
-        session.messages_sent = sum(1 for h in session.history if h.get("self"))
         _append_prospect_reply(session, reply_index=0)
         return "ok"
 
     # Connection not accepted — note was sent but prospect ignores it.
-    session.connection_note_posted = False
     session.messages_sent = 1
     return (
         "ok — connection request sent. "
@@ -754,11 +628,7 @@ async def handle_send_message(profile_url: str, message: str) -> str:
         )
 
     op_before = sum(1 for h in session.history if h.get("self"))
-    if session.connection_note_posted:
-        reply_index = op_before
-    else:
-        # DM as thread opener (already-connected flow): skip replies[0] (connection-note reply).
-        reply_index = op_before + 1
+    reply_index = op_before + 1
 
     session.history.append({"message": message, "self": True})
     session.messages_sent = sum(1 for h in session.history if h.get("self"))
