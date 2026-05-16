@@ -23,9 +23,13 @@ outreach/config/persona.json
 # Outreach action logs
 outreach/logs/actions.jsonl
 
+# Mock LinkedIn session store (persisted across MCP subprocesses; scenario-local only)
+outreach/mock/mock_linkedin_sessions.json
+
 # Local generated/user-specific outreach data
 outreach/connections.json
 outreach/generated/
+outreach/mock/*/*.json
 
 # Claude Code local config + gstack skills (per-machine)
 .claude/

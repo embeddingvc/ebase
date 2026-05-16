@@ -41,13 +41,62 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger("linkedin.mock")
+
+
+# Persisted DM mock state (survives new MCP subprocesses, e.g. ``claude -p`` regression).
+_MOCK_SESSIONS_FILENAME = "mock_linkedin_sessions.json"
+_MOCK_STORE_VERSION = 1
+
+
+def sessions_store_path() -> Path:
+    """JSON store under ``outreach/mock/``, same tree as MCP outreach filesystem in mock mode."""
+    return Path(__file__).resolve().parent.parent / "outreach" / "mock" / _MOCK_SESSIONS_FILENAME
+
+
+def _atomic_write_json(path: Path, data: object) -> None:
+    """Write JSON atomically so a crash cannot corrupt the store."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp_", text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        Path(tmp).replace(path)
+    except Exception:
+        try:
+            Path(tmp).unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _read_encoded_sessions_disk() -> dict[str, dict[str, Any]]:
+    path = sessions_store_path()
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("mock: could not read session store %s: %s", path, exc)
+        return {}
+    inner = raw.get("sessions") if isinstance(raw, dict) else None
+    if not isinstance(inner, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for key, blob in inner.items():
+        if isinstance(blob, dict):
+            out[str(key)] = blob
+    return out
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -226,9 +275,106 @@ def normalise_url(url: str) -> str:
     return f"{scheme}://{host}{path}"
 
 
+def _mock_session_to_blob(s: MockSession) -> dict[str, Any]:
+    return {
+        "test_case_id": s.test_case_id,
+        "profile_url": s.profile_url,
+        "connection_accepted": s.connection_accepted,
+        "history": s.history,
+        "messages_sent": s.messages_sent,
+        "ended": s.ended,
+        "ended_reason": s.ended_reason,
+        "loaded_at": s.loaded_at,
+    }
+
+
+def _mock_session_from_blob(blob: dict[str, Any]) -> MockSession | None:
+    profile_url = (blob.get("profile_url") or "").strip()
+    if not profile_url:
+        return None
+    tc_id = str(blob.get("test_case_id") or _DEFAULT_MOCK_TEST_CASE_ID)
+    if tc_id not in TEST_CASES:
+        tc_id = _DEFAULT_MOCK_TEST_CASE_ID
+    hist = blob.get("history")
+    if not isinstance(hist, list):
+        hist = []
+    history: list[dict[str, Any]] = []
+    for e in hist:
+        if isinstance(e, dict):
+            history.append(e)
+    return MockSession(
+        test_case_id=tc_id,
+        profile_url=str(blob.get("profile_url") or profile_url),
+        connection_accepted=bool(blob.get("connection_accepted", False)),
+        history=history,
+        messages_sent=int(blob.get("messages_sent") or 0),
+        ended=bool(blob.get("ended", False)),
+        ended_reason=blob.get("ended_reason"),
+        loaded_at=str(blob.get("loaded_at") or datetime.now(timezone.utc).isoformat()),
+    )
+
+
+def _persist_mock_sessions() -> None:
+    """Merge RAM ``sessions`` into the on-disk store and write atomically."""
+    path = sessions_store_path()
+    merged = _read_encoded_sessions_disk()
+    for key, sess in sessions.items():
+        merged[key] = _mock_session_to_blob(sess)
+    _atomic_write_json(
+        path,
+        {"version": _MOCK_STORE_VERSION, "sessions": merged},
+    )
+
+
+def _hydrate_from_disk(key: str) -> None:
+    """Load ``sessions[key]`` from disk if missing in RAM."""
+    if key in sessions:
+        return
+    blob = _read_encoded_sessions_disk().get(key)
+    if blob is None:
+        return
+    sess = _mock_session_from_blob(blob)
+    if sess is None:
+        return
+    sessions[key] = sess
+    logger.info(
+        "mock: hydrated session from disk  key=%s  test_case=%s  history_len=%d",
+        key,
+        sess.test_case_id,
+        len(sess.history),
+    )
+
+
+def clear_persisted_mock_session(profile_url: str) -> None:
+    """Remove one profile from the persisted store (does not touch in-RAM ``sessions``)."""
+    key = normalise_url(profile_url)
+    path = sessions_store_path()
+    merged = _read_encoded_sessions_disk()
+    if key not in merged:
+        return
+    del merged[key]
+    if not merged:
+        try:
+            path.unlink()
+        except OSError:
+            _atomic_write_json(
+                path,
+                {"version": _MOCK_STORE_VERSION, "sessions": {}},
+            )
+    else:
+        _atomic_write_json(
+            path,
+            {"version": _MOCK_STORE_VERSION, "sessions": merged},
+        )
+
+
 def get_session(profile_url: str) -> MockSession | None:
-    """Return the active MockSession for profile_url, or None."""
-    return sessions.get(normalise_url(profile_url))
+    """Return the active MockSession for profile_url, hydrating from disk if needed."""
+    key = normalise_url(profile_url)
+    if not key:
+        return None
+    _hydrate_from_disk(key)
+    return sessions.get(key)
 
 
 def ensure_default_mock_session(profile_url: str) -> MockSession:
@@ -237,6 +383,7 @@ def ensure_default_mock_session(profile_url: str) -> MockSession:
     (``happy_path`` → _ALEX_CHEN) if ``handle_load_test_case`` was never called.
     """
     key = normalise_url(profile_url)
+    _hydrate_from_disk(key)
     existing = sessions.get(key)
     if existing is not None:
         return existing
