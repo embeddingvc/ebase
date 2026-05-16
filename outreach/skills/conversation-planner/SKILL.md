@@ -232,7 +232,7 @@ ask for first.
 - ≤ 500 characters.
 
 **Path B — Email / call ask** (when call-oriented goal is preferred or they prefer a conversation):
-- Offer to introduce them to Congxing Cai, our partner, for a quick call.
+- Offer to schedule for a quick call.
 - Ask for their preferred email.
 - ≤ 500 characters.
 

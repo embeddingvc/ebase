@@ -11,6 +11,10 @@ LinkedIn tool mocks (``scrape_profile``, ``is_first_degree_connection``, ``send_
 ``handle_load_test_case`` was not used first (tests only), a session is auto-created from ``happy_path``,
 which uses that prospect and its scripted replies. Other scenarios require ``handle_load_test_case`` first.
 
+Mock DM session state (history and counters) is saved under ``outreach/mock/mock_linkedin_sessions.json``
+whenever mock ``send_*`` or ``handle_load_test_case`` mutates a session, so each new MCP host process
+(e.g. successive ``claude -p`` runs) restores the thread via :func:`ensure_default_mock_session`.
+
 Public surface
 ──────────────
   Data / state
@@ -21,6 +25,8 @@ Public surface
   Helpers
     normalise_url(url)                   → str
     get_session(profile_url)             → MockSession | None
+    sessions_store_path()               → pathlib.Path
+    clear_persisted_mock_session(url)    → erase one profile blob on disk (tests/harness resets)
 
   Async handlers (called by server.py when in mock mode; test-only helpers are not MCP tools)
     handle_list_test_cases()             → str   (tests / inspection only)
@@ -66,7 +72,7 @@ def sessions_store_path() -> Path:
 def _atomic_write_json(path: Path, data: object) -> None:
     """Write JSON atomically so a crash cannot corrupt the store."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp_", text=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp_")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -208,9 +214,13 @@ TEST_CASES: dict[str, dict[str, Any]] = {
                     "the infra. Definitely open to hearing about what's in your network."
                 ),
             },
-            # [3] reply to third DM (resume request)
+            # [3] reply to third DM (schedule call)
             {
                 "text": "Hey I would love to meet sometime for a more thorough conversation. I'm available anytime next week.",
+            },
+            # [4] reply to fourth DM (email)
+            {
+                "text": "Sure my email is alexchen336@gmail.com. Let's schedule a call next week.",
             },
         ],
     },
@@ -477,6 +487,7 @@ async def handle_load_test_case(test_case_id: str, profile_url: str) -> str:
         connection_accepted=tc["connection_accepted"],
     )
     logger.info("handle_load_test_case  test_case=%s  profile=%s", test_case_id, profile_url)
+    _persist_mock_sessions()
 
     replies = tc.get("replies", [])
     total = len(replies)
@@ -749,10 +760,12 @@ async def handle_send_connection_request(profile_url: str, note: str) -> str:
 
     if session.connection_accepted:
         _append_prospect_reply(session, reply_index=0)
+        _persist_mock_sessions()
         return "ok"
 
     # Connection not accepted — note was sent but prospect ignores it.
     session.messages_sent = 1
+    _persist_mock_sessions()
     return (
         "ok — connection request sent. "
         "[MOCK: test case has connection_accepted=False — "
@@ -788,6 +801,7 @@ async def handle_send_message(profile_url: str, message: str) -> str:
         reply_index,
         len(session.history),
     )
+    _persist_mock_sessions()
     return "ok"
 
 
