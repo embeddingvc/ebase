@@ -53,6 +53,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     upsert_prospect           Write .../prospects/<id>.json from JSON string.
     save_connection           Upsert one row in .../connections.json.
     upsert_conversation       Write .../conversations/<id>.json from JSON string.
+    schedule_meeting          Book (mock) or reserve a call after email + time are known.
     append_action_log         Append one JSON line to .../logs/actions.jsonl.
     append_planned_message_log Append one JSON line to planned_messages.jsonl.
     save_outreach_report      Write .../storage/reports/<id>.md.
@@ -1085,6 +1086,71 @@ async def save_connection(
     except Exception as exc:
         logger.exception("save_connection failed")
         return f"error: {exc}"
+
+
+async def _schedule_meeting_live(
+    email: str,
+    datetime: str,
+    prospect_id: str | None = None,
+    profile_url: str | None = None,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    del email, datetime, prospect_id, profile_url, cdp_url
+    return (
+        "error: schedule_meeting is not implemented in live mode yet. "
+        "Use mock mode for regression, or book manually and set meeting_link "
+        "via upsert_conversation."
+    )
+
+
+@mcp.tool()
+async def schedule_meeting(
+    email: str,
+    datetime: str,
+    prospect_id: str | None = None,
+    profile_url: str | None = None,
+    cdp_url: str = "http://localhost:9222",
+) -> str:
+    """
+    Book a calendar hold for a prospect after email and time are agreed.
+
+    In mock mode: returns JSON with ``meeting_link`` and ``scheduled_at``, and
+    persists ``email`` / ``meeting_link`` on the mock conversation file.
+
+    In live mode: not implemented — returns an explicit error (no silent success).
+
+    Parameters
+    ----------
+    email : str
+        Prospect email to invite.
+    datetime : str
+        ISO 8601 UTC instant for the meeting (e.g. ``2026-05-20T15:00:00Z``).
+    prospect_id : str | None
+        Outreach prospect id (preferred for filesystem updates).
+    profile_url : str | None
+        LinkedIn profile URL when ``prospect_id`` is unknown.
+    cdp_url : str
+        Reserved for future live calendar integration.
+
+    Returns
+    -------
+    str
+        JSON with scheduling fields on success, or ``error: ...`` on failure.
+    """
+    if _mock_mcp_enabled():
+        return await _mock.handle_schedule_meeting(
+            email=email,
+            when=datetime,
+            prospect_id=prospect_id,
+            profile_url=profile_url,
+        )
+    return await _schedule_meeting_live(
+        email=email,
+        datetime=datetime,
+        prospect_id=prospect_id,
+        profile_url=profile_url,
+        cdp_url=cdp_url,
+    )
 
 
 @mcp.tool()

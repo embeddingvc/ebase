@@ -81,6 +81,7 @@ allows it; rely on documented fields below and MCP-returned JSON.
 | `merge_conversation_planner_identity` | Shallow-merge `persona` and/or `organization` JSON blobs into `outreach/config/persona.json` after you distill copy (typically following Skill `sync-planner-persona-from-linkedin`). |
 | `save_outreach_report` | Write markdown body for end-of-sequence reports (`prospect_id`, `content`). |
 | `remove_pending_queue_entry` | Remove a prospect from `pending.json` when the pipeline uses the queue. |
+| `schedule_meeting` | Book (mock) or reserve a call after email + time are known; persist `meeting_link` on the conversation. |
 
 ---
 
@@ -240,14 +241,36 @@ ask for first.
 
 **Goal:** Confirm the handoff and end the sequence.
 
+**When `end_goal` is `schedule_meeting` (or the configured preferred goal is call-oriented):**
+
+Call **`schedule_meeting`** in the same run **before** composing the Step 5 close message when **both** are true:
+
+1. **Email** is known — from the merged thread, `conversation.email`, or prospect text (e.g. `alexchen336@gmail.com`).
+2. **Scheduling intent** is clear — prospect agreed to a call and gave a concrete time **or** you resolve ambiguous phrasing (“next week”, “anytime next week”) to a single ISO 8601 UTC instant (e.g. next Tuesday 15:00 UTC) and mention that time in the closing DM.
+
+Do **not** call `schedule_meeting` before email is known. Do **not** call it for `end_goal: obtain_resume` unless config explicitly maps to a call goal.
+
+**Step 5 workflow (call / meeting path — Option A, same run):**
+
+| Step | Action |
+|------|--------|
+| 1 | `schedule_meeting(email=..., datetime=..., prospect_id=...)` (or `profile_url` if id unknown) |
+| 2 | Parse JSON response → set `conversation.email`, `conversation.meeting_link` |
+| 3 | `upsert_conversation` |
+| 4 | Compose Step 5 close (reference calendar invite / `meeting_link` or “invite sent to &lt;email&gt;”) |
+| 5 | `send_message` (Phase C), then terminal fields + `ended_reason: call_scheduled` + report |
+
+On `error: ...` from the tool, do not claim the meeting is booked; fix inputs or end with an appropriate fallback reason.
+
 **If resume shared (or equivalent configured handoff artifact):**
 - Thank them and confirm you will review and connect them with relevant teams.
 - Set `ended_reason` to matching configured goal ID (default `"resume_received"`).
 
 **If email / call scheduled (or equivalent configured meeting goal):**
-- Confirm the intro is coming.
-- Note any scheduling details in `stage_history`.
+- After `schedule_meeting` + `upsert_conversation`, confirm the calendar invite / intro is coming.
+- Note `scheduled_at` / `meeting_link` in `stage_history` when present.
 - Set `ended_reason` to matching configured goal ID (default `"call_scheduled"`).
+- In the outreach report **Outcome → Call**, use the scheduled time and `meeting_link` from the conversation — not “Not scheduled”.
 
 **If not interested:**
 - End warmly, leave the door open.

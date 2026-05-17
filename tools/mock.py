@@ -40,6 +40,7 @@ Public surface
     handle_fetch_chat_history(url)       → str
     handle_create_new_post(content)      → str
     handle_reply_to_post(post_url, comment) → str
+    handle_schedule_meeting(email, datetime, prospect_id?, profile_url?) → str
     handle_browse_forever(reaction, cdp_url) → str
 """
 
@@ -814,6 +815,143 @@ async def handle_fetch_chat_history(profile_url: str) -> str:
         session.test_case_id, profile_url, len(session.history),
     )
     return json.dumps(session.history, ensure_ascii=False, indent=2)
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _mock_outreach_base() -> Path:
+    return Path(__file__).resolve().parent.parent / "outreach" / "mock"
+
+
+def _derive_prospect_id_from_profile_url(profile_url: str) -> str | None:
+    try:
+        path = urlparse(profile_url.strip()).path
+        m = re.search(r"/in/([^/?#]+)", path, re.I)
+        if not m:
+            return None
+        slug = m.group(1).strip().lower().replace("-", "_")
+        slug = re.sub(r"[^a-z0-9_]", "", slug)
+        return slug or None
+    except Exception:
+        return None
+
+
+def _resolve_schedule_prospect_id(
+    prospect_id: str | None,
+    profile_url: str | None,
+) -> str | None:
+    if prospect_id and str(prospect_id).strip():
+        slug = str(prospect_id).strip().lower().replace("-", "_")
+        slug = re.sub(r"[^a-z0-9_]", "", slug)
+        if slug:
+            return slug
+    if profile_url:
+        derived = _derive_prospect_id_from_profile_url(profile_url)
+        if derived:
+            return derived
+    return None
+
+
+def _parse_schedule_datetime(raw: str) -> datetime | None:
+    s = (raw or "").strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _slug_datetime_iso(iso_z: str) -> str:
+    return re.sub(r"[^0-9A-Za-z]", "", iso_z)
+
+
+def _append_mock_action_log(entry: dict[str, Any]) -> None:
+    path = _mock_outreach_base() / "logs" / "actions.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+async def handle_schedule_meeting(
+    email: str,
+    when: str,
+    prospect_id: str | None = None,
+    profile_url: str | None = None,
+) -> str:
+    """
+    Mock calendar booking: validate inputs, return deterministic meeting_link JSON,
+    and persist email / meeting_link on the mock conversation file when present.
+    """
+    email_clean = (email or "").strip()
+    if not email_clean or not _EMAIL_RE.match(email_clean):
+        return "error: invalid email"
+
+    dt = _parse_schedule_datetime(when)
+    if dt is None:
+        return "error: invalid datetime"
+
+    pid = _resolve_schedule_prospect_id(prospect_id, profile_url)
+    if not pid:
+        return "error: prospect context required"
+
+    scheduled_at = (
+        dt.replace(microsecond=0)
+        .astimezone(timezone.utc)
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    meeting_link = (
+        f"https://mock.calendar.local/{pid}/{_slug_datetime_iso(scheduled_at)}"
+    )
+
+    conv_path = _mock_outreach_base() / "conversations" / f"{pid}.json"
+    if conv_path.is_file():
+        try:
+            conv = json.loads(conv_path.read_text(encoding="utf-8"))
+            if not isinstance(conv, dict):
+                conv = {}
+        except (OSError, json.JSONDecodeError):
+            conv = {}
+    else:
+        conv = {"prospect_id": pid, "messages": [], "outreach_stage": "engaged"}
+
+    conv["prospect_id"] = pid
+    conv["email"] = email_clean
+    conv["meeting_link"] = meeting_link
+    conv["last_action"] = "confirm_meeting"
+    _atomic_write_json(conv_path, conv)
+
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _append_mock_action_log(
+        {
+            "action": "schedule_meeting",
+            "prospect_id": pid,
+            "email": email_clean,
+            "scheduled_at": scheduled_at,
+            "meeting_link": meeting_link,
+            "timestamp": ts,
+        }
+    )
+
+    payload = {
+        "status": "scheduled",
+        "meeting_link": meeting_link,
+        "scheduled_at": scheduled_at,
+        "email": email_clean,
+        "prospect_id": pid,
+    }
+    logger.info(
+        "schedule_meeting MOCK  prospect_id=%s  scheduled_at=%s",
+        pid,
+        scheduled_at,
+    )
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 async def handle_create_new_post(content: str) -> str:
