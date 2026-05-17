@@ -325,11 +325,76 @@ def _mock_session_from_blob(blob: dict[str, Any]) -> MockSession | None:
     )
 
 
+_END_CONDITION_TO_REASON: dict[str, str] = {
+    "meeting_scheduled": "call_scheduled",
+    "resume_received": "resume_received",
+    "not_interested": "not_interested",
+    "no_response": "no_response",
+}
+
+
+def _mock_mark_connection_ended(prospect_id: str, profile_url: str | None = None) -> None:
+    """Mirror server ``_mark_connection_ended`` for mock outreach data."""
+    path = _mock_outreach_base() / "connections.json"
+    if not path.is_file():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    rows = data.get("connections")
+    if not isinstance(rows, list):
+        return
+    pid = (prospect_id or "").strip()
+    norm_url = (profile_url or "").strip().rstrip("/")
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_pid = str(row.get("prospect_id") or "").strip()
+        row_url = (row.get("profile_url") or "").strip().rstrip("/")
+        if (pid and row_pid == pid) or (norm_url and row_url == norm_url):
+            if row.get("connection_status") != "ended":
+                row["connection_status"] = "ended"
+                _atomic_write_json(path, data)
+            return
+
+
+def _maybe_mark_session_ended(session: MockSession) -> None:
+    """Align mock session ``ended`` flags with terminal conversation or exhausted script."""
+    if session.ended:
+        return
+    pid = _resolve_schedule_prospect_id(None, session.profile_url)
+    if pid:
+        conv_path = _mock_outreach_base() / "conversations" / f"{pid}.json"
+        if conv_path.is_file():
+            try:
+                conv = json.loads(conv_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                conv = None
+            if isinstance(conv, dict) and conv.get("outreach_stage") in ("ended", "dead"):
+                session.ended = True
+                session.ended_reason = conv.get("ended_reason") or _END_CONDITION_TO_REASON.get(
+                    TEST_CASES[session.test_case_id].get("end_condition", ""),
+                    conv.get("ended_reason"),
+                )
+                return
+    tc = TEST_CASES[session.test_case_id]
+    replies = tc.get("replies", [])
+    if not replies:
+        return
+    op_count = sum(1 for h in session.history if h.get("self"))
+    if op_count >= len(replies):
+        session.ended = True
+        ec = str(tc.get("end_condition") or "")
+        session.ended_reason = _END_CONDITION_TO_REASON.get(ec, ec or None)
+
+
 def _persist_mock_sessions() -> None:
     """Merge RAM ``sessions`` into the on-disk store and write atomically."""
     path = sessions_store_path()
     merged = _read_encoded_sessions_disk()
     for key, sess in sessions.items():
+        _maybe_mark_session_ended(sess)
         merged[key] = _mock_session_to_blob(sess)
     _atomic_write_json(
         path,
@@ -794,6 +859,7 @@ async def handle_send_message(profile_url: str, message: str) -> str:
     session.history.append({"message": message, "self": True})
     session.messages_sent = sum(1 for h in session.history if h.get("self"))
     _append_prospect_reply(session, reply_index=reply_index)
+    _maybe_mark_session_ended(session)
 
     logger.info(
         "send_message MOCK (test case: %s)  url=%s  reply_index=%d  history_len=%d",
@@ -809,6 +875,8 @@ async def handle_send_message(profile_url: str, message: str) -> str:
 async def handle_fetch_chat_history(profile_url: str) -> str:
     """Return the current DM history for profile_url (Alex Chen session if not loaded yet)."""
     session = ensure_default_mock_session(profile_url)
+    _maybe_mark_session_ended(session)
+    _persist_mock_sessions()
 
     logger.info(
         "fetch_chat_history MOCK (test case: %s)  url=%s  history_len=%d",
@@ -926,6 +994,8 @@ async def handle_schedule_meeting(
     conv["meeting_link"] = meeting_link
     conv["last_action"] = "confirm_meeting"
     _atomic_write_json(conv_path, conv)
+    if conv.get("outreach_stage") in ("ended", "dead"):
+        _mock_mark_connection_ended(pid, profile_url)
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     _append_mock_action_log(

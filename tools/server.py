@@ -920,6 +920,73 @@ def _sanitize_connection_name(name: str | None) -> str:
     return text
 
 
+_CONNECTION_STATUSES = frozenset({"pending", "connected", "ended"})
+_TERMINAL_CONVERSATION_STAGES = frozenset({"ended", "dead"})
+
+
+def _mark_connection_ended(
+    prospect_id: str,
+    profile_url: str | None = None,
+) -> bool:
+    """
+    Set ``connection_status`` to ``ended`` for the matching row in connections.json.
+    Preserves ``connected_at`` when the row was previously ``connected``.
+    """
+    path = _outreach_base() / "connections.json"
+    if not path.is_file():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.exception("_mark_connection_ended: could not read %s", path)
+        return False
+    rows = data.get("connections")
+    if not isinstance(rows, list):
+        return False
+    pid = _normalize_prospect_id_slug(prospect_id)
+    norm_url = (profile_url or "").strip().rstrip("/")
+    updated = False
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_pid = _normalize_prospect_id_slug(row.get("prospect_id"))
+        row_url = (row.get("profile_url") or "").strip().rstrip("/")
+        if (pid and row_pid == pid) or (norm_url and row_url == norm_url):
+            if row.get("connection_status") == "ended":
+                return False
+            row["connection_status"] = "ended"
+            updated = True
+            break
+    if updated:
+        _atomic_write_json(path, data)
+        logger.info(
+            "_mark_connection_ended: prospect_id=%s profile_url=%s",
+            prospect_id,
+            profile_url,
+        )
+    return updated
+
+
+def _sync_prospect_outreach_stage(prospect_id: str, stage: str) -> None:
+    """Align prospects/<id>.json outreach_stage with a terminal conversation stage."""
+    if stage not in _TERMINAL_CONVERSATION_STAGES:
+        return
+    path = _outreach_base() / "prospects" / f"{prospect_id}.json"
+    if not path.is_file():
+        return
+    try:
+        prospect = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(prospect, dict):
+            return
+        if prospect.get("outreach_stage") in _TERMINAL_CONVERSATION_STAGES:
+            return
+        prospect["outreach_stage"] = stage
+        _atomic_write_json(path, prospect)
+        logger.info("_sync_prospect_outreach_stage: %s → %s", prospect_id, stage)
+    except (OSError, json.JSONDecodeError):
+        logger.exception("_sync_prospect_outreach_stage failed for %s", prospect_id)
+
+
 def _lookup_connection_name(profile_url: str) -> str | None:
     """
     Read clean name for a profile URL from connections.json under the active outreach root.
@@ -1032,13 +1099,18 @@ async def save_connection(
     note_sent : str | None
         The connection note that was sent, or None if no note was included.
     connection_status : str
-        "pending" (default) until LinkedIn accepts; then "connected" (see prospect.schema.json).
+        "pending" (default) until LinkedIn accepts; then "connected"; "ended" when the
+        outreach sequence is complete for this row (batch planner skips ended rows).
 
     Returns
     -------
     str
         Confirmation string on success, or an error description.
     """
+    status = (connection_status or "pending").strip()
+    if status not in _CONNECTION_STATUSES:
+        return f"error: invalid connection_status {status!r}; expected one of {sorted(_CONNECTION_STATUSES)}"
+
     path = _outreach_base() / "connections.json"
     try:
         if path.exists():
@@ -1058,13 +1130,20 @@ async def save_connection(
         resolved_pid = explicit or previous_pid or derived
 
         clean_name = _sanitize_connection_name(name) or name.strip()
+        connected_at = _iso_now()
+        if previous and previous.get("connected_at"):
+            if status == "ended" or (
+                status == "connected" and previous.get("connection_status") == "connected"
+            ):
+                connected_at = previous["connected_at"]
+
         entry = {
             "prospect_id": resolved_pid,
             "profile_url": profile_url,
             "name": clean_name,
             "title": title,
-            "connection_status": connection_status,
-            "connected_at": _iso_now(),
+            "connection_status": status,
+            "connected_at": connected_at,
             "note_sent": note_sent,
         }
 
@@ -1177,6 +1256,13 @@ async def upsert_conversation(
     try:
         data = json.loads(conversation)
         _atomic_write_json(path, data)
+        stage = data.get("outreach_stage") if isinstance(data, dict) else None
+        if stage in _TERMINAL_CONVERSATION_STAGES:
+            _mark_connection_ended(
+                prospect_id,
+                data.get("linkedin_url") if isinstance(data, dict) else None,
+            )
+            _sync_prospect_outreach_stage(prospect_id, str(stage))
         logger.info("upsert_conversation: wrote %s", path)
         return f"ok — wrote {path}"
     except Exception as exc:

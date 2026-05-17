@@ -117,6 +117,61 @@ async def test_server_schedule_meeting_mock_mode(
 
 
 @pytest.mark.asyncio
+async def test_upsert_conversation_marks_connection_ended(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Terminal upsert_conversation promotes connections.json to connection_status ended."""
+    conv_dir = tmp_path / "conversations"
+    conv_dir.mkdir()
+    prospects_dir = tmp_path / "prospects"
+    prospects_dir.mkdir()
+    (tmp_path / "connections.json").write_text(
+        json.dumps(
+            {
+                "connections": [
+                    {
+                        "prospect_id": PROSPECT_ID,
+                        "profile_url": "https://www.linkedin.com/in/alex-chen-softeng/",
+                        "name": "Alex Chen",
+                        "title": "Engineer",
+                        "connection_status": "connected",
+                        "connected_at": "2026-05-17T12:00:00+00:00",
+                        "note_sent": None,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (prospects_dir / f"{PROSPECT_ID}.json").write_text(
+        json.dumps({"id": PROSPECT_ID, "outreach_stage": "engaged"}),
+        encoding="utf-8",
+    )
+
+    mod = get_server_module()
+    monkeypatch.setattr(mod, "_outreach_base", lambda: tmp_path)
+
+    conv = {
+        "prospect_id": PROSPECT_ID,
+        "linkedin_url": "https://www.linkedin.com/in/alex-chen-softeng/",
+        "outreach_stage": "ended",
+        "ended_reason": "call_scheduled",
+        "messages": [],
+    }
+    result = await mod.upsert_conversation(PROSPECT_ID, json.dumps(conv))
+    assert result.startswith("ok")
+
+    rows = json.loads((tmp_path / "connections.json").read_text(encoding="utf-8"))
+    assert rows["connections"][0]["connection_status"] == "ended"
+    assert rows["connections"][0]["connected_at"] == "2026-05-17T12:00:00+00:00"
+    prospect = json.loads(
+        (prospects_dir / f"{PROSPECT_ID}.json").read_text(encoding="utf-8")
+    )
+    assert prospect["outreach_stage"] == "ended"
+
+
+@pytest.mark.asyncio
 async def test_server_schedule_meeting_live_stub(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -406,6 +406,8 @@ c. **`append_action_log(entry=json.dumps({...}))`**:
 
 d. Sync **`prospect.outreach_stage`** with **`upsert_prospect`** if needed.
 
+e. Mark the connection row complete: **`save_connection`** with the same `profile_url`, `name`, `title`, and `prospect_id` as the existing row, and **`connection_status`** → **`"ended"`**. Batch mode skips rows already **`"ended"`**. (A terminal **`upsert_conversation`** also promotes the row when `outreach_stage` is **`"ended"`** or **`"dead"`**, but call **`save_connection`** explicitly so batch filters stay correct even if conversation sync order varies.)
+
 ---
 
 ## Output — PlannedMessage
@@ -475,6 +477,7 @@ When `prospect_id` is **not** provided, run planning for every connection return
    Optionally run **`sync-pending-connections`** (`outreach/skills/sync-pending-connections/SKILL.md`) first so accepted invites are promoted from `"pending"` to `"connected"` before this step.  
    Skip entries where any of the following is true:
    - `connection_status` is `"pending"` — invitation not yet accepted; nothing to plan.
+   - `connection_status` is `"ended"` — outreach sequence complete for this connection.
    - **`get_conversation(prospect_id)`** shows `outreach_stage` is `"ended"` or `"dead"` — sequence is complete.
    - Same conversation has `next_action` `"mark_ended"` or `"mark_dead"`.
 
