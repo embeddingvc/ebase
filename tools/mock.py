@@ -11,6 +11,10 @@ LinkedIn tool mocks (``scrape_profile``, ``is_first_degree_connection``, ``send_
 ``handle_load_test_case`` was not used first (tests only), a session is auto-created from ``happy_path``,
 which uses that prospect and its scripted replies. Other scenarios require ``handle_load_test_case`` first.
 
+Mock DM session state (history and counters) is saved under ``outreach/mock/mock_linkedin_sessions.json``
+whenever mock ``send_*`` or ``handle_load_test_case`` mutates a session, so each new MCP host process
+(e.g. successive ``claude -p`` runs) restores the thread via :func:`ensure_default_mock_session`.
+
 Public surface
 ──────────────
   Data / state
@@ -21,6 +25,8 @@ Public surface
   Helpers
     normalise_url(url)                   → str
     get_session(profile_url)             → MockSession | None
+    sessions_store_path()               → pathlib.Path
+    clear_persisted_mock_session(url)    → erase one profile blob on disk (tests/harness resets)
 
   Async handlers (called by server.py when in mock mode; test-only helpers are not MCP tools)
     handle_list_test_cases()             → str   (tests / inspection only)
@@ -41,13 +47,62 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger("linkedin.mock")
+
+
+# Persisted DM mock state (survives new MCP subprocesses, e.g. ``claude -p`` regression).
+_MOCK_SESSIONS_FILENAME = "mock_linkedin_sessions.json"
+_MOCK_STORE_VERSION = 1
+
+
+def sessions_store_path() -> Path:
+    """JSON store under ``outreach/mock/``, same tree as MCP outreach filesystem in mock mode."""
+    return Path(__file__).resolve().parent.parent / "outreach" / "mock" / _MOCK_SESSIONS_FILENAME
+
+
+def _atomic_write_json(path: Path, data: object) -> None:
+    """Write JSON atomically so a crash cannot corrupt the store."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        Path(tmp).replace(path)
+    except Exception:
+        try:
+            Path(tmp).unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _read_encoded_sessions_disk() -> dict[str, dict[str, Any]]:
+    path = sessions_store_path()
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("mock: could not read session store %s: %s", path, exc)
+        return {}
+    inner = raw.get("sessions") if isinstance(raw, dict) else None
+    if not isinstance(inner, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for key, blob in inner.items():
+        if isinstance(blob, dict):
+            out[str(key)] = blob
+    return out
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -89,7 +144,7 @@ _ALEX_CHEN: dict[str, Any] = {
     ],
     "connection_status": "none",
     "outreach_stage": "cold",
-    "end_goal": "obtain_resume",
+    "end_goal": "schedule_meeting",
     "outreach_topic": "Series A ML infra roles in the portfolio",
     "target_action": None,
     "notes": (
@@ -134,7 +189,7 @@ TEST_CASES: dict[str, dict[str, Any]] = {
         ),
         "prospect": _ALEX_CHEN,
         "connection_accepted": True,
-        "end_condition": "resume_shared",
+        "end_condition": "meeting_scheduled",
         "replies": [
             # [0] reply to connection note
             {
@@ -142,7 +197,6 @@ TEST_CASES: dict[str, dict[str, Any]] = {
                     "Thanks Nova! Yeah I'm always curious what's out there. "
                     "What kind of companies are you working with?"
                 ),
-                "attachments": [],
             },
             # [1] reply to first DM (career question)
             {
@@ -151,7 +205,6 @@ TEST_CASES: dict[str, dict[str, Any]] = {
                     "to work on something earlier stage. The architecture migration was fun "
                     "but I miss the 0-to-1 feeling. Been looking at some ML infra teams."
                 ),
-                "attachments": [],
             },
             # [2] reply to second DM (join vs build)
             {
@@ -160,107 +213,14 @@ TEST_CASES: dict[str, dict[str, Any]] = {
                     "something. Ideally a Series A company where I can own a big chunk of "
                     "the infra. Definitely open to hearing about what's in your network."
                 ),
-                "attachments": [],
             },
-            # [3] reply to third DM (resume request)
+            # [3] reply to third DM (schedule call)
             {
-                "text": "Sure, here you go!",
-                "attachments": [
-                    {
-                        "type": "resume",
-                        "url": "https://linkedin.com/dms/alex_chen_resume.pdf",
-                        "filename": "alex_chen_resume.pdf",
-                    }
-                ],
+                "text": "Hey I would love to meet sometime for a more thorough conversation. I'm available anytime next week.",
             },
-        ],
-    },
-
-    # ── 2. Not interested ─────────────────────────────────────────────────────
-    "not_interested": {
-        "description": (
-            "Prospect politely declines right after the connection note. "
-            "Planner should recognise the rejection and close the conversation."
-        ),
-        "prospect": _ALEX_CHEN,
-        "connection_accepted": True,
-        "end_condition": "not_interested",
-        "replies": [
-            # [0] reply to connection note
+            # [4] reply to fourth DM (email)
             {
-                "text": (
-                    "Hey Nova, thanks for reaching out but I'm not looking for anything "
-                    "new right now. Happy at Stripe and plan to stay for a while. Best of luck!"
-                ),
-                "attachments": [],
-            },
-        ],
-    },
-
-    # ── 3. No reply / timeout ─────────────────────────────────────────────────
-    "no_reply": {
-        "description": (
-            "Prospect replies once to show mild interest then goes silent. "
-            "Planner should send a gentle follow-up then eventually time out."
-        ),
-        "prospect": _ALEX_CHEN,
-        "connection_accepted": True,
-        "end_condition": "timeout",
-        "replies": [
-            # [0] reply to connection note
-            {
-                "text": "Thanks Nova! Yeah I'm always curious what's out there.",
-                "attachments": [],
-            },
-            None,   # [1] silent after first DM
-            None,   # [2] silent after second DM — planner should give up
-        ],
-    },
-
-    # ── 4. Ghosted — never accepted ───────────────────────────────────────────
-    "ghosted_cold": {
-        "description": (
-            "Prospect never accepts the connection request. "
-            "fetch_chat_history returns an empty thread; "
-            "planner should eventually mark as timed-out."
-        ),
-        "prospect": _ALEX_CHEN,
-        "connection_accepted": False,
-        "end_condition": "timeout",
-        "replies": [],
-    },
-
-    # ── 5. Eager referral — fast convert ─────────────────────────────────────
-    "eager_referral": {
-        "description": (
-            "Prospect is actively job-seeking and converts after just one follow-up. "
-            "Shares resume on turn 2 without much prompting."
-        ),
-        "prospect": _ALEX_CHEN,
-        "connection_accepted": True,
-        "end_condition": "resume_shared",
-        "replies": [
-            # [0] reply to connection note
-            {
-                "text": (
-                    "Nova! Perfect timing — I've actually been actively looking. "
-                    "I'd love to hear what you have. Can I send you my resume directly?"
-                ),
-                "attachments": [],
-            },
-            # [1] reply to first DM (invite to share)
-            {
-                "text": (
-                    "Here's my resume. I'm particularly interested in ML infra or platform "
-                    "engineering roles at Series A or B. Let me know what fits!"
-                ),
-                "attachments": [
-                    {
-                        "type": "resume",
-                        "url": "https://linkedin.com/dms/alex_chen_resume_v2.pdf",
-                        "filename": "alex_chen_resume_v2.pdf",
-                    }
-                ],
+                "text": "Sure my email is alexchen336@gmail.com. Let's schedule a call next week.",
             },
         ],
     },
@@ -285,19 +245,12 @@ class MockSession:
     messages_sent
         Count of operator bubbles in ``history`` after each tool call (synced for
         mock state previews).  The connection note counts as one operator message.
-
-    connection_note_posted
-        True after a successful mock ``send_connection_request`` added the note to
-        ``history``.  Used so a DM sent as the thread opener (no connection step)
-        maps to ``replies[1]``, not ``replies[0]`` (which is the scripted reply
-        to the connection note).
     """
     test_case_id: str
     profile_url: str
     connection_accepted: bool = False
     history: list[dict[str, Any]] = field(default_factory=list)
     messages_sent: int = 0
-    connection_note_posted: bool = False
     ended: bool = False
     ended_reason: str | None = None
     loaded_at: str = field(
@@ -332,9 +285,106 @@ def normalise_url(url: str) -> str:
     return f"{scheme}://{host}{path}"
 
 
+def _mock_session_to_blob(s: MockSession) -> dict[str, Any]:
+    return {
+        "test_case_id": s.test_case_id,
+        "profile_url": s.profile_url,
+        "connection_accepted": s.connection_accepted,
+        "history": s.history,
+        "messages_sent": s.messages_sent,
+        "ended": s.ended,
+        "ended_reason": s.ended_reason,
+        "loaded_at": s.loaded_at,
+    }
+
+
+def _mock_session_from_blob(blob: dict[str, Any]) -> MockSession | None:
+    profile_url = (blob.get("profile_url") or "").strip()
+    if not profile_url:
+        return None
+    tc_id = str(blob.get("test_case_id") or _DEFAULT_MOCK_TEST_CASE_ID)
+    if tc_id not in TEST_CASES:
+        tc_id = _DEFAULT_MOCK_TEST_CASE_ID
+    hist = blob.get("history")
+    if not isinstance(hist, list):
+        hist = []
+    history: list[dict[str, Any]] = []
+    for e in hist:
+        if isinstance(e, dict):
+            history.append(e)
+    return MockSession(
+        test_case_id=tc_id,
+        profile_url=str(blob.get("profile_url") or profile_url),
+        connection_accepted=bool(blob.get("connection_accepted", False)),
+        history=history,
+        messages_sent=int(blob.get("messages_sent") or 0),
+        ended=bool(blob.get("ended", False)),
+        ended_reason=blob.get("ended_reason"),
+        loaded_at=str(blob.get("loaded_at") or datetime.now(timezone.utc).isoformat()),
+    )
+
+
+def _persist_mock_sessions() -> None:
+    """Merge RAM ``sessions`` into the on-disk store and write atomically."""
+    path = sessions_store_path()
+    merged = _read_encoded_sessions_disk()
+    for key, sess in sessions.items():
+        merged[key] = _mock_session_to_blob(sess)
+    _atomic_write_json(
+        path,
+        {"version": _MOCK_STORE_VERSION, "sessions": merged},
+    )
+
+
+def _hydrate_from_disk(key: str) -> None:
+    """Load ``sessions[key]`` from disk if missing in RAM."""
+    if key in sessions:
+        return
+    blob = _read_encoded_sessions_disk().get(key)
+    if blob is None:
+        return
+    sess = _mock_session_from_blob(blob)
+    if sess is None:
+        return
+    sessions[key] = sess
+    logger.info(
+        "mock: hydrated session from disk  key=%s  test_case=%s  history_len=%d",
+        key,
+        sess.test_case_id,
+        len(sess.history),
+    )
+
+
+def clear_persisted_mock_session(profile_url: str) -> None:
+    """Remove one profile from the persisted store (does not touch in-RAM ``sessions``)."""
+    key = normalise_url(profile_url)
+    path = sessions_store_path()
+    merged = _read_encoded_sessions_disk()
+    if key not in merged:
+        return
+    del merged[key]
+    if not merged:
+        try:
+            path.unlink()
+        except OSError:
+            _atomic_write_json(
+                path,
+                {"version": _MOCK_STORE_VERSION, "sessions": {}},
+            )
+    else:
+        _atomic_write_json(
+            path,
+            {"version": _MOCK_STORE_VERSION, "sessions": merged},
+        )
+
+
 def get_session(profile_url: str) -> MockSession | None:
-    """Return the active MockSession for profile_url, or None."""
-    return sessions.get(normalise_url(profile_url))
+    """Return the active MockSession for profile_url, hydrating from disk if needed."""
+    key = normalise_url(profile_url)
+    if not key:
+        return None
+    _hydrate_from_disk(key)
+    return sessions.get(key)
 
 
 def ensure_default_mock_session(profile_url: str) -> MockSession:
@@ -343,6 +393,7 @@ def ensure_default_mock_session(profile_url: str) -> MockSession:
     (``happy_path`` → _ALEX_CHEN) if ``handle_load_test_case`` was never called.
     """
     key = normalise_url(profile_url)
+    _hydrate_from_disk(key)
     existing = sessions.get(key)
     if existing is not None:
         return existing
@@ -436,6 +487,7 @@ async def handle_load_test_case(test_case_id: str, profile_url: str) -> str:
         connection_accepted=tc["connection_accepted"],
     )
     logger.info("handle_load_test_case  test_case=%s  profile=%s", test_case_id, profile_url)
+    _persist_mock_sessions()
 
     replies = tc.get("replies", [])
     total = len(replies)
@@ -677,27 +729,11 @@ async def handle_parse_profile(profile_url: str) -> str:
 async def handle_is_first_degree_connection(profile_url: str) -> str:
     """
     Return whether the mock session is in a 1st-degree (DM-ready) state.
-
-    Requires ``connection_accepted`` on the test case, and either a recorded
-    connection invite (``connection_note_posted``) or any thread history, so a
-    cold ``happy_path`` session before ``send_connection_request`` stays false.
     """
-    session = ensure_default_mock_session(profile_url)
-    key = normalise_url(profile_url)
-    if not session.connection_accepted:
-        first = False
-    else:
-        first = session.connection_note_posted or len(session.history) > 0
-    logger.info(
-        "is_first_degree_connection MOCK (test case: %s)  url=%s  → %s",
-        session.test_case_id,
-        profile_url,
-        first,
-    )
     return json.dumps(
         {
-            "first_degree": first,
-            "profile_url": key or (profile_url or "").strip(),
+            "first_degree": True,
+            "profile_url": profile_url,
         },
         ensure_ascii=False,
         indent=2,
@@ -723,15 +759,13 @@ async def handle_send_connection_request(profile_url: str, note: str) -> str:
     )
 
     if session.connection_accepted:
-        session.history.append({"message": note, "self": True})
-        session.connection_note_posted = True
-        session.messages_sent = sum(1 for h in session.history if h.get("self"))
         _append_prospect_reply(session, reply_index=0)
+        _persist_mock_sessions()
         return "ok"
 
     # Connection not accepted — note was sent but prospect ignores it.
-    session.connection_note_posted = False
     session.messages_sent = 1
+    _persist_mock_sessions()
     return (
         "ok — connection request sent. "
         "[MOCK: test case has connection_accepted=False — "
@@ -754,11 +788,7 @@ async def handle_send_message(profile_url: str, message: str) -> str:
         )
 
     op_before = sum(1 for h in session.history if h.get("self"))
-    if session.connection_note_posted:
-        reply_index = op_before
-    else:
-        # DM as thread opener (already-connected flow): skip replies[0] (connection-note reply).
-        reply_index = op_before + 1
+    reply_index = op_before + 1
 
     session.history.append({"message": message, "self": True})
     session.messages_sent = sum(1 for h in session.history if h.get("self"))
@@ -771,6 +801,7 @@ async def handle_send_message(profile_url: str, message: str) -> str:
         reply_index,
         len(session.history),
     )
+    _persist_mock_sessions()
     return "ok"
 
 

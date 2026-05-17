@@ -16,3 +16,8 @@ dev-dependencies = [
     "pytest",
     "pytest-asyncio",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "local_regression: needs `claude` CLI + auth; mock workflow loop (not for headless CI)",
+]

@@ -6,6 +6,7 @@
 #  make server     Start the queue-draining worker (requires Chrome running)
 #  make stop       Kill the worker process
 #  make test       Run the full exploration test suite
+#  make regression Run local conversation-planner regression (claude -p + mock; skips if no claude)
 #  make smoke      Run smoke tests only (no credentials needed)
 #  make install    Install Python dependencies + Playwright browsers
 #  make claude-install   Sync skills + register MCP (default: user scope + ~/.claude/skills; LOCAL=1: local MCP only)
@@ -52,7 +53,7 @@ ifneq ($(LOCAL),)
 override CLAUDE_INSTALL_LOCAL := $(LOCAL)
 endif
 
-.PHONY: run browser server stop test test_conversation smoke install logs queue status help web \
+.PHONY: run browser server stop test test_conversation regression smoke install logs queue status help web \
 	claude-install claude-cleanup
 
 # ── Default target ────────────────────────────────────────────────────────────
@@ -114,6 +115,9 @@ test: ## Run all exploration tests (set env vars to unlock tiers)
 test_conversation: ## Run conversation-planner skill tests against Claude API (needs ANTHROPIC_API_KEY)
 	@echo "▶  Running conversation-planner tests..."
 	uv run tests/test_conversation_planner.py
+
+regression: ## Local pytest regression (Claude CLI + tools/mock); see docs/designs/outreach-workflow-regression-tests-design.md
+	uv run pytest tests/test_regression_workflow.py -v
 
 smoke: ## Run smoke tests only (no credentials needed)
 	uv run tests/test_playwright_exploration.py
