@@ -252,71 +252,54 @@ def _stage_label(stage: str | None, conn_status: str | None) -> str:
     }
     if stage:
         return mapping.get(stage, stage.replace("_", " ").title())
-    if conn_status == "pending":
-        return "Invite Sent"
-    if conn_status == "connected":
-        return "Connected"
+    conn_labels = {
+        "pending": "Invite Sent",
+        "connected": "Connected",
+        "ended": "Ended",
+    }
+    if conn_status:
+        return conn_labels.get(conn_status, conn_status.replace("_", " ").title())
     return "Unknown"
+
+
+def _connection_display_row(base: Path, conn: dict[str, Any]) -> dict[str, Any]:
+    """Build one connections-tab row: identity from ``connections.json``, stage from conversation."""
+    pid = (conn.get("prospect_id") or "").strip()
+    conv = _load_conversation(base, pid) if pid else None
+
+    prospect = None
+    if pid and not (conn.get("name") and conn.get("title") and conn.get("profile_url")):
+        prospect = _load_prospect(base, pid)
+
+    name = conn.get("name") or (prospect or {}).get("name") or pid
+    title = conn.get("title") or (prospect or {}).get("title") or ""
+    profile_url = conn.get("profile_url") or (prospect or {}).get("linkedin_url")
+    connection_status = conn.get("connection_status")
+    stage = (conv or {}).get("outreach_stage")
+    last_ts = (conv or {}).get("last_action_timestamp") or conn.get("connected_at")
+
+    return {
+        "prospect_id": pid,
+        "name": name,
+        "title": title,
+        "profile_url": profile_url,
+        "connection_status": connection_status,
+        "connected_at": conn.get("connected_at"),
+        "note_sent": conn.get("note_sent"),
+        "outreach_stage": stage,
+        "stage_label": _stage_label(stage, connection_status),
+        "sequence_step": (conv or {}).get("sequence_step"),
+        "last_action": (conv or {}).get("last_action"),
+        "last_action_summary": _last_message_summary(conv),
+        "last_action_at": last_ts,
+        "last_action_relative": _relative_time(last_ts),
+        "initials": _initials(str(name)),
+    }
 
 
 def get_connections() -> dict[str, Any]:
     base = outreach_base()
-    connections = _load_connections(base)
-    rows: list[dict[str, Any]] = []
-    seen: set[str] = set()
-
-    for conn in connections:
-        pid = conn.get("prospect_id") or ""
-        seen.add(pid)
-        prospect = _load_prospect(base, pid) if pid else None
-        conv = _load_conversation(base, pid) if pid else None
-        name = conn.get("name") or (prospect or {}).get("name") or pid
-        title = conn.get("title") or (prospect or {}).get("title") or ""
-        stage = (conv or {}).get("outreach_stage")
-        last_ts = (conv or {}).get("last_action_timestamp") or conn.get("connected_at")
-        rows.append(
-            {
-                "prospect_id": pid,
-                "name": name,
-                "title": title,
-                "profile_url": conn.get("profile_url") or (prospect or {}).get("linkedin_url"),
-                "connection_status": conn.get("connection_status"),
-                "outreach_stage": stage,
-                "stage_label": _stage_label(stage, conn.get("connection_status")),
-                "sequence_step": (conv or {}).get("sequence_step"),
-                "last_action": (conv or {}).get("last_action"),
-                "last_action_summary": _last_message_summary(conv),
-                "last_action_at": last_ts,
-                "last_action_relative": _relative_time(last_ts),
-                "initials": _initials(str(name)),
-            }
-        )
-
-    for conv in _glob_conversations(base):
-        pid = conv.get("prospect_id") or ""
-        if pid in seen:
-            continue
-        prospect = _load_prospect(base, pid) if pid else None
-        name = (prospect or {}).get("name") or pid
-        last_ts = conv.get("last_action_timestamp")
-        rows.append(
-            {
-                "prospect_id": pid,
-                "name": name,
-                "title": (prospect or {}).get("title") or "",
-                "profile_url": (prospect or {}).get("linkedin_url"),
-                "connection_status": (prospect or {}).get("connection_status"),
-                "outreach_stage": conv.get("outreach_stage"),
-                "stage_label": _stage_label(conv.get("outreach_stage"), None),
-                "sequence_step": conv.get("sequence_step"),
-                "last_action": conv.get("last_action"),
-                "last_action_summary": _last_message_summary(conv),
-                "last_action_at": last_ts,
-                "last_action_relative": _relative_time(last_ts),
-                "initials": _initials(str(name)),
-            }
-        )
-
+    rows = [_connection_display_row(base, conn) for conn in _load_connections(base)]
     rows.sort(key=lambda r: r.get("last_action_at") or "", reverse=True)
     return {"total": len(rows), "connections": rows}
 

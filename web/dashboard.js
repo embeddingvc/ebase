@@ -11,6 +11,7 @@ const API = {
 let allowedSkills = [];
 let routinesConfigDraft = [];
 let currentTab = "connections";
+const runningRoutines = new Set();
 
 const HEALTH_POLL_MS = 15000;
 
@@ -138,6 +139,10 @@ function renderConnections(data) {
     .join("");
 }
 
+function routineRunUrl(routineId) {
+  return `/api/dashboard/routines/${encodeURIComponent(routineId)}/run`;
+}
+
 function renderRoutines(data) {
   const list = data.routines || [];
   if (!list.length) {
@@ -159,8 +164,11 @@ function renderRoutines(data) {
       const skill = r.skill || "—";
       const label =
         st === "disabled" ? "INACTIVE" : st === "error" ? "ERROR" : st === "active" ? "ACTIVE" : "IDLE";
-      return `<div class="flex items-center p-3 rounded-lg border border-[#bfc7d1] bg-[#f7f9fb] gap-3">
-        <motion-icon class="bg-[#005d8f]/10 p-2 rounded-lg shrink-0">
+      const rid = r.id || "";
+      const isRunning = runningRoutines.has(rid);
+      const timerHint = r.active ? " · resets timer" : "";
+      return `<div class="routine-card flex items-center p-3 rounded-lg border border-[#bfc7d1] bg-[#f7f9fb] gap-3" data-routine-id="${escapeHtml(rid)}">
+        <div class="bg-[#005d8f]/10 p-2 rounded-lg shrink-0">
           <span class="material-symbols-outlined text-[#005d8f]">${escapeHtml(r.icon || "bolt")}</span>
         </div>
         <div class="flex-grow min-w-0">
@@ -168,12 +176,45 @@ function renderRoutines(data) {
           <div class="text-[11px] text-[#404850]">${escapeHtml(skill)} · every ${interval}m</div>
           <div class="text-[10px] text-[#404850]">${escapeHtml(last)}</div>
         </div>
-        <span class="text-[11px] font-bold ${stColor} shrink-0">${label}</span>
+        <span class="text-[11px] font-bold ${stColor} shrink-0 hidden sm:inline">${label}</span>
+        <button type="button" class="routine-trigger shrink-0 p-2 rounded-lg border border-[#bfc7d1] bg-white text-[#005d8f] hover:bg-[#e8f1f8] disabled:opacity-50 disabled:cursor-not-allowed" data-routine-id="${escapeHtml(rid)}" title="Run now${timerHint}" aria-label="Run ${escapeHtml(r.name)} now" ${isRunning ? "disabled" : ""}>
+          <span class="material-symbols-outlined text-xl leading-none ${isRunning ? "animate-spin" : ""}">${isRunning ? "progress_activity" : "play_arrow"}</span>
+        </button>
       </div>`;
     })
-    .join("")
-    .replace(/<\/?motion-\w+[^>]*>/g, "");
+    .join("");
   if (data.campaign_goal) el("campaign-goal").textContent = data.campaign_goal;
+}
+
+async function triggerRoutine(routineId) {
+  if (!routineId || runningRoutines.has(routineId)) return;
+  const errEl = el("error-routines");
+  errEl.hidden = true;
+  runningRoutines.add(routineId);
+  const card = el("routines-list").querySelector(`[data-routine-id="${routineId}"]`);
+  const btn = card?.querySelector(".routine-trigger");
+  if (btn) {
+    btn.disabled = true;
+    const icon = btn.querySelector(".material-symbols-outlined");
+    if (icon) {
+      icon.textContent = "progress_activity";
+      icon.classList.add("animate-spin");
+    }
+  }
+  try {
+    await fetchJson(routineRunUrl(routineId), { method: "POST" });
+    if (currentTab === "routines") {
+      await loadTab("routines");
+    }
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+    if (currentTab === "routines") {
+      renderRoutines(await fetchJson(API.routines));
+    }
+  } finally {
+    runningRoutines.delete(routineId);
+  }
 }
 
 
@@ -491,6 +532,12 @@ function initModals() {
   });
   el("modal-overlay").addEventListener("click", (e) => {
     if (e.target === el("modal-overlay")) hideModals();
+  });
+  el("routines-list").addEventListener("click", (e) => {
+    const btn = e.target.closest(".routine-trigger");
+    if (!btn || btn.disabled) return;
+    const routineId = btn.dataset.routineId;
+    if (routineId) triggerRoutine(routineId);
   });
 }
 

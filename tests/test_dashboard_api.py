@@ -81,8 +81,44 @@ def outreach_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_get_connections(outreach_tmp: Path) -> None:
     data = dd.get_connections()
     assert data["total"] == 1
+    row = data["connections"][0]
+    assert row["name"] == "Jane Doe"
+    assert row["title"] == "Director"
+    assert row["connection_status"] == "connected"
+    assert row["stage_label"] == "Replied"
+    assert row["outreach_stage"] == "replied"
+
+
+def test_get_connections_prefers_connections_json_over_prospect(
+    outreach_tmp: Path,
+) -> None:
+    (outreach_tmp / "prospects" / "jane_doe.json").write_text(
+        json.dumps(
+            {
+                "id": "jane_doe",
+                "name": "Wrong Name",
+                "title": "Wrong Title",
+                "linkedin_url": "https://www.linkedin.com/in/wrong/",
+                "connection_status": "pending",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (outreach_tmp / "conversations" / "orphan.json").write_text(
+        json.dumps(
+            {
+                "prospect_id": "orphan",
+                "outreach_stage": "engaged",
+                "last_action_timestamp": "2026-05-10T10:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    data = dd.get_connections()
+    assert data["total"] == 1
     assert data["connections"][0]["name"] == "Jane Doe"
-    assert data["connections"][0]["stage_label"] == "Replied"
+    assert data["connections"][0]["title"] == "Director"
+    assert all(c["prospect_id"] != "orphan" for c in data["connections"])
 
 
 def test_get_meetings(outreach_tmp: Path) -> None:
