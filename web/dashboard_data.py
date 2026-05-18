@@ -335,63 +335,35 @@ def get_routines() -> dict[str, Any]:
     return payload
 
 
-def _action_label(action: str | None) -> str:
-    labels = {
-        "send_connection_request": "Initial Connect",
-        "send_followup_message": "Follow-up Sequence",
-        "scrape_profile": "Profile Scrape",
-        "confirm_meeting": "Meeting Confirm",
-    }
-    return labels.get(action or "", action or "Automation")
+def _duration_label(started_at: str | None, finished_at: str | None) -> str | None:
+    if not started_at or not finished_at:
+        return None
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        finished = datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if finished.tzinfo is None:
+            finished = finished.replace(tzinfo=timezone.utc)
+        secs = int((finished - started).total_seconds())
+        if secs < 60:
+            return f"{secs}s"
+        return f"{secs // 60}m {secs % 60}s"
+    except (ValueError, TypeError):
+        return None
 
 
 def get_execution_history(*, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    """Routine skill runs from ``logs/routine_runs.jsonl`` only."""
+    from web import routines_config
+
     base = outreach_base()
     entries: list[dict[str, Any]] = []
-
-    for bucket, status in (
-        ("completed.json", "success"),
-        ("failed.json", "failed"),
-    ):
-        data = _read_json(base / QUEUE_DIR / bucket, {})
-        key = "completed" if "completed" in bucket else "failed"
-        for job in data.get(key) or []:
-            finished = job.get("finished_at") or job.get("added_at")
-            entries.append(
-                {
-                    "id": f"queue-{job.get('prospect_id')}-{finished}",
-                    "routine_name": _action_label(job.get("action")),
-                    "action": job.get("action"),
-                    "prospect_id": job.get("prospect_id"),
-                    "started_at": job.get("added_at"),
-                    "finished_at": finished,
-                    "duration_label": None,
-                    "prospects": 1,
-                    "prospects_total": 1,
-                    "status": status,
-                    "source": "queue",
-                    "note": job.get("note"),
-                }
-            )
-
-    pending = _read_json(base / QUEUE_DIR / "pending.json", {"queue": []})
-    for job in pending.get("queue") or []:
-        entries.append(
-            {
-                "id": f"pending-{job.get('prospect_id')}-{job.get('added_at')}",
-                "routine_name": _action_label(job.get("action")),
-                "action": job.get("action"),
-                "prospect_id": job.get("prospect_id"),
-                "started_at": job.get("added_at"),
-                "finished_at": None,
-                "duration_label": None,
-                "prospects": 0,
-                "prospects_total": 1,
-                "status": "running",
-                "source": "queue",
-                "note": None,
-            }
-        )
+    names = {
+        r["id"]: r.get("name")
+        for r in routines_config.load_config().get("routines") or []
+        if r.get("id")
+    }
 
     runs_path = base / LOGS_DIR / "routine_runs.jsonl"
     if runs_path.is_file():
@@ -404,17 +376,19 @@ def get_execution_history(*, limit: int = 50, offset: int = 0) -> dict[str, Any]
                     row = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                routine_id = row.get("routine_id") or ""
+                skill = row.get("skill") or ""
+                started_at = row.get("started_at")
+                finished_at = row.get("finished_at")
                 entries.append(
                     {
-                        "id": f"routine-{row.get('routine_id')}-{row.get('finished_at')}",
-                        "routine_name": row.get("skill") or row.get("routine_id"),
-                        "action": row.get("skill"),
-                        "prospect_id": row.get("routine_id"),
-                        "started_at": row.get("started_at"),
-                        "finished_at": row.get("finished_at"),
-                        "duration_label": None,
-                        "prospects": 1,
-                        "prospects_total": 1,
+                        "id": f"routine-{routine_id}-{finished_at}",
+                        "routine_id": routine_id,
+                        "routine_name": names.get(routine_id) or skill or routine_id,
+                        "skill": skill,
+                        "started_at": started_at,
+                        "finished_at": finished_at,
+                        "duration_label": _duration_label(started_at, finished_at),
                         "status": row.get("status") or "success",
                         "source": "routine_scheduler",
                         "note": row.get("error") or row.get("stdout_tail"),
@@ -423,43 +397,22 @@ def get_execution_history(*, limit: int = 50, offset: int = 0) -> dict[str, Any]
         except OSError:
             pass
 
-    planned, _ = _read_jsonl(base / LOGS_DIR / "planned_messages.jsonl", limit=200, offset=0)
-    for row in planned:
-        ts = row.get("generated_at")
-        entries.append(
-            {
-                "id": f"planned-{row.get('prospect_id')}-{ts}",
-                "routine_name": _action_label(row.get("action")),
-                "action": row.get("action"),
-                "prospect_id": row.get("prospect_id"),
-                "started_at": ts,
-                "finished_at": ts,
-                "duration_label": None,
-                "prospects": 1,
-                "prospects_total": 1,
-                "status": "success" if not row.get("end_conversation") else "ended",
-                "source": "planned_message",
-                "note": (row.get("message") or "")[:80],
-            }
-        )
-
     entries.sort(key=lambda e: e.get("started_at") or "", reverse=True)
     total = len(entries)
     page = entries[offset : offset + limit]
 
     completed_n = sum(1 for e in entries if e.get("status") == "success")
-    failed_n = sum(1 for e in entries if e.get("status") == "failed")
-    success_rate = round(100 * completed_n / (completed_n + failed_n), 1) if (completed_n + failed_n) else None
+    failed_n = sum(1 for e in entries if e.get("status") in ("failed", "error"))
 
     return {
         "total": total,
         "limit": limit,
         "offset": offset,
         "stats": {
-            "success_rate_pct": success_rate,
+            "success_rate_pct": round(100 * completed_n / total, 1) if total else None,
             "total_events": total,
             "failures": failed_n,
-            "pending": sum(1 for e in entries if e.get("status") == "running"),
+            "pending": 0,
         },
         "entries": page,
     }

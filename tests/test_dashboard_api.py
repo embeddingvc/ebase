@@ -92,11 +92,57 @@ def test_get_meetings(outreach_tmp: Path) -> None:
     assert data["meetings"][0]["channel"] == "Zoom"
 
 
-def test_get_execution_history(outreach_tmp: Path) -> None:
+def test_get_execution_history(outreach_tmp: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    logs = outreach_tmp / "logs"
+    (logs / "routine_runs.jsonl").write_text(
+        json.dumps(
+            {
+                "routine_id": "sync_pending",
+                "skill": "sync-pending-connections",
+                "status": "success",
+                "started_at": "2026-05-03T10:00:00+00:00",
+                "finished_at": "2026-05-03T10:00:16+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (logs / "planned_messages.jsonl").write_text(
+        json.dumps(
+            {
+                "prospect_id": "jane_doe",
+                "action": "send_followup_message",
+                "generated_at": "2026-05-03T11:00:00+00:00",
+                "message": "Should not appear",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (outreach_tmp / "config" / "dashboard_routines.json").write_text(
+        json.dumps(
+            {
+                "routines": [
+                    {
+                        "id": "sync_pending",
+                        "name": "Sync Pending Connections",
+                        "skill": "sync-pending-connections",
+                        "interval_minutes": 30,
+                        "active": False,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OUTREACH_MOCK", "0")
+
     data = dd.get_execution_history(limit=10)
-    assert data["total"] >= 2
-    statuses = {e["status"] for e in data["entries"]}
-    assert "running" in statuses or "success" in statuses
+    assert data["total"] == 1
+    assert data["entries"][0]["routine_name"] == "Sync Pending Connections"
+    assert data["entries"][0]["skill"] == "sync-pending-connections"
+    assert data["entries"][0]["duration_label"] == "16s"
+    assert data["stats"]["pending"] == 0
 
 
 def test_get_health_structure(monkeypatch: pytest.MonkeyPatch) -> None:

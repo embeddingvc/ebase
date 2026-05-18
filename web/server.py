@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -138,7 +139,22 @@ async def api_dashboard_routine_run_now(routine_id: str) -> JSONResponse:
     if not routine:
         raise HTTPException(status_code=404, detail="routine not found")
     skill = routine.get("skill") or ""
+    started = datetime.now(timezone.utc).isoformat()
     result = await asyncio.to_thread(skill_runner.run_named_skill, skill)
+    finished = datetime.now(timezone.utc).isoformat()
+    status = "success" if result.ok else "failed"
+    routines_config.append_run_log(
+        routine_id=routine_id,
+        skill=skill,
+        status=status,
+        started_at=started,
+        finished_at=finished,
+        error=result.error,
+        stdout_tail=result.stdout,
+    )
+    routines_config.update_routine_after_run(
+        routine_id, status=status, error=result.error
+    )
     return JSONResponse(result.to_dict(), status_code=200 if result.ok else 500)
 
 

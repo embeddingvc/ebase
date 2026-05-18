@@ -186,14 +186,12 @@ function renderExecution(data) {
   const entries = data.entries || [];
   const tbody = el("execution-tbody");
   if (!entries.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-[#404850]">No execution history yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-[#404850]">No routine runs yet.</td></tr>';
     return;
   }
   const statusClass = {
     success: "bg-emerald-100 text-emerald-800",
     failed: "bg-[#ffdad6] text-[#93000a]",
-    running: "bg-[#0077b5]/20 text-[#005d8f]",
-    ended: "bg-[#e0e3e5] text-[#404850]",
   };
   tbody.innerHTML = entries
     .map((row) => {
@@ -207,11 +205,10 @@ function renderExecution(data) {
         `<div class="w-2 h-8 ${barColor} rounded-full">`,
         "<div>",
         `<p class="font-bold">${escapeHtml(row.routine_name)}</p>`,
-        `<p class="text-[11px] text-[#404850]">${escapeHtml(row.prospect_id || row.source)}</p>`,
+        `<p class="text-[11px] text-[#404850]">${escapeHtml(row.skill || row.routine_id || "")}</p>`,
         "</div></div></td>",
         `<td class="px-6 py-4 text-sm">${escapeHtml(started)}</td>`,
-        '<td class="px-6 py-4 text-sm">—</td>',
-        `<td class="px-6 py-4 text-sm font-bold">${row.prospects}/${row.prospects_total}</td>`,
+        `<td class="px-6 py-4 text-sm">${escapeHtml(row.duration_label || "—")}</td>`,
         `<td class="px-6 py-4"><span class="px-3 py-1 rounded-full text-[11px] font-bold ${badge}">${escapeHtml(st)}</span></td>`,
         `<td class="px-6 py-4 text-right text-sm text-[#404850] max-w-xs truncate">${escapeHtml(row.note || "")}</td>`,
         "</tr>",
@@ -276,7 +273,7 @@ function setTab(tabId) {
   });
   const titles = {
     connections: ["Prospect Performance", "Active connections and outreach stages."],
-    routines: ["Routines & Execution", "Automation flows and execution history."],
+    routines: ["Routines & Execution", "Scheduled skill routines and their run history."],
     meetings: ["Scheduled Meetings", "Prospects who showed meeting interest."],
   };
   const [title, sub] = titles[tabId] || titles.connections;
