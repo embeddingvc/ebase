@@ -205,8 +205,8 @@ status: ## Show whether Chrome + worker are currently running
 	  echo "  ❌  Not running  (start with: make server)"; \
 	fi
 
-web: ## Start Claude cowork web UI (WEB_HOST / WEB_PORT)
-	@echo "[web] http://$(WEB_HOST):$(WEB_PORT)/"
+web: ## Start web UI + outreach dashboard (WEB_HOST / WEB_PORT)
+	@echo "[web] cowork http://$(WEB_HOST):$(WEB_PORT)/  dashboard http://$(WEB_HOST):$(WEB_PORT)/dashboard"
 	@cd "$(CURDIR)" && uv run uvicorn web.server:app --host "$(WEB_HOST)" --port "$(WEB_PORT)"
 
 help: ## List all targets

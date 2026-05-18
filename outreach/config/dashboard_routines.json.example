@@ -1,0 +1,18 @@
+{
+  "routines": [
+    {
+      "id": "sync_pending",
+      "name": "Sync Pending Connections",
+      "skill": "sync-pending-connections",
+      "interval_minutes": 30,
+      "active": false
+    },
+    {
+      "id": "conversation_planner",
+      "name": "Conversation Planner",
+      "skill": "conversation-planner",
+      "interval_minutes": 30,
+      "active": false
+    }
+  ]
+}

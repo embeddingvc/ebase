@@ -1,120 +1,168 @@
 #!/usr/bin/env python3
 """
-FastAPI app for the Claude cowork-style web UI.
+FastAPI app for the LinkedIn outreach dashboard.
 
-- GET /              → index.html
-- GET /styles.css, /app.js → static assets
-- POST /api/claude   → run ``claude -p`` in the repository root
+- GET /                    → dashboard (home)
+- GET /dashboard.css, /dashboard.js
+- GET /api/dashboard/*     → outreach data + routine config
+- POST /api/dashboard/connections → send connection via Claude skill
 
 Run with uvicorn (see Makefile ``make web``)::
 
     uvicorn web.server:app --host 127.0.0.1 --port 3847
-
-Env: ``WEB_HOST``, ``WEB_PORT`` (Makefile passes these to uvicorn), ``CLAUDE_WEB_TIMEOUT_SEC``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
-import subprocess
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
+
+from web import dashboard_data, routine_scheduler, routines_config, skill_runner
 
 WEB_DIR = Path(__file__).resolve().parent
 REPO_ROOT = WEB_DIR.parent
 
-PERMISSION_MODES = frozenset(
-    {"dontAsk", "acceptEdits", "auto", "default", "bypassPermissions", "plan"}
-)
+_scheduler_stop: asyncio.Event | None = None
+_scheduler_task: asyncio.Task | None = None
 
-app = FastAPI(title="LinkedIn Outreach — Claude cowork")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _scheduler_stop, _scheduler_task
+    _scheduler_stop = asyncio.Event()
+    _scheduler_task = asyncio.create_task(
+        routine_scheduler.scheduler_loop(_scheduler_stop)
+    )
+    yield
+    if _scheduler_stop:
+        _scheduler_stop.set()
+    if _scheduler_task:
+        await _scheduler_task
+
+
+app = FastAPI(title="LinkedIn Outreach Dashboard", lifespan=lifespan)
+
+
+def _static_file(name: str, media_type: str) -> FileResponse:
+    path = WEB_DIR / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(WEB_DIR / "index.html", media_type="text/html; charset=utf-8")
+    return _static_file("dashboard.html", "text/html; charset=utf-8")
 
 
-@app.get("/styles.css")
-async def styles_css() -> FileResponse:
-    path = WEB_DIR / "styles.css"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="not found")
-    return FileResponse(
-        path,
-        media_type="text/css; charset=utf-8",
-        headers={"Cache-Control": "no-store"},
+@app.get("/dashboard")
+async def dashboard_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/", status_code=302)
+
+
+@app.get("/dashboard.css")
+async def dashboard_css() -> FileResponse:
+    return _static_file("dashboard.css", "text/css; charset=utf-8")
+
+
+@app.get("/dashboard.js")
+async def dashboard_js() -> FileResponse:
+    return _static_file("dashboard.js", "application/javascript; charset=utf-8")
+
+
+@app.get("/api/dashboard/health")
+async def api_dashboard_health() -> JSONResponse:
+    return JSONResponse(dashboard_data.get_health())
+
+
+@app.get("/api/dashboard/connections")
+async def api_dashboard_connections() -> JSONResponse:
+    return JSONResponse(dashboard_data.get_connections())
+
+
+class ConnectionRequest(BaseModel):
+    profile_url: str = Field(..., min_length=8)
+
+
+@app.post("/api/dashboard/connections")
+async def api_dashboard_add_connection(body: ConnectionRequest) -> JSONResponse:
+    result = await asyncio.to_thread(
+        skill_runner.run_send_connection, body.profile_url.strip()
     )
+    payload = result.to_dict()
+    if result.ok:
+        return JSONResponse(payload)
+    return JSONResponse(status_code=500, content=payload)
 
 
-@app.get("/app.js")
-async def app_js() -> FileResponse:
-    path = WEB_DIR / "app.js"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="not found")
-    return FileResponse(
-        path,
-        media_type="application/javascript; charset=utf-8",
-        headers={"Cache-Control": "no-store"},
-    )
+@app.get("/api/dashboard/routines")
+async def api_dashboard_routines() -> JSONResponse:
+    return JSONResponse(dashboard_data.get_routines())
 
 
-class ClaudeRequest(BaseModel):
-    prompt: str = Field(..., min_length=1)
-    permissionMode: str = "dontAsk"
+@app.get("/api/dashboard/routines/config")
+async def api_dashboard_routines_config() -> JSONResponse:
+    return JSONResponse(routines_config.get_routines_for_api())
 
 
-@app.post("/api/claude")
-async def api_claude(body: ClaudeRequest) -> JSONResponse:
-    prompt = body.prompt.strip()
-    if not prompt:
-        raise HTTPException(status_code=400, detail="prompt required")
+class RoutinesConfigBody(BaseModel):
+    routines: list[dict] = Field(default_factory=list)
 
-    perm = body.permissionMode.strip()
-    if perm not in PERMISSION_MODES:
-        raise HTTPException(status_code=400, detail="invalid permissionMode")
 
-    cmd = ["claude", "-p", prompt, "--permission-mode", perm]
-
-    env = os.environ.copy()
-    home = env.get("HOME", "")
-    env["PATH"] = f"{home}/.local/bin:{home}/.cargo/bin:{env.get('PATH', '')}"
-
-    timeout = int(os.environ.get("CLAUDE_WEB_TIMEOUT_SEC", "600"))
+@app.put("/api/dashboard/routines/config")
+async def api_dashboard_routines_config_put(body: RoutinesConfigBody) -> JSONResponse:
     try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=env,
-        )
-    except subprocess.TimeoutExpired:
-        return JSONResponse(
-            status_code=504,
-            content={"ok": False, "error": "claude subprocess timeout"},
-        )
-    except FileNotFoundError:
-        return JSONResponse(
-            status_code=500,
-            content={"ok": False, "error": "claude CLI not found on PATH"},
-        )
+        data = routines_config.upsert_routines(body.routines)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse(data)
 
-    payload: dict[str, object] = {
-        "ok": proc.returncode == 0,
-        "returncode": proc.returncode,
-        "stdout": proc.stdout or "",
-        "stderr": proc.stderr or "",
-    }
-    if proc.returncode != 0:
-        payload["error"] = f"claude exited with status {proc.returncode}"
 
-    status = 200 if proc.returncode == 0 else 500
-    return JSONResponse(status_code=status, content=payload)
+@app.post("/api/dashboard/routines/{routine_id}/run")
+async def api_dashboard_routine_run_now(routine_id: str) -> JSONResponse:
+    cfg = routines_config.load_config()
+    routine = next(
+        (r for r in cfg.get("routines") or [] if r.get("id") == routine_id),
+        None,
+    )
+    if not routine:
+        raise HTTPException(status_code=404, detail="routine not found")
+    skill = routine.get("skill") or ""
+    result = await asyncio.to_thread(skill_runner.run_named_skill, skill)
+    return JSONResponse(result.to_dict(), status_code=200 if result.ok else 500)
+
+
+@app.get("/api/dashboard/execution-history")
+async def api_dashboard_execution_history(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> JSONResponse:
+    return JSONResponse(dashboard_data.get_execution_history(limit=limit, offset=offset))
+
+
+@app.get("/api/dashboard/meetings")
+async def api_dashboard_meetings() -> JSONResponse:
+    return JSONResponse(dashboard_data.get_meetings())
+
+
+@app.get("/api/dashboard/summary")
+async def api_dashboard_summary() -> JSONResponse:
+    return JSONResponse(dashboard_data.get_summary())
+
+
+@app.get("/api/dashboard/skills")
+async def api_dashboard_skills() -> JSONResponse:
+    return JSONResponse({"skills": sorted(skill_runner.ALLOWED_SKILLS)})
 
 
 def main() -> None:
