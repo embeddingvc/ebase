@@ -10,7 +10,7 @@ After [install](../README.md#one-command-install-clone-deps-mcp-skills-chrome):
 http://127.0.0.1:3847/
 ```
 
-`./install.sh` starts the dashboard in the background (with Chrome and MCP setup). To start it manually:
+`./install.sh` starts Chrome, prompts you to sign in to LinkedIn, then starts the dashboard in the background (with MCP setup). To start it manually:
 
 ```bash
 make web

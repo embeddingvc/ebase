@@ -25,6 +25,8 @@ LINKEDIN_OUTREACH_SYNC_SKILLS_HOME="${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME:-1}"
 # 1 = MCP local scope + project skills only (same as ./install.sh --local)
 INSTALL_LOCAL="${LINKEDIN_OUTREACH_INSTALL_LOCAL:-0}"
 START_WEB="${LINKEDIN_OUTREACH_START_WEB:-1}"
+SKIP_LINKEDIN_LOGIN="${LINKEDIN_OUTREACH_SKIP_LINKEDIN_LOGIN:-0}"
+LINKEDIN_LOGIN_URL="${LINKEDIN_LOGIN_URL:-https://www.linkedin.com}"
 
 info() { printf '%s\n' "[install] $*"; }
 warn() { printf '%s\n' "[install] $*" >&2; }
@@ -46,6 +48,9 @@ Usage: install.sh [options]
 
   --no-web
     Skip starting the outreach dashboard (Chrome + MCP + deps still run).
+
+  --skip-linkedin-login
+    Do not pause for LinkedIn sign-in (same as LINKEDIN_OUTREACH_SKIP_LINKEDIN_LOGIN=1).
 
   Other:
     LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
@@ -69,6 +74,10 @@ parse_args() {
         ;;
       --no-web)
         START_WEB=0
+        shift
+        ;;
+      --skip-linkedin-login)
+        SKIP_LINKEDIN_LOGIN=1
         shift
         ;;
       -h | --help)
@@ -239,6 +248,26 @@ chrome_binary() {
   printf ''
 }
 
+wait_for_cdp() {
+  command -v curl >/dev/null 2>&1 || return 1
+  local i
+  for i in $(seq 1 40); do
+    if curl -sf "http://localhost:${CDP_PORT}/json/version" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+open_linkedin_tab_in_cdp() {
+  command -v curl >/dev/null 2>&1 || return 0
+  wait_for_cdp || return 0
+  curl -sf -X PUT "http://localhost:${CDP_PORT}/json/new?${LINKEDIN_LOGIN_URL}" >/dev/null 2>&1 \
+    || curl -sf "http://localhost:${CDP_PORT}/json/new?${LINKEDIN_LOGIN_URL}" >/dev/null 2>&1 \
+    || true
+}
+
 launch_chrome_cdp() {
   local chrome
   chrome="$(chrome_binary)"
@@ -250,11 +279,11 @@ launch_chrome_cdp() {
 
   if command -v curl >/dev/null 2>&1 && curl -sf "http://localhost:${CDP_PORT}/json/version" >/dev/null 2>&1; then
     info "Chrome already exposing CDP on port ${CDP_PORT} — skipping launch."
-    info "Sign in to LinkedIn in that Chrome window if you have not yet."
+    open_linkedin_tab_in_cdp
     return 0
   fi
 
-  info "Opening Chrome with remote debugging (CDP port ${CDP_PORT}). Sign in to LinkedIn in that window."
+  info "Opening Chrome with remote debugging (CDP port ${CDP_PORT})."
   info "Playwright attaches to this Chrome session (not a separate headless browser)."
   "${chrome}" \
     --remote-debugging-port="${CDP_PORT}" \
@@ -262,7 +291,50 @@ launch_chrome_cdp() {
     --no-first-run \
     --no-default-browser-check \
     --disable-extensions-except= \
+    "${LINKEDIN_LOGIN_URL}" \
     >/dev/null 2>&1 &
+  wait_for_cdp || warn "Chrome started but CDP port ${CDP_PORT} is not ready yet."
+}
+
+prompt_linkedin_login() {
+  if [[ "${SKIP_LINKEDIN_LOGIN}" == "1" ]]; then
+    info "Skipping LinkedIn sign-in prompt (--skip-linkedin-login)."
+    return 0
+  fi
+
+  if [[ -z "$(chrome_binary)" ]]; then
+    warn "Chrome not found — sign in to LinkedIn manually before using outreach tools."
+    return 0
+  fi
+
+  if ! wait_for_cdp; then
+    warn "Chrome CDP is not reachable on port ${CDP_PORT}."
+    warn "Run: make browser   then open ${LINKEDIN_LOGIN_URL} and sign in."
+    return 0
+  fi
+
+  printf '\n'
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  info "Sign in to LinkedIn (required for outreach)"
+  printf '%s\n' ""
+  printf '%s\n' "  Use the Chrome window opened by this installer (profile:"
+  printf '%s\n' "  ${CHROME_PROFILE})."
+  printf '%s\n' ""
+  printf '%s\n' "  1. Open or switch to: ${LINKEDIN_LOGIN_URL}"
+  printf '%s\n' "  2. Sign in with your LinkedIn account."
+  printf '%s\n' "  3. Confirm you see your feed or home — not the login page."
+  printf '%s\n' ""
+  printf '%s\n' "  The outreach engine (MCP, worker, dashboard skills) uses this"
+  printf '%s\n' "  browser session only. Do not use a different Chrome profile."
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  printf '\n'
+
+  if [[ -t 0 ]]; then
+    read -r -p "[install] Press Enter when LinkedIn sign-in is complete: " _
+    info "Continuing setup…"
+  else
+    warn "Non-interactive install — sign in to LinkedIn in Chrome before running outreach."
+  fi
 }
 
 start_web_dashboard() {
@@ -328,6 +400,7 @@ main() {
   sync_claude_skills_to_home
   register_claude_mcp
   launch_chrome_cdp
+  prompt_linkedin_login
   if [[ "${START_WEB}" == "1" ]]; then
     start_web_dashboard
   else
