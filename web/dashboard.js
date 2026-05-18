@@ -10,6 +10,7 @@ const API = {
 
 let allowedSkills = [];
 let routinesConfigDraft = [];
+let currentTab = "connections";
 
 const HEALTH_POLL_MS = 15000;
 
@@ -197,20 +198,24 @@ function renderExecution(data) {
     .map((row) => {
       const st = row.status || "success";
       const badge = statusClass[st] || statusClass.success;
-      const started = row.started_at ? new Date(row.started_at).toLocaleString() : "—";
+      const startedDate = row.started_at ? new Date(row.started_at).toLocaleDateString() : "—";
+      const startedTime = row.started_at ? new Date(row.started_at).toLocaleTimeString() : "";
       const barColor = st === "failed" ? "bg-[#ba1a1a]" : "bg-[#005d8f]";
       return [
         '<tr class="table-row transition-colors">',
-        '<td class="px-6 py-4"><div class="flex items-center gap-3">',
-        `<div class="w-2 h-8 ${barColor} rounded-full">`,
-        "<div>",
-        `<p class="font-bold">${escapeHtml(row.routine_name)}</p>`,
-        `<p class="text-[11px] text-[#404850]">${escapeHtml(row.skill || row.routine_id || "")}</p>`,
+        '<td class="px-4 py-4 overflow-hidden">',
+        '<div class="flex items-center gap-2 min-w-0">',
+        `<div class="w-1.5 h-8 ${barColor} rounded-full flex-shrink-0"></div>`,
+        '<div class="min-w-0">',
+        `<p class="font-bold truncate text-sm">${escapeHtml(row.routine_name)}</p>`,
+        `<p class="text-[11px] text-[#404850] truncate">${escapeHtml(row.skill || row.routine_id || "")}</p>`,
         "</div></div></td>",
-        `<td class="px-6 py-4 text-sm">${escapeHtml(started)}</td>`,
-        `<td class="px-6 py-4 text-sm">${escapeHtml(row.duration_label || "—")}</td>`,
-        `<td class="px-6 py-4"><span class="px-3 py-1 rounded-full text-[11px] font-bold ${badge}">${escapeHtml(st)}</span></td>`,
-        `<td class="px-6 py-4 text-right text-sm text-[#404850] max-w-xs truncate">${escapeHtml(row.note || "")}</td>`,
+        `<td class="px-4 py-4 text-sm"><div class="whitespace-nowrap">${escapeHtml(startedDate)}</div><div class="whitespace-nowrap text-[11px] text-[#404850]">${escapeHtml(startedTime)}</div></td>`,
+        `<td class="px-3 py-4 text-sm whitespace-nowrap">${escapeHtml(row.duration_label || "—")}</td>`,
+        `<td class="px-3 py-4"><span class="px-2 py-1 rounded-full text-[11px] font-bold ${badge}">${escapeHtml(st)}</span></td>`,
+        '<td class="px-4 py-4 text-sm text-[#404850] overflow-hidden max-w-0">',
+        `<div class="truncate" title="${escapeHtml(row.note || "")}">${escapeHtml(row.note || "")}</div>`,
+        "</td>",
         "</tr>",
       ].join("");
     })
@@ -261,7 +266,25 @@ function renderMeetings(data) {
     .join("");
 }
 
+function stampLastSynced() {
+  const el = document.getElementById("last-synced");
+  if (!el) return;
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  el.textContent = `Last synced at ${hh}:${mm}:${ss}`;
+  el.classList.remove("hidden");
+}
+
+function refreshCurrentTab() {
+  refreshHealth();
+  loadTab(currentTab).then(stampLastSynced);
+}
+
 function setTab(tabId) {
+  currentTab = tabId;
+  location.hash = tabId;
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.hidden = panel.dataset.tab !== tabId;
   });
@@ -480,7 +503,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
   initModals();
-  setTab("connections");
-  Promise.all([refreshHealth(), loadTab("connections")]);
+  const validTabs = new Set(["connections", "routines", "meetings"]);
+  const initialTab = validTabs.has(location.hash.slice(1)) ? location.hash.slice(1) : "connections";
+  setTab(initialTab);
+  Promise.all([refreshHealth(), loadTab(initialTab)]).then(stampLastSynced);
   setInterval(refreshHealth, HEALTH_POLL_MS);
+  setInterval(refreshCurrentTab, 60_000);
 });
