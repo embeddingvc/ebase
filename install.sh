@@ -20,6 +20,8 @@ USER_CLAUDE_SKILLS="${USER_CLAUDE_SKILLS:-${HOME}/.claude/skills}"
 LINKEDIN_OUTREACH_SYNC_SKILLS_HOME="${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME:-1}"
 # 1 = MCP local scope + project skills only (same as ./install.sh --local)
 INSTALL_LOCAL="${LINKEDIN_OUTREACH_INSTALL_LOCAL:-0}"
+SKIP_LINKEDIN_LOGIN="${LINKEDIN_OUTREACH_SKIP_LINKEDIN_LOGIN:-0}"
+LINKEDIN_LOGIN_URL="${LINKEDIN_LOGIN_URL:-https://www.linkedin.com}"
 
 info() { printf '%s\n' "[install] $*"; }
 warn() { printf '%s\n' "[install] $*" >&2; }
@@ -56,6 +58,10 @@ parse_args() {
     case "$1" in
       --local)
         INSTALL_LOCAL=1
+        shift
+        ;;
+      --skip-linkedin-login)
+        SKIP_LINKEDIN_LOGIN=1
         shift
         ;;
       -h | --help)
@@ -269,10 +275,14 @@ main() {
   sync_claude_skills_to_home
   register_claude_mcp
   launch_chrome_cdp
+  prompt_linkedin_login
+  start_web_dashboard
 
   info "Setup finished."
   info "Repo: ${REPO_ROOT}"
   info "Optional: cp .env.example .env"
+  info "Dashboard: http://${WEB_HOST}:${WEB_PORT}/  (docs: docs/web-dashboard.md)"
+  info "Stop dashboard: make stop-web   Status: make status"
   if [[ "${INSTALL_LOCAL}" == "1" ]]; then
     info "Open this exact folder as the workspace so local MCP matches ~/.claude.json."
   else
