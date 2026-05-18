@@ -11,7 +11,8 @@
 #  make install    Install Python dependencies + Playwright browsers
 #  make claude-install   Sync skills + register MCP (default: user scope + ~/.claude/skills; LOCAL=1: local MCP only)
 #  make claude-cleanup   Remove linkedin MCP from user/local/project scopes; does not delete skill dirs
-#  make web          Claude cowork-style web UI wrapping `claude -p` (localhost)
+#  make web          Outreach dashboard (http://127.0.0.1:3847); see docs/web-dashboard.md
+#  make stop-web     Stop dashboard started by install.sh or background uvicorn
 #  make logs       Tail the worker output log
 #  make queue      Pretty-print the pending job queue
 #  make status     Show whether Chrome + worker are running
@@ -40,6 +41,8 @@ LOG_FILE := $(LOG_DIR)/worker.log
 PID_FILE := outreach/storage/worker.pid
 WEB_HOST ?= 127.0.0.1
 WEB_PORT ?= 3847
+WEB_PID_FILE := outreach/storage/web.pid
+WEB_LOG := logs/server.log
 
 # Claude Code CLI (https://docs.anthropic.com/en/docs/claude-code)
 CLAUDE_MCP_SERVER_NAME := linkedin
@@ -53,7 +56,7 @@ ifneq ($(LOCAL),)
 override CLAUDE_INSTALL_LOCAL := $(LOCAL)
 endif
 
-.PHONY: run browser server stop test test_conversation regression smoke install logs queue status help web \
+.PHONY: run browser server stop stop-web test test_conversation regression smoke install logs queue status help web \
 	claude-install claude-cleanup
 
 # ── Default target ────────────────────────────────────────────────────────────
@@ -105,6 +108,17 @@ stop: ## Kill the running worker process
 	  rm -f $(PID_FILE); \
 	else \
 	  echo "[worker] No PID file found — worker may not be running."; \
+	fi
+
+stop-web: ## Kill the outreach dashboard (uvicorn)
+	@if [ -f $(WEB_PID_FILE) ]; then \
+	  PID=$$(cat $(WEB_PID_FILE)); \
+	  echo "[web] Stopping pid=$$PID"; \
+	  kill $$PID 2>/dev/null && echo "[web] Stopped." || echo "[web] Process not found."; \
+	  rm -f $(WEB_PID_FILE); \
+	else \
+	  echo "[web] No PID file — trying port $(WEB_PORT)…"; \
+	  lsof -ti :$(WEB_PORT) | xargs kill 2>/dev/null && echo "[web] Stopped." || echo "[web] Not running."; \
 	fi
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -190,11 +204,18 @@ queue: ## Pretty-print the pending job queue
 	@echo "── Failed ───────────────────────────────"
 	@cat outreach/queue/failed.json 2>/dev/null | python3 -m json.tool || echo "(empty)"
 
-status: ## Show whether Chrome + worker are currently running
+status: ## Show whether Chrome, worker, and dashboard are running
 	@echo "── Chrome (CDP port $(CDP_PORT)) ─────────────────"
 	@curl -sf http://localhost:$(CDP_PORT)/json/version \
 	  && echo "  ✅  Running" \
 	  || echo "  ❌  Not running  (start with: make browser)"
+	@echo "── Dashboard (http://$(WEB_HOST):$(WEB_PORT)/) ───"
+	@curl -sf http://$(WEB_HOST):$(WEB_PORT)/api/dashboard/health >/dev/null 2>&1 \
+	  && echo "  ✅  Running" \
+	  || echo "  ❌  Not running  (start with: make web or ./install.sh)"
+	@if [ -f $(WEB_PID_FILE) ]; then \
+	  echo "      pid=$$(cat $(WEB_PID_FILE))  log=$(WEB_LOG)"; \
+	fi
 	@echo "── Worker ───────────────────────────────────────"
 	@if [ -f $(PID_FILE) ]; then \
 	  PID=$$(cat $(PID_FILE)); \
@@ -205,8 +226,9 @@ status: ## Show whether Chrome + worker are currently running
 	  echo "  ❌  Not running  (start with: make server)"; \
 	fi
 
-web: ## Start web UI + outreach dashboard (WEB_HOST / WEB_PORT)
-	@echo "[web] cowork http://$(WEB_HOST):$(WEB_PORT)/  dashboard http://$(WEB_HOST):$(WEB_PORT)/dashboard"
+web: ## Start outreach dashboard in foreground (WEB_HOST / WEB_PORT)
+	@mkdir -p outreach/storage logs
+	@echo "[web] http://$(WEB_HOST):$(WEB_PORT)/  (see docs/web-dashboard.md)"
 	@cd "$(CURDIR)" && uv run uvicorn web.server:app --host "$(WEB_HOST)" --port "$(WEB_PORT)"
 
 help: ## List all targets

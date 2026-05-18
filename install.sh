@@ -12,6 +12,10 @@ DEFAULT_DIR="${LINKEDIN_OUTREACH_DIR:-${HOME}/LinkedIn-Outreach}"
 
 # Mirror Makefile defaults (override via environment)
 CDP_PORT="${CDP_PORT:-9222}"
+WEB_HOST="${WEB_HOST:-127.0.0.1}"
+WEB_PORT="${WEB_PORT:-3847}"
+WEB_PID_FILE="${WEB_PID_FILE:-outreach/storage/web.pid}"
+WEB_LOG="${WEB_LOG:-logs/server.log}"
 CHROME_PROFILE="${CHROME_PROFILE:-${HOME}/.linkedin-chrome-profile}"
 CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
 SKILL_SRC="${SKILL_SRC:-outreach/skills}"
@@ -20,6 +24,7 @@ USER_CLAUDE_SKILLS="${USER_CLAUDE_SKILLS:-${HOME}/.claude/skills}"
 LINKEDIN_OUTREACH_SYNC_SKILLS_HOME="${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME:-1}"
 # 1 = MCP local scope + project skills only (same as ./install.sh --local)
 INSTALL_LOCAL="${LINKEDIN_OUTREACH_INSTALL_LOCAL:-0}"
+START_WEB="${LINKEDIN_OUTREACH_START_WEB:-1}"
 
 info() { printf '%s\n' "[install] $*"; }
 warn() { printf '%s\n' "[install] $*" >&2; }
@@ -39,8 +44,12 @@ Usage: install.sh [options]
   Environment (same as --local when set to 1):
     LINKEDIN_OUTREACH_INSTALL_LOCAL=1
 
+  --no-web
+    Skip starting the outreach dashboard (Chrome + MCP + deps still run).
+
   Other:
     LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
+    WEB_HOST, WEB_PORT                     Dashboard bind (default 127.0.0.1:3847).
     SKILL_SRC   Override repo skill directory (default: outreach/skills).
     LINKEDIN_OUTREACH_DIR, LINKEDIN_OUTREACH_REPO, USER_CLAUDE_SKILLS, …
 
@@ -56,6 +65,10 @@ parse_args() {
     case "$1" in
       --local)
         INSTALL_LOCAL=1
+        shift
+        ;;
+      --no-web)
+        START_WEB=0
         shift
         ;;
       -h | --help)
@@ -252,6 +265,52 @@ launch_chrome_cdp() {
     >/dev/null 2>&1 &
 }
 
+start_web_dashboard() {
+  cd "${REPO_ROOT}"
+  local pid_file="${REPO_ROOT}/${WEB_PID_FILE}"
+  local log_file="${REPO_ROOT}/${WEB_LOG}"
+  local health_url="http://${WEB_HOST}:${WEB_PORT}/api/dashboard/health"
+  local dashboard_url="http://${WEB_HOST}:${WEB_PORT}/"
+
+  mkdir -p "$(dirname "${pid_file}")" "$(dirname "${log_file}")"
+
+  if [[ -f "${pid_file}" ]]; then
+    local old_pid
+    old_pid="$(cat "${pid_file}")"
+    if kill -0 "${old_pid}" 2>/dev/null && curl -sf "${health_url}" >/dev/null 2>&1; then
+      info "Dashboard already running at ${dashboard_url} (pid=${old_pid})"
+      return 0
+    fi
+    rm -f "${pid_file}"
+  fi
+
+  if command -v curl >/dev/null 2>&1 && curl -sf "${health_url}" >/dev/null 2>&1; then
+    info "Dashboard already reachable at ${dashboard_url} (not started by install.sh)"
+    return 0
+  fi
+
+  info "Starting outreach dashboard at ${dashboard_url}"
+  info "Log: ${log_file}"
+  nohup uv run uvicorn web.server:app --host "${WEB_HOST}" --port "${WEB_PORT}" \
+    >>"${log_file}" 2>&1 &
+  echo $! >"${pid_file}"
+
+  if command -v curl >/dev/null 2>&1; then
+    local i
+    for i in $(seq 1 40); do
+      if curl -sf "${health_url}" >/dev/null 2>&1; then
+        info "Dashboard ready (pid=$(cat "${pid_file}"))"
+        return 0
+      fi
+      sleep 0.25
+    done
+    warn "Dashboard process started but health check did not succeed yet."
+    warn "Check ${log_file} or run: make stop-web && make web"
+  else
+    info "Dashboard process started (pid=$(cat "${pid_file}")); install curl to verify health."
+  fi
+}
+
 main() {
   ensure_uv
   ensure_repo
@@ -269,16 +328,25 @@ main() {
   sync_claude_skills_to_home
   register_claude_mcp
   launch_chrome_cdp
+  if [[ "${START_WEB}" == "1" ]]; then
+    start_web_dashboard
+  else
+    info "Skipping dashboard (--no-web)."
+  fi
 
   info "Setup finished."
   info "Repo: ${REPO_ROOT}"
   info "Optional: cp .env.example .env"
+  if [[ "${START_WEB}" == "1" ]]; then
+    info "Dashboard: http://${WEB_HOST}:${WEB_PORT}/  (docs: docs/web-dashboard.md)"
+    info "Stop dashboard: make stop-web   Status: make status"
+  fi
   if [[ "${INSTALL_LOCAL}" == "1" ]]; then
     info "Open this exact folder as the workspace so local MCP matches ~/.claude.json."
   else
     info "LinkedIn MCP is registered for all projects; skills are under ${USER_CLAUDE_SKILLS}/."
   fi
-  info "Day-to-day you can use Make if you install Xcode CLI tools: make run, make browser, …"
+  info "Queue worker (optional): make run   Day-to-day: make browser, make web, …"
 }
 
 parse_args "$@"

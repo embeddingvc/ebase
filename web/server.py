@@ -7,9 +7,11 @@ FastAPI app for the LinkedIn outreach dashboard.
 - GET /api/dashboard/*     → outreach data + routine config
 - POST /api/dashboard/connections → send connection via Claude skill
 
-Run with uvicorn (see Makefile ``make web``)::
+Run with uvicorn (see Makefile ``make web`` or ``./install.sh``)::
 
     uvicorn web.server:app --host 127.0.0.1 --port 3847
+
+Documentation: ``docs/web-dashboard.md``
 """
 
 from __future__ import annotations

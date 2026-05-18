@@ -80,6 +80,19 @@ The script does **not** require **Make** (suitable for a fresh Mac before Xcode 
 - **`--local`** (or **`LINKEDIN_OUTREACH_INSTALL_LOCAL=1`**): MCP **`--scope local`** only (this absolute project path); **does not** copy skills to **`~/.claude/skills`**. Same idea as **`make claude-install LOCAL=1`**.
 - If **`claude`** is missing, it prints next steps. **`./install.sh --help`** lists options.
 - Launches **Google Chrome** on macOS at the default path with remote debugging (CDP) on port **9222** (same idea as **`make browser`). **Sign in to LinkedIn in that Chrome window.** Playwright automation attaches to that live Chrome session.
+- Starts the **outreach web dashboard** in the background at **http://127.0.0.1:3847/** (logs: `logs/server.log`). Skip with **`./install.sh --no-web`**. See **[docs/web-dashboard.md](docs/web-dashboard.md)**.
+
+## Web dashboard
+
+Local UI for connections, scheduled Claude skills (routines), and routine run history. Started automatically by **`./install.sh`**; manual control:
+
+```bash
+make web        # foreground
+make stop-web   # stop background/foreground server
+make status     # Chrome + dashboard + worker
+```
+
+Full reference: **[docs/web-dashboard.md](docs/web-dashboard.md)**.
 
 ## Manual Install Prerequisites
 - **Python** 3.10 or newer  
