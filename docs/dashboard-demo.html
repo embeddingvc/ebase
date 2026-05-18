@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed-dim": "#93ccff",
+                        "on-surface": "#191c1e",
+                        "surface-container-low": "#f2f4f6",
+                        "secondary-container": "#d5e0f8",
+                        "inverse-surface": "#2d3133",
+                        "outline-variant": "#bfc7d1",
+                        "on-secondary-container": "#586377",
+                        "on-primary-container": "#f3f7ff",
+                        "tertiary-container": "#627289",
+                        "on-primary": "#ffffff",
+                        "surface-tint": "#006398",
+                        "on-error": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "surface-container-high": "#e6e8ea",
+                        "on-tertiary-fixed-variant": "#38485d",
+                        "on-error-container": "#93000a",
+                        "on-primary-fixed-variant": "#004b74",
+                        "error-container": "#ffdad6",
+                        "outline": "#707881",
+                        "on-secondary": "#ffffff",
+                        "tertiary": "#4a5a6f",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "on-surface-variant": "#404850",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed": "#0b1c30",
+                        "primary-container": "#0077b5",
+                        "surface": "#f7f9fb",
+                        "tertiary-fixed": "#d3e4fe",
+                        "inverse-primary": "#93ccff",
+                        "primary": "#005d8f",
+                        "surface-bright": "#f7f9fb",
+                        "on-background": "#191c1e",
+                        "surface-dim": "#d8dadc",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-tertiary-container": "#f4f6ff",
+                        "secondary": "#545f73",
+                        "primary-fixed": "#cde5ff",
+                        "on-primary-fixed": "#001d32",
+                        "surface-container": "#eceef0",
+                        "surface-container-highest": "#e0e3e5",
+                        "surface-variant": "#e0e3e5",
+                        "on-secondary-fixed": "#111c2d",
+                        "secondary-fixed": "#d8e3fb",
+                        "tertiary-fixed-dim": "#b7c8e1",
+                        "background": "#f7f9fb",
+                        "on-tertiary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin_desktop": "32px",
+                        "gutter": "24px",
+                        "stack_lg": "24px",
+                        "sidebar_width": "260px",
+                        "stack_md": "12px",
+                        "stack_sm": "4px",
+                        "container_max_width": "1440px",
+                        "base": "8px",
+                        "margin_mobile": "16px"
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface">
+<!-- Top AppBar -->
+<header class="bg-surface/80 backdrop-blur-md sticky top-0 z-50 border-b border-outline-variant flex justify-between items-center w-full px-margin_desktop h-16">
+<div class="flex items-center gap-4">
+<span class="text-headline-md font-headline-md font-bold text-primary">OutreachPro</span>
+<div class="hidden md:flex items-center bg-surface-container-low px-4 py-2 rounded-lg border border-outline-variant w-96">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-body-md w-full ml-2" placeholder="Search prospects..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 hover:bg-surface-container-high transition-colors rounded-full">
+<span class="material-symbols-outlined text-on-surface-variant">notifications</span>
+</button>
+<button class="p-2 hover:bg-surface-container-high transition-colors rounded-full">
+<span class="material-symbols-outlined text-on-surface-variant">settings</span>
+</button>
+<img alt="User profile" class="w-8 h-8 rounded-full border border-outline-variant" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBsv9FWpB2qYQq5MMregpxCHwEJrbeR9duPoJYbadIgjzNCs1mrKkWtJudOKihOi1BjKrc1-3u9iNhdJyCo7UsKczEoCdrWRFPhL54-rHYSlm1MXEKbYJzMz2ftdtVwOqOda0DFamAsPZ5BToYLV1gLCEjWLlIWLaO-uBRSO9yHs9BZmW8NL2SQ7M2gC6Gc-5AQpjxth7Gx_M26Jhl5dJhBLjWVVBqEiIJH7_A4Y3XMrfylVV8Cq1eEZIfnvim7Z-uM5FCiBvZFpHpP"/>
+</div>
+</header>
+<div class="flex min-h-[calc(100vh-4rem)]">
+<!-- Left Sidebar Navigation -->
+<aside class="bg-surface-container-low border-r border-outline-variant fixed left-0 top-16 h-[calc(100vh-4rem)] w-sidebar_width flex flex-col p-stack_md gap-stack_lg">
+<div class="px-2 py-4">
+<div class="text-headline-sm font-headline-sm font-black tracking-tight text-primary">Outreach Engine</div>
+<div class="text-label-sm font-label-sm text-on-surface-variant">Automation Active</div>
+</div>
+<nav class="flex-grow flex flex-col gap-1">
+<a class="bg-secondary-container text-on-secondary-container font-bold rounded-lg flex items-center p-3 gap-3 transition-all hover:translate-x-1 duration-200" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="text-label-md font-label-md">Prospects</span>
+</a>
+<a class="text-on-surface-variant hover:bg-surface-container-high flex items-center p-3 gap-3 transition-all hover:translate-x-1 duration-200" href="#">
+<span class="material-symbols-outlined">bolt</span>
+<span class="text-label-md font-label-md">Routines</span>
+</a>
+<a class="text-on-surface-variant hover:bg-surface-container-high flex items-center p-3 gap-3 transition-all hover:translate-x-1 duration-200" href="#">
+<span class="material-symbols-outlined">calendar_month</span>
+<span class="text-label-md font-label-md">Meetings</span>
+</a>
+</nav>
+<button class="mt-4 bg-primary text-on-primary py-3 px-4 rounded-lg font-bold flex items-center justify-center gap-2 hover:brightness-110 transition-all scale-100 active:scale-95">
+<span class="material-symbols-outlined">add</span>
+<span>New Campaign</span>
+</button>
+<div class="mt-auto flex flex-col gap-1 pt-4 border-t border-outline-variant">
+<a class="text-on-surface-variant hover:bg-surface-container-high flex items-center p-3 gap-3 transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-label-md font-label-md">Settings</span>
+</a>
+<a class="text-on-surface-variant hover:bg-surface-container-high flex items-center p-3 gap-3 transition-all" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="text-label-md font-label-md">Support</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-[260px] mr-64 flex-grow p-margin_desktop max-w-container_max_width">
+<!-- Dashboard Grid Header -->
+<div class="flex justify-between items-end mb-8">
+<div>
+<h1 class="text-display-lg font-display-lg text-on-surface">Prospect Performance</h1>
+<p class="text-body-lg text-on-surface-variant">Overview of your active connections and automation flows.</p>
+</div>
+<div class="flex gap-3">
+<button class="px-4 py-2 border border-outline text-on-surface-variant rounded-lg font-bold hover:bg-surface-container-high transition-colors">Export CSV</button>
+<button class="px-4 py-2 bg-primary text-on-primary rounded-lg font-bold hover:brightness-110 transition-all">Manual Sync</button>
+</div>
+</div>
+<!-- Bento Layout Content -->
+<div class="grid grid-cols-12 gap-gutter">
+<!-- Connection List (High Density Table) -->
+<div class="col-span-12 bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
+<div class="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+<h2 class="text-headline-sm font-headline-sm">Active Prospects</h2>
+<span class="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-widest">48 Active</span>
+</div>
+<table class="w-full border-collapse">
+<thead class="bg-surface-container-low">
+<tr>
+<th class="text-left py-3 px-4 text-label-md font-label-md text-on-surface-variant border-b border-outline-variant">Name</th>
+<th class="text-left py-3 px-4 text-label-md font-label-md text-on-surface-variant border-b border-outline-variant">Role &amp; Company</th>
+<th class="text-left py-3 px-4 text-label-md font-label-md text-on-surface-variant border-b border-outline-variant">Outreach Stage</th>
+<th class="text-left py-3 px-4 text-label-md font-label-md text-on-surface-variant border-b border-outline-variant">Last Action</th>
+<th class="text-right py-3 px-4 text-label-md font-label-md text-on-surface-variant border-b border-outline-variant">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant">
+<tr class="hover:bg-[#F0F9FF] transition-colors cursor-pointer group">
+<td class="py-3 px-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary-fixed text-primary flex items-center justify-center font-bold text-xs">SM</div>
+<span class="text-body-md font-bold text-on-surface">Sarah Miller</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-body-md text-on-surface">Head of Growth</span>
+<span class="text-label-sm text-on-surface-variant">TechNexus Solutions</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-1 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-label-sm">
+                                        Replied
+                                    </span>
+</td>
+<td class="py-3 px-4 text-body-md text-on-surface-variant">Inbound Msg (2h ago)</td>
+<td class="py-3 px-4 text-right">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">more_vert</button>
+</td>
+</tr>
+<tr class="hover:bg-[#F0F9FF] transition-colors cursor-pointer">
+<td class="py-3 px-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-bold text-xs">DB</div>
+<span class="text-body-md font-bold text-on-surface">David Blackwell</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-body-md text-on-surface">Product Director</span>
+<span class="text-label-sm text-on-surface-variant">CloudMatrix</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-1 rounded-full bg-primary-fixed text-on-primary-fixed-variant text-label-sm">
+                                        Invite Sent
+                                    </span>
+</td>
+<td class="py-3 px-4 text-body-md text-on-surface-variant">Connect Request (1d ago)</td>
+<td class="py-3 px-4 text-right">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">more_vert</button>
+</td>
+</tr>
+<tr class="hover:bg-[#F0F9FF] transition-colors cursor-pointer">
+<td class="py-3 px-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center font-bold text-xs">JL</div>
+<span class="text-body-md font-bold text-on-surface">James Lowery</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-body-md text-on-surface">Recruitment Lead</span>
+<span class="text-label-sm text-on-surface-variant">TalentFlow</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-1 rounded-full bg-secondary-fixed text-on-secondary-fixed text-label-sm">
+                                        Follow-up 1
+                                    </span>
+</td>
+<td class="py-3 px-4 text-body-md text-on-surface-variant">Follow-up Sequence (3h ago)</td>
+<td class="py-3 px-4 text-right">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">more_vert</button>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="p-3 bg-surface-container-low border-t border-outline-variant flex justify-center">
+<button class="text-label-md font-label-md text-primary hover:underline">View All 48 Prospects</button>
+</div>
+</div>
+<!-- Routine List (Automation Flows) -->
+<div class="col-span-12 lg:col-span-7 bg-surface-container-lowest rounded-xl border border-outline-variant">
+<div class="p-4 border-b border-outline-variant flex justify-between items-center">
+<h2 class="text-headline-sm font-headline-sm">Active Routines</h2>
+<button class="text-primary material-symbols-outlined">add_circle</button>
+</div>
+<div class="p-4 space-y-3">
+<div class="flex items-center p-3 rounded-lg border border-outline-variant bg-surface hover:border-primary transition-all">
+<div class="bg-primary/10 p-2 rounded-lg mr-4">
+<span class="material-symbols-outlined text-primary">auto_fix_high</span>
+</div>
+<div class="flex-grow">
+<div class="text-body-md font-bold">Initial Connect</div>
+<div class="text-label-sm text-on-surface-variant">12 prospects currently in flow</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-label-md text-emerald-600 font-bold">ACTIVE</span>
+<div class="w-16 h-1 bg-surface-container-high rounded-full mt-1 overflow-hidden">
+<div class="bg-emerald-500 h-full w-2/3"></div>
+</div>
+</div>
+</div>
+<div class="flex items-center p-3 rounded-lg border border-outline-variant bg-surface hover:border-primary transition-all">
+<div class="bg-primary/10 p-2 rounded-lg mr-4">
+<span class="material-symbols-outlined text-primary">forward_to_inbox</span>
+</div>
+<div class="flex-grow">
+<div class="text-body-md font-bold">Follow-up Sequence</div>
+<div class="text-label-sm text-on-surface-variant">28 prospects currently in flow</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-label-md text-emerald-600 font-bold">ACTIVE</span>
+<div class="w-16 h-1 bg-surface-container-high rounded-full mt-1 overflow-hidden">
+<div class="bg-emerald-500 h-full w-4/5"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Upcoming Meetings -->
+<div class="col-span-12 lg:col-span-5 bg-surface-container-lowest rounded-xl border border-outline-variant">
+<div class="p-4 border-b border-outline-variant flex justify-between items-center">
+<h2 class="text-headline-sm font-headline-sm">Upcoming Calls</h2>
+<span class="text-label-sm font-label-sm text-on-surface-variant">Today</span>
+</div>
+<div class="p-4 space-y-4">
+<div class="relative pl-4 border-l-4 border-primary">
+<div class="flex items-center justify-between mb-2">
+<span class="text-label-sm font-bold text-primary">14:00 - 14:30</span>
+<span class="text-label-sm text-on-surface-variant italic">Google Meet</span>
+</div>
+<div class="flex items-center gap-3">
+<img alt="Sarah Miller" class="w-8 h-8 rounded-full" data-alt="A professional headshot of a female executive in a modern office setting. The lighting is soft and flattering, with a clean corporate background. The overall aesthetic is professional, reliable, and corporate, fitting a high-end LinkedIn outreach dashboard." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBfKUqmAt08-S4zZ-l3a-56IUpbtHUN8FPBHSoHzADJYuMLWaoJUeXveFH9dbxqkGDkpuLsxRuy4I7z2fTU5a8ANSuBUrdbtr29_ed0dfslid0PwixdXUkVz7412VUIj5no0iqu-1F2RI7vkflGHToYpZvtiAO37wsZNFgplI4gkbt_HKzX4-BGff7prrwGSBywhCopXMWT3e9Mcdo9l0nRw9PIZGTRT9U3NzDmR2J1Wg2oussN-yZS1jMCpvo4pXddIO57GsYoFs8V"/>
+<div>
+<div class="text-body-md font-bold">Meeting with Sarah Miller</div>
+<div class="text-label-sm text-on-surface-variant">Discovery Call - TechNexus</div>
+</div>
+</div>
+</div>
+<div class="relative pl-4 border-l-4 border-primary-fixed-dim">
+<div class="flex items-center justify-between mb-2">
+<span class="text-label-sm font-bold text-on-surface-variant">16:30 - 17:00</span>
+<span class="text-label-sm text-on-surface-variant italic">Zoom</span>
+</div>
+<div class="flex items-center gap-3 opacity-80">
+<img alt="David Blackwell" class="w-8 h-8 rounded-full" data-alt="A professional portrait of a male director with a blurred corporate office background. High-key lighting highlights the professional and trustworthy look. The style matches a modern business application interface with clean lines and a professional atmosphere." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB0jdP3VfYJSpdEH2Wn75I9O3riDHbBO--6RQy8mG3qNgZnjosrsUnUwXqybzIy4Bie2DYJTUC6nW7aEwjnwgLKLkl143VuSP_bsk040CaT12qydw2OO2xG1wQ3Z_I6N6peu9eIhmVjv-duFFkK0SfLOhSi0ph8NlpPIL4NzYCFg5icCrn6CKg1EE4zrO8rz0epemNtsxYndzLWYsCrHbME2AimEyxUccmxAtNCOes0GD08OtjGdZppJwT1WYyv49lrXpR5j3dLgBE8"/>
+<div>
+<div class="text-body-md font-bold text-on-surface">David Blackwell</div>
+<div class="text-label-sm text-on-surface-variant">Product Feedback Session</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Right System Health Drawer -->
+<aside class="bg-surface border-l border-outline-variant fixed right-0 top-16 h-[calc(100vh-4rem)] w-64 flex flex-col p-4 gap-4">
+<h3 class="text-headline-sm font-headline-sm px-2">System Health</h3>
+<div class="space-y-4">
+<!-- Claude CLI -->
+<div class="flex items-center justify-between p-3 rounded-lg bg-surface-container-low border border-outline-variant">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-[20px]">terminal</span>
+<div>
+<div class="text-label-md font-bold">Claude CLI</div>
+<div class="text-[10px] text-on-surface-variant">Ver 2.1.4</div>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+<span class="text-[10px] font-bold text-emerald-600">Online</span>
+</div>
+</div>
+<!-- CDP Browser -->
+<div class="flex items-center justify-between p-3 rounded-lg bg-surface-container-low border border-outline-variant">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-[20px]">open_in_browser</span>
+<div>
+<div class="text-label-md font-bold">CDP Browser</div>
+<div class="text-[10px] text-on-surface-variant">Session #4921</div>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+<span class="text-[10px] font-bold text-emerald-600">Active</span>
+</div>
+</div>
+<!-- LinkedIn Session -->
+<div class="flex items-center justify-between p-3 rounded-lg bg-surface-container-low border border-outline-variant">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-[20px]">key</span>
+<div>
+<div class="text-label-md font-bold">LinkedIn Session</div>
+<div class="text-[10px] text-on-surface-variant">Cookie Valid</div>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+<span class="text-[10px] font-bold text-emerald-600">Connected</span>
+</div>
+</div>
+<!-- Proxy Status -->
+<div class="flex items-center justify-between p-3 rounded-lg bg-surface-container-low border border-outline-variant">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-[20px]">router</span>
+<div>
+<div class="text-label-md font-bold">Proxy Status</div>
+<div class="text-[10px] text-on-surface-variant">Residential IP</div>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+<span class="text-[10px] font-bold text-emerald-600">Stable</span>
+</div>
+</div>
+</div>
+<div class="mt-auto p-3 rounded-xl bg-primary-container text-on-primary-container">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-[18px]">info</span>
+<span class="text-label-sm font-bold uppercase">System Tip</span>
+</div>
+<p class="text-[11px] leading-relaxed">Automation throttling is currently active to comply with LinkedIn's safety limits. Next wave starts in 14 minutes.</p>
+</div>
+</aside>
+</div>
+</body></html>
