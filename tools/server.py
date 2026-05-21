@@ -102,6 +102,7 @@ from mcp.server.fastmcp import FastMCP
 
 import mock as _mock                    # tools/mock.py
 from outreach.browser import LinkedInBrowser
+from rate_limits import rate_limit
 
 # ── MCP server ────────────────────────────────────────────────────────────────
 
@@ -174,10 +175,15 @@ async def scrape_profile(
     if _mock_mcp_enabled():
         return await _mock.handle_scrape_profile(profile_url)
 
+    err = rate_limit("profile_view", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info("scrape_profile called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
         profile = await li.scrape_profile(profile_url)
+    rate_limit("profile_view", profile_url=profile_url, record=True)
     logger.info("scrape_profile finished  name=%s", profile.get("name"))
     return json.dumps(profile, ensure_ascii=False, indent=2)
 
@@ -235,6 +241,10 @@ async def parse_profile(
     if _mock_mcp_enabled():
         return await _mock.handle_parse_profile(profile_url)
 
+    err = rate_limit("profile_view", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info(
         "parse_profile called  url=%s  cdp=%s  max_activity_posts=%s",
         profile_url,
@@ -249,6 +259,7 @@ async def parse_profile(
             detail_scroll_rounds=detail_scroll_rounds,
             activity_extra_scroll_rounds=activity_extra_scroll_rounds,
         )
+    rate_limit("profile_view", profile_url=profile_url, record=True)
     subj = parsed.get("subject") or {}
     ident = subj.get("identity") or {}
     act = parsed.get("activity") or {}
@@ -292,12 +303,17 @@ async def is_first_degree_connection(
     if _mock_mcp_enabled():
         return await _mock.handle_is_first_degree_connection(profile_url)
 
+    err = rate_limit("profile_view", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info(
         "is_first_degree_connection called  url=%s  cdp=%s", profile_url, cdp_url
     )
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
         first = await li.is_first_degree_connection(profile_url)
+    rate_limit("profile_view", profile_url=profile_url, record=True)
     out = {
         "first_degree": first,
         "profile_url": profile_url.strip(),
@@ -351,6 +367,10 @@ async def send_connection_request(
     if _mock_mcp_enabled():
         return await _mock.handle_send_connection_request(profile_url, note)
 
+    err = rate_limit("connection_request", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info(
         "send_connection_request called  url=%s  note_len=%d  cdp=%s",
         profile_url, len(note), cdp_url,
@@ -359,6 +379,7 @@ async def send_connection_request(
         await li.assert_logged_in()
         success = await li.send_connection_request(profile_url, note=note)
     if success:
+        rate_limit("connection_request", profile_url=profile_url, record=True)
         logger.info("send_connection_request finished  url=%s", profile_url)
         return "ok"
     return (
@@ -403,12 +424,17 @@ async def send_message(
     if _mock_mcp_enabled():
         return await _mock.handle_send_message(profile_url, message)
 
+    err = rate_limit("dm", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info("send_message called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
         search_name = _lookup_connection_name(profile_url)
         success = await li.send_message(profile_url, message, search_name=search_name)
     if success:
+        rate_limit("dm", profile_url=profile_url, record=True)
         logger.info("send_message finished  url=%s", profile_url)
         return "ok"
     return (
@@ -569,11 +595,16 @@ async def download_profile_pdf(
     filename = f"{uuid.uuid4()}.pdf"
     save_dir = _ROOT / "profiles"
 
+    err = rate_limit("profile_view", profile_url=profile_url, record=False)
+    if err:
+        return json.dumps({"ok": False, "error": err}, ensure_ascii=False, indent=2)
+
     logger.info("download_profile_pdf called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
         path = await li.download_profile_pdf(profile_url, save_dir=save_dir, filename=filename)
 
+    rate_limit("profile_view", profile_url=profile_url, record=True)
     out = {
         "ok": True,
         "profile_url": profile_url.strip(),
