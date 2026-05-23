@@ -168,6 +168,56 @@ async def test_server_schedule_meeting_mock_mode(
     assert conv["meeting_link"] == data["meeting_link"]
 
 
+@pytest.fixture
+def ended_outreach_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """
+    Outreach tree pre-seeded for an end-of-sequence write: an existing
+    ``engaged`` conversation, a connection row, and a prospect file. The
+    notifier is left unstubbed; tests should monkeypatch it explicitly.
+    """
+    mod = get_server_module()
+    (tmp_path / "conversations").mkdir()
+    (tmp_path / "prospects").mkdir()
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "connections.json").write_text(
+        json.dumps(
+            {
+                "connections": [
+                    {
+                        "prospect_id": PROSPECT_ID,
+                        "profile_url": PROFILE_URL,
+                        "name": "Alex Chen",
+                        "title": "Engineer",
+                        "connection_status": "connected",
+                        "connected_at": "2026-05-17T12:00:00+00:00",
+                        "note_sent": None,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "prospects" / f"{PROSPECT_ID}.json").write_text(
+        json.dumps({"id": PROSPECT_ID, "outreach_stage": "engaged"}),
+        encoding="utf-8",
+    )
+    (tmp_path / "conversations" / f"{PROSPECT_ID}.json").write_text(
+        json.dumps(
+            {
+                "prospect_id": PROSPECT_ID,
+                "outreach_stage": "engaged",
+                "messages": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "_outreach_base", lambda: tmp_path)
+    _clear_smtp_env(monkeypatch)
+    return tmp_path
+
+
 @pytest.mark.asyncio
 async def test_upsert_conversation_marks_connection_ended(
     tmp_path: Path,
@@ -221,6 +271,146 @@ async def test_upsert_conversation_marks_connection_ended(
         (prospects_dir / f"{PROSPECT_ID}.json").read_text(encoding="utf-8")
     )
     assert prospect["outreach_stage"] == "ended"
+
+
+@pytest.mark.asyncio
+async def test_upsert_conversation_calls_ended_notifier(
+    ended_outreach_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A first-time transition into 'ended' fires the operator email."""
+    mod = get_server_module()
+    calls: list[dict] = []
+
+    def _fake_send(**kwargs):
+        calls.append(kwargs)
+        return "sent"
+
+    monkeypatch.setattr(
+        mod._notify, "send_conversation_ended_email", _fake_send
+    )
+
+    conv = {
+        "prospect_id": PROSPECT_ID,
+        "linkedin_url": PROFILE_URL,
+        "outreach_stage": "ended",
+        "ended_reason": "call_scheduled",
+        "ended_at": "2026-05-20T15:00:00Z",
+        "end_goal": "schedule_meeting",
+        "sequence_step": 4,
+        "report_path": "outreach/storage/reports/alex_chen_softeng.md",
+        "messages": [],
+    }
+    result = await mod.upsert_conversation(PROSPECT_ID, json.dumps(conv))
+    assert result.startswith("ok")
+
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["prospect_id"] == PROSPECT_ID
+    assert call["prospect_name"] == "Alex Chen"
+    assert call["profile_url"] == PROFILE_URL
+    assert call["outreach_stage"] == "ended"
+    assert call["ended_reason"] == "call_scheduled"
+    assert call["ended_at"] == "2026-05-20T15:00:00Z"
+    assert call["sequence_step"] == 4
+    assert call["report_path"] == "outreach/storage/reports/alex_chen_softeng.md"
+    assert call["end_goal"] == "schedule_meeting"
+
+
+@pytest.mark.asyncio
+async def test_upsert_conversation_notifier_idempotent(
+    ended_outreach_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-writing an already-terminal conversation must not double-notify."""
+    mod = get_server_module()
+    calls: list[dict] = []
+
+    def _fake_send(**kwargs):
+        calls.append(kwargs)
+        return "sent"
+
+    monkeypatch.setattr(
+        mod._notify, "send_conversation_ended_email", _fake_send
+    )
+
+    conv = {
+        "prospect_id": PROSPECT_ID,
+        "linkedin_url": PROFILE_URL,
+        "outreach_stage": "ended",
+        "ended_reason": "call_scheduled",
+        "messages": [],
+    }
+    await mod.upsert_conversation(PROSPECT_ID, json.dumps(conv))
+
+    conv["report_path"] = "outreach/storage/reports/alex_chen_softeng.md"
+    await mod.upsert_conversation(PROSPECT_ID, json.dumps(conv))
+
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_upsert_conversation_no_notify_for_non_terminal(
+    ended_outreach_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-terminal stages must never fire the ended notifier."""
+    mod = get_server_module()
+    calls: list[dict] = []
+
+    def _fake_send(**kwargs):
+        calls.append(kwargs)
+        return "sent"
+
+    monkeypatch.setattr(
+        mod._notify, "send_conversation_ended_email", _fake_send
+    )
+
+    conv = {
+        "prospect_id": PROSPECT_ID,
+        "linkedin_url": PROFILE_URL,
+        "outreach_stage": "replied",
+        "messages": [],
+    }
+    await mod.upsert_conversation(PROSPECT_ID, json.dumps(conv))
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_upsert_conversation_survives_ended_notifier_error(
+    ended_outreach_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SMTP failure on end must not roll back the conversation/connection writes."""
+    mod = get_server_module()
+
+    def _boom(**_kwargs):
+        return "error: SMTP server down"
+
+    monkeypatch.setattr(
+        mod._notify, "send_conversation_ended_email", _boom
+    )
+
+    conv = {
+        "prospect_id": PROSPECT_ID,
+        "linkedin_url": PROFILE_URL,
+        "outreach_stage": "dead",
+        "ended_reason": "no_response",
+        "messages": [],
+    }
+    result = await mod.upsert_conversation(PROSPECT_ID, json.dumps(conv))
+    assert result.startswith("ok")
+
+    rows = json.loads(
+        (ended_outreach_root / "connections.json").read_text(encoding="utf-8")
+    )
+    assert rows["connections"][0]["connection_status"] == "ended"
+    prospect = json.loads(
+        (ended_outreach_root / "prospects" / f"{PROSPECT_ID}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert prospect["outreach_stage"] == "dead"
 
 
 @pytest.mark.asyncio
@@ -479,6 +669,135 @@ def test_notify_smtp_failure_returns_error(
             email=EMAIL,
             scheduled_at=WHEN,
             meeting_link="",
+        )
+    assert result.startswith("error:")
+    assert "connect refused" in result
+
+
+def test_notify_ended_skipped_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_smtp_env(monkeypatch)
+    with patch.object(_notify, "smtplib") as smtp_mock:
+        result = _notify.send_conversation_ended_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            outreach_stage="ended",
+            ended_reason="call_scheduled",
+            ended_at="2026-05-20T15:00:00Z",
+        )
+    assert result == "skipped"
+    smtp_mock.SMTP.assert_not_called()
+
+
+def test_notify_ended_kill_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_smtp_env(monkeypatch)
+    monkeypatch.setenv("OPERATOR_EMAIL", "ops@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("NOTIFY_DISABLED", "1")
+    with patch.object(_notify, "smtplib") as smtp_mock:
+        result = _notify.send_conversation_ended_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            outreach_stage="dead",
+            ended_reason="no_response",
+            ended_at="2026-05-20T15:00:00Z",
+        )
+    assert result == "skipped"
+    smtp_mock.SMTP.assert_not_called()
+
+
+def test_notify_ended_sends_via_starttls(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_smtp_env(monkeypatch)
+    monkeypatch.setenv("OPERATOR_EMAIL", "ops@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PORT", "2525")
+    monkeypatch.setenv("SMTP_USER", "ops@example.com")
+    monkeypatch.setenv("SMTP_PASS", "hunter2")
+    monkeypatch.setenv("SMTP_FROM", "ops@example.com")
+
+    client = MagicMock()
+    client.__enter__.return_value = client
+    smtp_factory = MagicMock(return_value=client)
+
+    with patch.object(_notify.smtplib, "SMTP", smtp_factory):
+        result = _notify.send_conversation_ended_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            outreach_stage="ended",
+            ended_reason="call_scheduled",
+            ended_at="2026-05-20T15:00:00Z",
+            sequence_step=4,
+            report_path="outreach/storage/reports/alex_chen_softeng.md",
+            end_goal="schedule_meeting",
+        )
+
+    assert result == "sent"
+    smtp_factory.assert_called_once_with("smtp.example.com", 2525, timeout=8.0)
+    client.starttls.assert_called_once()
+    client.login.assert_called_once_with("ops@example.com", "hunter2")
+    client.send_message.assert_called_once()
+    sent_msg = client.send_message.call_args.args[0]
+    assert sent_msg["To"] == "ops@example.com"
+    assert sent_msg["From"] == "ops@example.com"
+    assert "Alex Chen" in sent_msg["Subject"]
+    assert "closed" in sent_msg["Subject"]
+    assert "call_scheduled" in sent_msg["Subject"]
+    body = sent_msg.get_content()
+    assert "ended" in body
+    assert "schedule_meeting" in body
+    assert "alex_chen_softeng.md" in body
+    assert PROFILE_URL in body
+
+
+def test_notify_ended_subject_for_dead_stage(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_smtp_env(monkeypatch)
+    monkeypatch.setenv("OPERATOR_EMAIL", "ops@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+
+    client = MagicMock()
+    client.__enter__.return_value = client
+    smtp_factory = MagicMock(return_value=client)
+
+    with patch.object(_notify.smtplib, "SMTP", smtp_factory):
+        result = _notify.send_conversation_ended_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            outreach_stage="dead",
+            ended_reason="no_response",
+            ended_at="2026-05-20T15:00:00Z",
+        )
+
+    assert result == "sent"
+    sent_msg = client.send_message.call_args.args[0]
+    assert "dropped" in sent_msg["Subject"]
+    assert "no_response" in sent_msg["Subject"]
+
+
+def test_notify_ended_failure_returns_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import smtplib as real_smtplib
+
+    _clear_smtp_env(monkeypatch)
+    monkeypatch.setenv("OPERATOR_EMAIL", "ops@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+
+    def _raise(*_args, **_kwargs):
+        raise real_smtplib.SMTPException("connect refused")
+
+    with patch.object(_notify.smtplib, "SMTP", side_effect=_raise):
+        result = _notify.send_conversation_ended_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            outreach_stage="ended",
+            ended_reason="call_scheduled",
+            ended_at="2026-05-20T15:00:00Z",
         )
     assert result.startswith("error:")
     assert "connect refused" in result

@@ -1038,6 +1038,57 @@ def _sync_prospect_outreach_stage(prospect_id: str, stage: str) -> None:
         logger.exception("_sync_prospect_outreach_stage failed for %s", prospect_id)
 
 
+def _notify_conversation_ended(prospect_id: str, conversation: object) -> str:
+    """
+    Email the operator that a conversation just transitioned into a terminal stage.
+
+    Returns the notifier status string (``"sent"`` / ``"skipped"`` / ``"error: ..."``).
+    Never raises: SMTP failures are logged and swallowed so the calling upsert
+    is not rolled back.
+    """
+    data = conversation if isinstance(conversation, dict) else {}
+    stage = str(data.get("outreach_stage") or "")
+    linkedin_url = data.get("linkedin_url") if isinstance(data, dict) else None
+    prospect_name, resolved_url = _lookup_prospect_identity(
+        prospect_id, linkedin_url if isinstance(linkedin_url, str) else None
+    )
+    sequence_step = data.get("sequence_step")
+    if not isinstance(sequence_step, int):
+        sequence_step = None
+    try:
+        status = _notify.send_conversation_ended_email(
+            prospect_id=prospect_id,
+            prospect_name=prospect_name,
+            profile_url=resolved_url,
+            outreach_stage=stage,
+            ended_reason=str(data.get("ended_reason") or ""),
+            ended_at=str(data.get("ended_at") or ""),
+            sequence_step=sequence_step,
+            report_path=(
+                str(data.get("report_path"))
+                if isinstance(data.get("report_path"), str)
+                else None
+            ),
+            end_goal=(
+                str(data.get("end_goal"))
+                if isinstance(data.get("end_goal"), str)
+                else None
+            ),
+        )
+    except Exception as exc:
+        logger.exception(
+            "_notify_conversation_ended: notifier raised for %s", prospect_id
+        )
+        return f"error: {exc}"
+    logger.info(
+        "_notify_conversation_ended: prospect_id=%s stage=%s status=%s",
+        prospect_id,
+        stage,
+        status,
+    )
+    return status
+
+
 def _lookup_connection_name(profile_url: str) -> str | None:
     """
     Read clean name for a profile URL from connections.json under the active outreach root.
@@ -1436,16 +1487,31 @@ async def upsert_conversation(
         "ok" on success, or an error description.
     """
     path = _outreach_base() / "conversations" / f"{prospect_id}.json"
+    prior_stage: str | None = None
+    if path.is_file():
+        try:
+            prior = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(prior, dict):
+                raw_prior_stage = prior.get("outreach_stage")
+                if isinstance(raw_prior_stage, str):
+                    prior_stage = raw_prior_stage
+        except (OSError, json.JSONDecodeError):
+            logger.exception(
+                "upsert_conversation: could not read prior state at %s", path
+            )
+
     try:
         data = json.loads(conversation)
         _atomic_write_json(path, data)
         stage = data.get("outreach_stage") if isinstance(data, dict) else None
         if stage in _TERMINAL_CONVERSATION_STAGES:
-            _mark_connection_ended(
-                prospect_id,
-                data.get("linkedin_url") if isinstance(data, dict) else None,
+            linkedin_url = (
+                data.get("linkedin_url") if isinstance(data, dict) else None
             )
+            _mark_connection_ended(prospect_id, linkedin_url)
             _sync_prospect_outreach_stage(prospect_id, str(stage))
+            if prior_stage not in _TERMINAL_CONVERSATION_STAGES:
+                _notify_conversation_ended(prospect_id, data)
         logger.info("upsert_conversation: wrote %s", path)
         return f"ok — wrote {path}"
     except Exception as exc:
