@@ -134,6 +134,30 @@ flowchart LR
   Claude --> Data
 ```
 
+## The web server is the scheduler (production usage)
+
+The `web/server.py` process is the production driver for the workflow — the dashboard UI is a view on the same process, not a separate component. Inside the FastAPI `lifespan` hook, `web/routine_scheduler.scheduler_loop` ticks every 30 s and shells out to `claude -p "Run <skill>"` for any routine in `dashboard_routines.json` whose `active` flag is true and whose `interval_minutes` has elapsed since `last_run_at`.
+
+`./install.sh` already starts this process in the background (see `start_web_dashboard` in `install.sh`), so after the installer finishes the workflow runs unattended. You only need the browser at `http://127.0.0.1:3847/` if you want to inspect state or hand-toggle routines.
+
+### Default routines
+
+`web/routines_config.DEFAULT_ROUTINES` ships two active routines:
+
+| Routine | Skill | Interval | Active by default |
+|---------|-------|----------|-------------------|
+| Sync Pending Connections | `sync-pending-connections` | 30 min | yes |
+| Conversation Planner | `conversation-planner` | 30 min | yes |
+
+They are written to `{outreach_base}/config/dashboard_routines.json` on first read. To pause one, either toggle it in the dashboard UI or edit that file and set `"active": false`. The scheduler picks up file edits on the next tick.
+
+### Notes
+
+- `claude` must be on the PATH of whichever shell started `uvicorn`. `install.sh` inherits the user's PATH, so this normally works out of the box.
+- LinkedIn rate limits (`tools/rate_limits.py`) apply per `tools/server.py` subprocess; back-to-back routine runs are safe.
+- When `schedule_meeting` fires inside a routine run, the operator gets an SMTP email reminder if `OPERATOR_EMAIL` / `SMTP_HOST` are set in `.env` (see `.env.example`).
+- The web process does **not** survive reboot today. After a reboot, re-run `./install.sh` (or `make web`) to bring the scheduler back. A `launchd` / systemd unit is a natural follow-up but is out of scope here.
+
 ## Troubleshooting
 
 **Stale UI after code changes** — Restart the server (`make stop-web && make web`). Uvicorn is started without `--reload` by default.

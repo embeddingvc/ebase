@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,11 +14,63 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import mock as _mock  # noqa: E402
+import notify as _notify  # noqa: E402
 from outreach.regression_harness import get_server_module  # noqa: E402
 
 PROSPECT_ID = "alex_chen_softeng"
 EMAIL = "alexchen336@gmail.com"
 WHEN = "2026-05-20T15:00:00Z"
+PROFILE_URL = "https://www.linkedin.com/in/alex-chen-softeng/"
+
+_SMTP_ENV_KEYS = (
+    "OPERATOR_EMAIL",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_USER",
+    "SMTP_PASS",
+    "SMTP_FROM",
+    "SMTP_STARTTLS",
+    "SMTP_TIMEOUT_SEC",
+    "NOTIFY_DISABLED",
+)
+
+
+def _clear_smtp_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in _SMTP_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture
+def live_outreach_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Point the live server at a temp outreach tree with one seeded connection."""
+    mod = get_server_module()
+    (tmp_path / "conversations").mkdir()
+    (tmp_path / "prospects").mkdir()
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "connections.json").write_text(
+        json.dumps(
+            {
+                "connections": [
+                    {
+                        "prospect_id": PROSPECT_ID,
+                        "profile_url": PROFILE_URL,
+                        "name": "Alex Chen",
+                        "title": "ML Engineer",
+                        "connection_status": "connected",
+                        "connected_at": "2026-05-17T12:00:00+00:00",
+                        "note_sent": None,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "_outreach_base", lambda: tmp_path)
+    monkeypatch.setattr(mod, "_mock_mcp_enabled", lambda: False)
+    _clear_smtp_env(monkeypatch)
+    return tmp_path
 
 
 @pytest.fixture
@@ -172,15 +224,261 @@ async def test_upsert_conversation_marks_connection_ended(
 
 
 @pytest.mark.asyncio
-async def test_server_schedule_meeting_live_stub(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_live_schedule_meeting_writes_conversation(
+    live_outreach_root: Path,
 ) -> None:
     mod = get_server_module()
-    monkeypatch.setattr(mod, "_mock_mcp_enabled", lambda: False)
-    result = await mod.schedule_meeting(
+    raw = await mod.schedule_meeting(
         email=EMAIL,
         datetime=WHEN,
         prospect_id=PROSPECT_ID,
     )
+    data = json.loads(raw)
+    assert data["status"] == "scheduled"
+    assert data["prospect_id"] == PROSPECT_ID
+    assert data["email"] == EMAIL
+    assert data["scheduled_at"] == WHEN
+    assert data["meeting_link"] == ""
+    assert data["notified"] is False
+    assert data["notify_status"] == "skipped"
+
+    conv = json.loads(
+        (live_outreach_root / "conversations" / f"{PROSPECT_ID}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert conv["email"] == EMAIL
+    assert conv["meeting_link"] == ""
+    assert conv["last_action"] == "confirm_meeting"
+    assert conv["prospect_id"] == PROSPECT_ID
+
+    log_lines = (
+        (live_outreach_root / "logs" / "actions.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    assert any(json.loads(line)["action"] == "schedule_meeting" for line in log_lines)
+
+
+@pytest.mark.asyncio
+async def test_live_schedule_meeting_resolves_profile_url(
+    live_outreach_root: Path,
+) -> None:
+    mod = get_server_module()
+    raw = await mod.schedule_meeting(
+        email=EMAIL,
+        datetime=WHEN,
+        profile_url=PROFILE_URL,
+    )
+    data = json.loads(raw)
+    assert data["prospect_id"] == PROSPECT_ID
+
+
+@pytest.mark.asyncio
+async def test_live_schedule_meeting_invalid_email_and_datetime(
+    live_outreach_root: Path,
+) -> None:
+    mod = get_server_module()
+    bad_email = await mod.schedule_meeting(
+        email="not-an-email",
+        datetime=WHEN,
+        prospect_id=PROSPECT_ID,
+    )
+    assert bad_email == "error: invalid email"
+
+    bad_when = await mod.schedule_meeting(
+        email=EMAIL,
+        datetime="next tuesday",
+        prospect_id=PROSPECT_ID,
+    )
+    assert bad_when == "error: invalid datetime"
+
+    missing_ctx = await mod.schedule_meeting(
+        email=EMAIL,
+        datetime=WHEN,
+    )
+    assert missing_ctx == "error: prospect context required"
+
+    assert not (live_outreach_root / "conversations" / f"{PROSPECT_ID}.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_live_schedule_meeting_calls_notifier(
+    live_outreach_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mod = get_server_module()
+    calls: list[dict] = []
+
+    def _fake_send(**kwargs):
+        calls.append(kwargs)
+        return "sent"
+
+    monkeypatch.setattr(mod._notify, "send_meeting_scheduled_email", _fake_send)
+
+    raw = await mod.schedule_meeting(
+        email=EMAIL,
+        datetime=WHEN,
+        prospect_id=PROSPECT_ID,
+    )
+    data = json.loads(raw)
+    assert data["notified"] is True
+    assert data["notify_status"] == "sent"
+    assert len(calls) == 1
+    assert calls[0]["prospect_id"] == PROSPECT_ID
+    assert calls[0]["prospect_name"] == "Alex Chen"
+    assert calls[0]["profile_url"] == PROFILE_URL
+    assert calls[0]["email"] == EMAIL
+    assert calls[0]["scheduled_at"] == WHEN
+    assert calls[0]["meeting_link"] == ""
+
+
+@pytest.mark.asyncio
+async def test_live_schedule_meeting_survives_notifier_error(
+    live_outreach_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SMTP failure must not roll back the conversation write."""
+    mod = get_server_module()
+
+    def _boom(**_kwargs):
+        return "error: SMTP server down"
+
+    monkeypatch.setattr(mod._notify, "send_meeting_scheduled_email", _boom)
+
+    raw = await mod.schedule_meeting(
+        email=EMAIL,
+        datetime=WHEN,
+        prospect_id=PROSPECT_ID,
+    )
+    data = json.loads(raw)
+    assert data["status"] == "scheduled"
+    assert data["notified"] is False
+    assert data["notify_status"].startswith("error:")
+    assert (
+        live_outreach_root / "conversations" / f"{PROSPECT_ID}.json"
+    ).is_file()
+
+
+def test_notify_smtp_disabled_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_smtp_env(monkeypatch)
+    with patch.object(_notify, "smtplib") as smtp_mock:
+        result = _notify.send_meeting_scheduled_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            email=EMAIL,
+            scheduled_at=WHEN,
+            meeting_link="",
+        )
+    assert result == "skipped"
+    smtp_mock.SMTP.assert_not_called()
+
+
+def test_notify_smtp_kill_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_smtp_env(monkeypatch)
+    monkeypatch.setenv("OPERATOR_EMAIL", "ops@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("NOTIFY_DISABLED", "1")
+    with patch.object(_notify, "smtplib") as smtp_mock:
+        result = _notify.send_meeting_scheduled_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            email=EMAIL,
+            scheduled_at=WHEN,
+            meeting_link="",
+        )
+    assert result == "skipped"
+    smtp_mock.SMTP.assert_not_called()
+
+
+def test_notify_smtp_send_uses_starttls(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_smtp_env(monkeypatch)
+    monkeypatch.setenv("OPERATOR_EMAIL", "ops@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PORT", "2525")
+    monkeypatch.setenv("SMTP_USER", "ops@example.com")
+    monkeypatch.setenv("SMTP_PASS", "hunter2")
+    monkeypatch.setenv("SMTP_FROM", "ops@example.com")
+
+    client = MagicMock()
+    smtp_factory = MagicMock(return_value=client)
+    client.__enter__.return_value = client
+
+    with patch.object(_notify.smtplib, "SMTP", smtp_factory):
+        result = _notify.send_meeting_scheduled_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            email=EMAIL,
+            scheduled_at=WHEN,
+            meeting_link="",
+        )
+
+    assert result == "sent"
+    smtp_factory.assert_called_once_with("smtp.example.com", 2525, timeout=8.0)
+    client.starttls.assert_called_once()
+    client.login.assert_called_once_with("ops@example.com", "hunter2")
+    client.send_message.assert_called_once()
+    sent_msg = client.send_message.call_args.args[0]
+    assert sent_msg["To"] == "ops@example.com"
+    assert sent_msg["From"] == "ops@example.com"
+    assert "Alex Chen" in sent_msg["Subject"]
+    assert WHEN in sent_msg["Subject"]
+    body = sent_msg.get_content()
+    assert EMAIL in body
+    assert PROFILE_URL in body
+
+
+def test_notify_smtp_starttls_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_smtp_env(monkeypatch)
+    monkeypatch.setenv("OPERATOR_EMAIL", "ops@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_STARTTLS", "0")
+
+    client = MagicMock()
+    client.__enter__.return_value = client
+    smtp_factory = MagicMock(return_value=client)
+
+    with patch.object(_notify.smtplib, "SMTP", smtp_factory):
+        result = _notify.send_meeting_scheduled_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            email=EMAIL,
+            scheduled_at=WHEN,
+            meeting_link="",
+        )
+
+    assert result == "sent"
+    client.starttls.assert_not_called()
+    client.login.assert_not_called()
+    client.send_message.assert_called_once()
+
+
+def test_notify_smtp_failure_returns_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import smtplib as real_smtplib
+
+    _clear_smtp_env(monkeypatch)
+    monkeypatch.setenv("OPERATOR_EMAIL", "ops@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+
+    def _raise(*_args, **_kwargs):
+        raise real_smtplib.SMTPException("connect refused")
+
+    with patch.object(_notify.smtplib, "SMTP", side_effect=_raise):
+        result = _notify.send_meeting_scheduled_email(
+            prospect_id=PROSPECT_ID,
+            prospect_name="Alex Chen",
+            profile_url=PROFILE_URL,
+            email=EMAIL,
+            scheduled_at=WHEN,
+            meeting_link="",
+        )
     assert result.startswith("error:")
-    assert "not implemented" in result.lower()
+    assert "connect refused" in result
