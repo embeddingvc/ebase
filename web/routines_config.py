@@ -8,6 +8,7 @@ Stored at ``{outreach_base}/config/dashboard_routines.json``.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,11 +27,20 @@ ROUTINE_FIELDS = frozenset(
         "skill",
         "interval_minutes",
         "active",
+        "active_window_start",
+        "active_window_end",
         "last_run_at",
         "last_status",
         "last_error",
     }
 )
+
+# 24-hour "HH:MM" (00:00 – 23:59); empty/None means "no restriction".
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+# Default business-hours window applied to brand-new routines (server local time).
+DEFAULT_WINDOW_START = "09:00"
+DEFAULT_WINDOW_END = "17:00"
 
 DEFAULT_ROUTINES: list[dict[str, Any]] = [
     {
@@ -39,6 +49,8 @@ DEFAULT_ROUTINES: list[dict[str, Any]] = [
         "skill": "sync-pending-connections",
         "interval_minutes": 30,
         "active": True,
+        "active_window_start": DEFAULT_WINDOW_START,
+        "active_window_end": DEFAULT_WINDOW_END,
     },
     {
         "id": "conversation_planner",
@@ -46,8 +58,34 @@ DEFAULT_ROUTINES: list[dict[str, Any]] = [
         "skill": "conversation-planner",
         "interval_minutes": 30,
         "active": True,
+        "active_window_start": DEFAULT_WINDOW_START,
+        "active_window_end": DEFAULT_WINDOW_END,
     },
 ]
+
+
+def _normalize_time_str(value: Any) -> str | None:
+    """Return canonical 'HH:MM' or None. Raises ValueError on invalid input."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if not _TIME_RE.match(s):
+        raise ValueError(f"invalid time: {value!r} (expected HH:MM, 24h)")
+    return s
+
+
+def _coerce_time_str_silent(value: Any) -> str | None:
+    """Like ``_normalize_time_str`` but drops invalid values instead of raising.
+
+    Used when loading existing config so a hand-edited bad value can't brick
+    the scheduler. The strict variant is used for the API write path.
+    """
+    try:
+        return _normalize_time_str(value)
+    except ValueError:
+        return None
 
 
 def _config_path() -> Path:
@@ -88,6 +126,8 @@ def _normalize_stored_routine(raw: dict[str, Any]) -> dict[str, Any]:
         "skill": skill,
         "interval_minutes": max(1, int(raw.get("interval_minutes") or 30)),
         "active": bool(raw.get("active", False)),
+        "active_window_start": _coerce_time_str_silent(raw.get("active_window_start")),
+        "active_window_end": _coerce_time_str_silent(raw.get("active_window_end")),
         "last_run_at": raw.get("last_run_at"),
         "last_status": raw.get("last_status"),
         "last_error": raw.get("last_error"),
@@ -124,15 +164,55 @@ def _display_status(routine: dict[str, Any]) -> str:
     return "idle"
 
 
+def _window_label(start: str | None, end: str | None) -> str | None:
+    if not start or not end:
+        return None
+    return f"{start}\u2013{end}"
+
+
+def _minutes_of_day(hhmm: str) -> int:
+    hh, mm = hhmm.split(":")
+    return int(hh) * 60 + int(mm)
+
+
+def in_active_window(
+    routine: dict[str, Any], *, now: datetime | None = None
+) -> bool:
+    """True if ``routine`` may run at ``now`` (default: server local time).
+
+    Unset/blank window means "always on". When ``start == end`` the routine
+    would never run, so the validator forbids it; defensively we return False.
+    Supports windows that cross midnight (``start > end``).
+    """
+    start = routine.get("active_window_start")
+    end = routine.get("active_window_end")
+    if not start or not end:
+        return True
+    now = now or datetime.now()
+    minutes = now.hour * 60 + now.minute
+    start_m = _minutes_of_day(start)
+    end_m = _minutes_of_day(end)
+    if start_m == end_m:
+        return False
+    if start_m < end_m:
+        return start_m <= minutes < end_m
+    return minutes >= start_m or minutes < end_m
+
+
 def to_display_routine(stored: dict[str, Any]) -> dict[str, Any]:
     """API shape for the Scheduled Routines list."""
     skill = stored.get("skill") or ""
+    start = stored.get("active_window_start")
+    end = stored.get("active_window_end")
     return {
         "id": stored.get("id"),
         "name": stored.get("name"),
         "skill": skill,
         "interval_minutes": stored.get("interval_minutes"),
         "active": bool(stored.get("active")),
+        "active_window_start": start,
+        "active_window_end": end,
+        "active_window_label": _window_label(start, end),
         "last_run_at": stored.get("last_run_at"),
         "last_status": stored.get("last_status"),
         "last_error": stored.get("last_error"),
@@ -226,6 +306,15 @@ def validate_routine(row: dict[str, Any]) -> str | None:
         return "interval_minutes must be >= 1"
     if not (row.get("name") or "").strip():
         return "name required"
+    try:
+        start = _normalize_time_str(row.get("active_window_start"))
+        end = _normalize_time_str(row.get("active_window_end"))
+    except ValueError as exc:
+        return str(exc)
+    if (start is None) != (end is None):
+        return "active_window_start and active_window_end must both be set or both blank"
+    if start is not None and start == end:
+        return "active_window_start and active_window_end must differ"
     return None
 
 
@@ -233,13 +322,13 @@ def upsert_routines(routines: list[dict[str, Any]]) -> dict[str, Any]:
     normalized: list[dict[str, Any]] = []
     seen: set[str] = set()
     for raw in routines:
+        err = validate_routine(raw)
+        if err:
+            raise ValueError(err)
         row = _normalize_stored_routine(dict(raw))
         if row["id"] in seen:
             raise ValueError(f"duplicate routine id: {row['id']}")
         seen.add(row["id"])
-        err = validate_routine(row)
-        if err:
-            raise ValueError(err)
         normalized.append(row)
     save_config({"routines": normalized})
     return get_routines_for_api()

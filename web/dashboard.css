@@ -123,6 +123,17 @@ body {
   margin-bottom: 0.5rem;
 }
 
+.routine-config-row .rc-window-row input {
+  margin-bottom: 0;
+}
+
+.routine-config-row .rc-window-clear {
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

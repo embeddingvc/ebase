@@ -41,3 +41,4 @@ CLAUDE.md
 
 # Claude Code project-scoped MCP (paths are machine-specific; created by install.sh / make claude-install)
 .mcp.json
+outreach/config/dashboard_routines.json

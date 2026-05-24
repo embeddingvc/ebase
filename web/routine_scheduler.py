@@ -33,6 +33,8 @@ def _parse_iso(ts: str | None) -> datetime | None:
 def _due(routine: dict[str, Any]) -> bool:
     if not routine.get("active"):
         return False
+    if not routines_config.in_active_window(routine):
+        return False
     last = _parse_iso(routine.get("last_run_at"))
     if last is None:
         return True

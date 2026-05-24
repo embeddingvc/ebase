@@ -167,6 +167,9 @@ function renderRoutines(data) {
       const rid = r.id || "";
       const isRunning = runningRoutines.has(rid);
       const timerHint = r.active ? " · resets timer" : "";
+      const windowLine = r.active_window_label
+        ? `<div class="text-[10px] text-[#404850]">Window ${escapeHtml(r.active_window_label)} (local)</div>`
+        : "";
       return `<div class="routine-card flex items-center p-3 rounded-lg border border-[#bfc7d1] bg-[#f7f9fb] gap-3" data-routine-id="${escapeHtml(rid)}">
         <div class="bg-[#005d8f]/10 p-2 rounded-lg shrink-0">
           <span class="material-symbols-outlined text-[#005d8f]">${escapeHtml(r.icon || "bolt")}</span>
@@ -175,6 +178,7 @@ function renderRoutines(data) {
           <div class="text-sm font-bold">${escapeHtml(r.name)}</div>
           <div class="text-[11px] text-[#404850]">${escapeHtml(skill)} · every ${interval}m</div>
           <div class="text-[10px] text-[#404850]">${escapeHtml(last)}</div>
+          ${windowLine}
         </div>
         <span class="text-[11px] font-bold ${stColor} shrink-0 hidden sm:inline">${label}</span>
         <button type="button" class="routine-trigger shrink-0 p-2 rounded-lg border border-[#bfc7d1] bg-white text-[#005d8f] hover:bg-[#e8f1f8] disabled:opacity-50 disabled:cursor-not-allowed" data-routine-id="${escapeHtml(rid)}" title="Run now${timerHint}" aria-label="Run ${escapeHtml(r.name)} now" ${isRunning ? "disabled" : ""}>
@@ -408,6 +412,12 @@ function renderRoutinesConfigRows() {
       <select class="rc-skill">${skillOptions(r.skill)}</select>
       <label>Interval (minutes)</label>
       <input type="number" class="rc-interval" min="1" value="${Number(r.interval_minutes) || 60}" />
+      <label>Daily active window (local, leave blank for 24/7)</label>
+      <div class="rc-window-row flex gap-2 mb-2">
+        <input type="time" class="rc-window-start" value="${escapeHtml(r.active_window_start || "")}" aria-label="Window start" />
+        <input type="time" class="rc-window-end" value="${escapeHtml(r.active_window_end || "")}" aria-label="Window end" />
+        <button type="button" class="rc-window-clear text-[11px] text-[#005d8f] font-semibold px-2" data-index="${i}" title="Clear window">Clear</button>
+      </div>
       <label class="flex items-center gap-2 mt-1 mb-0">
         <input type="checkbox" class="rc-active" ${r.active ? "checked" : ""} />
         <span class="text-xs font-semibold normal-case">Active</span>
@@ -420,6 +430,14 @@ function renderRoutinesConfigRows() {
     btn.addEventListener("click", () => {
       routinesConfigDraft.splice(Number(btn.dataset.index), 1);
       renderRoutinesConfigRows();
+    });
+  });
+  el("routines-config-rows").querySelectorAll(".rc-window-clear").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = btn.closest(".routine-config-row");
+      if (!row) return;
+      row.querySelector(".rc-window-start").value = "";
+      row.querySelector(".rc-window-end").value = "";
     });
   });
 }
@@ -445,12 +463,16 @@ function collectRoutinesConfigFromForm() {
   const rows = el("routines-config-rows").querySelectorAll(".routine-config-row");
   return Array.from(rows).map((row, i) => {
     const prev = routinesConfigDraft[i] || {};
+    const start = row.querySelector(".rc-window-start").value.trim();
+    const end = row.querySelector(".rc-window-end").value.trim();
     return {
       id: prev.id || `routine_${i + 1}`,
       name: row.querySelector(".rc-name").value.trim(),
       skill: row.querySelector(".rc-skill").value,
       interval_minutes: Number(row.querySelector(".rc-interval").value) || 60,
       active: row.querySelector(".rc-active").checked,
+      active_window_start: start || null,
+      active_window_end: end || null,
     };
   });
 }
@@ -507,6 +529,8 @@ function initModals() {
       skill: allowedSkills[0] || "sync-pending-connections",
       interval_minutes: 60,
       active: true,
+      active_window_start: "09:00",
+      active_window_end: "17:00",
     });
     renderRoutinesConfigRows();
   });

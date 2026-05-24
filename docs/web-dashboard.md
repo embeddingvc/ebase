@@ -57,10 +57,14 @@ Lists prospects from **`connections.json` only** (master registry). For each row
 ### Routines & execution
 
 - **Scheduled routines** — configured in `{outreach_base}/config/dashboard_routines.json`
-- **Run now** (play button) — `POST /api/dashboard/routines/{id}/run`; updates `last_run_at` (resets the interval timer for active routines)
+- **Run now** (play button) — `POST /api/dashboard/routines/{id}/run`; updates `last_run_at` (resets the interval timer for active routines). Ignores the daily active window so operators can always trigger a run on demand.
 - **Routine run history** — append-only `logs/routine_runs.jsonl` (not queue or planned-message logs)
 
 Default routines: `sync-pending-connections`, `conversation-planner` (both inactive until enabled in Configure).
+
+#### Daily active window
+
+Each routine has an optional `active_window_start` / `active_window_end` pair (24h `"HH:MM"` in **server local time**). When both are set, the scheduler only ticks the routine while the current local time is inside the window. New routines default to **09:00–17:00** (business hours); clear both fields in the Configure modal for 24/7 operation. Windows may cross midnight (e.g. `22:00`–`06:00`). Set the window in the **Configure** modal or directly in `dashboard_routines.json`. "Run now" still works outside the window — only the background scheduler honours it.
 
 ### Meetings
 
