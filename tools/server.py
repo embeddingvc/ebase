@@ -124,7 +124,7 @@ _browse_lock = asyncio.Lock()
 
 def _mock_mcp_enabled() -> bool:
     """Return True to run in mock mode (no browser, scripted responses)."""
-    return True
+    return False
 
 
 def _outreach_base() -> Path:
