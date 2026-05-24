@@ -26,6 +26,8 @@ LINKEDIN_OUTREACH_SYNC_SKILLS_HOME="${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME:-1}"
 INSTALL_LOCAL="${LINKEDIN_OUTREACH_INSTALL_LOCAL:-0}"
 SKIP_LINKEDIN_LOGIN="${LINKEDIN_OUTREACH_SKIP_LINKEDIN_LOGIN:-0}"
 LINKEDIN_LOGIN_URL="${LINKEDIN_LOGIN_URL:-https://www.linkedin.com}"
+SKIP_EMAIL_SETUP="${LINKEDIN_OUTREACH_SKIP_EMAIL_SETUP:-0}"
+GMAIL_APP_PASSWORD_URL="${GMAIL_APP_PASSWORD_URL:-https://myaccount.google.com/apppasswords}"
 
 info() { printf '%s\n' "[install] $*"; }
 warn() { printf '%s\n' "[install] $*" >&2; }
@@ -51,6 +53,11 @@ Usage: install.sh [options]
   --skip-linkedin-login
     Do not pause for LinkedIn sign-in (same as LINKEDIN_OUTREACH_SKIP_LINKEDIN_LOGIN=1).
 
+  --skip-email-setup
+    Do not prompt for the Gmail app password / operator email
+    (same as LINKEDIN_OUTREACH_SKIP_EMAIL_SETUP=1). Always skipped when stdin
+    is not a TTY (e.g. curl | bash).
+
   Other:
     LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
     WEB_HOST, WEB_PORT                     Dashboard bind (default 127.0.0.1:3847).
@@ -73,6 +80,10 @@ parse_args() {
         ;;
       --skip-linkedin-login)
         SKIP_LINKEDIN_LOGIN=1
+        shift
+        ;;
+      --skip-email-setup)
+        SKIP_EMAIL_SETUP=1
         shift
         ;;
       -h | --help)
@@ -378,6 +389,160 @@ start_web_dashboard() {
   fi
 }
 
+env_file_read_value() {
+  local key="$1" envfile="$2"
+  [[ -f "${envfile}" ]] || return 0
+  grep -E "^[[:space:]]*${key}=" "${envfile}" 2>/dev/null \
+    | head -n 1 \
+    | sed -E "s/^[[:space:]]*${key}=//"
+}
+
+env_file_upsert() {
+  local key="$1" value="$2" envfile="$3"
+  local tmp
+  tmp="$(mktemp "${envfile}.XXXXXX")"
+  local replaced=0
+  if [[ -f "${envfile}" ]]; then
+    local line
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      if [[ "${line}" =~ ^[[:space:]]*#?[[:space:]]*${key}= ]]; then
+        if [[ "${replaced}" -eq 0 ]]; then
+          printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
+          replaced=1
+        fi
+      else
+        printf '%s\n' "${line}" >>"${tmp}"
+      fi
+    done <"${envfile}"
+  fi
+  if [[ "${replaced}" -eq 0 ]]; then
+    printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
+  fi
+  mv "${tmp}" "${envfile}"
+}
+
+setup_email_notifications() {
+  if [[ "${SKIP_EMAIL_SETUP}" == "1" ]]; then
+    info "Skipping operator email setup (--skip-email-setup)."
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    info "Non-interactive install — skipping Gmail SMTP prompts."
+    info "Configure later by editing ${REPO_ROOT}/.env (see .env.example)."
+    return 0
+  fi
+
+  local envfile="${REPO_ROOT}/.env"
+  if [[ ! -f "${envfile}" ]]; then
+    if [[ -f "${REPO_ROOT}/.env.example" ]]; then
+      cp "${REPO_ROOT}/.env.example" "${envfile}"
+      info "Created ${envfile} from .env.example."
+    else
+      : >"${envfile}"
+    fi
+  fi
+  chmod 600 "${envfile}" 2>/dev/null || true
+
+  local existing_email existing_pass
+  existing_email="$(env_file_read_value OPERATOR_EMAIL "${envfile}")"
+  existing_pass="$(env_file_read_value SMTP_PASS "${envfile}")"
+
+  printf '\n'
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  info "Operator email notifications (optional)"
+  printf '%s\n' ""
+  printf '%s\n' "  The LinkedIn-Outreach MCP can email you whenever:"
+  printf '%s\n' "    • a prospect agrees to a meeting (schedule_meeting), or"
+  printf '%s\n' "    • a sequence ends or is dropped (upsert_conversation)."
+  printf '%s\n' ""
+  printf '%s\n' "  Easiest setup: a Gmail address + a Google app password."
+  printf '%s\n' "  You can skip this and configure later by editing .env."
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  printf '\n'
+
+  local reply=""
+  if [[ -n "${existing_email}" ]] && [[ -n "${existing_pass}" ]]; then
+    info "Existing OPERATOR_EMAIL=${existing_email} and SMTP_PASS are already set in .env."
+    read -r -p "[install] Reconfigure email notifications? [y/N] " reply || reply=""
+    case "${reply}" in
+      y|Y|yes|YES) ;;
+      *)
+        info "Keeping existing email configuration."
+        return 0
+        ;;
+    esac
+  else
+    read -r -p "[install] Set up Gmail notifications now? [Y/n] " reply || reply=""
+    case "${reply}" in
+      n|N|no|NO)
+        info "Skipped — edit ${envfile} later to enable notifications."
+        return 0
+        ;;
+    esac
+  fi
+
+  printf '%s\n' "  1. Turn ON 2-Step Verification for your Google account (required):"
+  printf '%s\n' "       https://myaccount.google.com/security"
+  printf '%s\n' "  2. Generate an app password (label it 'LinkedIn-Outreach'):"
+  printf '%s\n' "       ${GMAIL_APP_PASSWORD_URL}"
+  printf '%s\n' "  3. Copy the 16-character password Google shows (spaces are fine)."
+  printf '\n'
+
+  if command -v open >/dev/null 2>&1; then
+    open "${GMAIL_APP_PASSWORD_URL}" >/dev/null 2>&1 || true
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "${GMAIL_APP_PASSWORD_URL}" >/dev/null 2>&1 || true
+  fi
+
+  local email_re='^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+  local email="" password="" confirm="" default_prompt=""
+  while [[ -z "${email}" ]]; do
+    default_prompt=""
+    [[ -n "${existing_email}" ]] && default_prompt=" [${existing_email}]"
+    read -r -p "[install] Gmail address${default_prompt}: " email || email=""
+    if [[ -z "${email}" ]] && [[ -n "${existing_email}" ]]; then
+      email="${existing_email}"
+    fi
+    if [[ ! "${email}" =~ ${email_re} ]]; then
+      warn "  '${email}' does not look like a valid email."
+      email=""
+    fi
+  done
+
+  while [[ -z "${password}" ]]; do
+    read -r -s -p "[install] App password (input hidden): " password || password=""
+    printf '\n'
+    password="${password// /}"
+    if [[ "${#password}" -lt 12 ]]; then
+      warn "  Password looks too short — Gmail app passwords are 16 chars."
+      password=""
+      continue
+    fi
+    read -r -s -p "[install] Confirm app password: " confirm || confirm=""
+    printf '\n'
+    confirm="${confirm// /}"
+    if [[ "${password}" != "${confirm}" ]]; then
+      warn "  Passwords did not match — try again."
+      password=""
+    fi
+  done
+
+  env_file_upsert OPERATOR_EMAIL  "${email}"          "${envfile}"
+  env_file_upsert SMTP_HOST       "smtp.gmail.com"    "${envfile}"
+  env_file_upsert SMTP_PORT       "587"               "${envfile}"
+  env_file_upsert SMTP_USER       "${email}"          "${envfile}"
+  env_file_upsert SMTP_PASS       "${password}"       "${envfile}"
+  env_file_upsert SMTP_FROM       "${email}"          "${envfile}"
+  env_file_upsert SMTP_STARTTLS   "1"                 "${envfile}"
+  env_file_upsert NOTIFY_DISABLED "0"                 "${envfile}"
+  chmod 600 "${envfile}" 2>/dev/null || true
+
+  info "Saved Gmail SMTP settings to ${envfile} (chmod 600)."
+  info "Smoke-test the credentials:"
+  info "  uv run --env-file .env python -c \"import sys; sys.path.insert(0,'tools'); import notify; print(notify.send_conversation_ended_email(prospect_id='smoke',prospect_name='Smoke Test',profile_url='',outreach_stage='ended',ended_reason='setup_test',ended_at='2026-05-23T18:00:00Z'))\""
+  info "Expect 'sent' and an email in ${email} (check Spam on first send)."
+}
+
 main() {
   ensure_uv
   ensure_repo
@@ -396,11 +561,14 @@ main() {
   register_claude_mcp
   launch_chrome_cdp
   prompt_linkedin_login
+  setup_email_notifications
   start_web_dashboard
 
   info "Setup finished."
   info "Repo: ${REPO_ROOT}"
-  info "Optional: cp .env.example .env"
+  if [[ ! -f "${REPO_ROOT}/.env" ]]; then
+    info "Optional: cp .env.example .env   (then re-run ./install.sh for email setup)"
+  fi
   info "Dashboard: http://${WEB_HOST}:${WEB_PORT}/  (docs: docs/web-dashboard.md)"
   info "Stop dashboard: make stop-web   Status: make status"
   if [[ "${INSTALL_LOCAL}" == "1" ]]; then

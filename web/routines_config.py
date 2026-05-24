@@ -38,14 +38,14 @@ DEFAULT_ROUTINES: list[dict[str, Any]] = [
         "name": "Sync Pending Connections",
         "skill": "sync-pending-connections",
         "interval_minutes": 30,
-        "active": False,
+        "active": True,
     },
     {
         "id": "conversation_planner",
         "name": "Conversation Planner",
         "skill": "conversation-planner",
         "interval_minutes": 30,
-        "active": False,
+        "active": True,
     },
 ]
 

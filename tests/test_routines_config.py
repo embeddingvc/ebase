@@ -35,7 +35,7 @@ def test_migrate_legacy_stage_routines() -> None:
     assert len(migrated) == 2
     assert migrated[0]["skill"] == "sync-pending-connections"
     assert migrated[0]["interval_minutes"] == 30
-    assert migrated[0]["active"] is False
+    assert migrated[0]["active"] is True
 
 
 def test_get_routines_display_includes_skill_fields() -> None:

@@ -101,7 +101,9 @@ logger = logging.getLogger("linkedin.server")
 from mcp.server.fastmcp import FastMCP
 
 import mock as _mock                    # tools/mock.py
+import notify as _notify                # tools/notify.py
 from outreach.browser import LinkedInBrowser
+from rate_limits import rate_limit
 
 # ── MCP server ────────────────────────────────────────────────────────────────
 
@@ -174,10 +176,15 @@ async def scrape_profile(
     if _mock_mcp_enabled():
         return await _mock.handle_scrape_profile(profile_url)
 
+    err = rate_limit("profile_view", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info("scrape_profile called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
         profile = await li.scrape_profile(profile_url)
+    rate_limit("profile_view", profile_url=profile_url, record=True)
     logger.info("scrape_profile finished  name=%s", profile.get("name"))
     return json.dumps(profile, ensure_ascii=False, indent=2)
 
@@ -235,6 +242,10 @@ async def parse_profile(
     if _mock_mcp_enabled():
         return await _mock.handle_parse_profile(profile_url)
 
+    err = rate_limit("profile_view", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info(
         "parse_profile called  url=%s  cdp=%s  max_activity_posts=%s",
         profile_url,
@@ -249,6 +260,7 @@ async def parse_profile(
             detail_scroll_rounds=detail_scroll_rounds,
             activity_extra_scroll_rounds=activity_extra_scroll_rounds,
         )
+    rate_limit("profile_view", profile_url=profile_url, record=True)
     subj = parsed.get("subject") or {}
     ident = subj.get("identity") or {}
     act = parsed.get("activity") or {}
@@ -292,12 +304,17 @@ async def is_first_degree_connection(
     if _mock_mcp_enabled():
         return await _mock.handle_is_first_degree_connection(profile_url)
 
+    err = rate_limit("profile_view", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info(
         "is_first_degree_connection called  url=%s  cdp=%s", profile_url, cdp_url
     )
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
         first = await li.is_first_degree_connection(profile_url)
+    rate_limit("profile_view", profile_url=profile_url, record=True)
     out = {
         "first_degree": first,
         "profile_url": profile_url.strip(),
@@ -351,6 +368,10 @@ async def send_connection_request(
     if _mock_mcp_enabled():
         return await _mock.handle_send_connection_request(profile_url, note)
 
+    err = rate_limit("connection_request", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info(
         "send_connection_request called  url=%s  note_len=%d  cdp=%s",
         profile_url, len(note), cdp_url,
@@ -359,6 +380,7 @@ async def send_connection_request(
         await li.assert_logged_in()
         success = await li.send_connection_request(profile_url, note=note)
     if success:
+        rate_limit("connection_request", profile_url=profile_url, record=True)
         logger.info("send_connection_request finished  url=%s", profile_url)
         return "ok"
     return (
@@ -403,12 +425,17 @@ async def send_message(
     if _mock_mcp_enabled():
         return await _mock.handle_send_message(profile_url, message)
 
+    err = rate_limit("dm", profile_url=profile_url, record=False)
+    if err:
+        return err
+
     logger.info("send_message called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
         search_name = _lookup_connection_name(profile_url)
         success = await li.send_message(profile_url, message, search_name=search_name)
     if success:
+        rate_limit("dm", profile_url=profile_url, record=True)
         logger.info("send_message finished  url=%s", profile_url)
         return "ok"
     return (
@@ -569,11 +596,16 @@ async def download_profile_pdf(
     filename = f"{uuid.uuid4()}.pdf"
     save_dir = _ROOT / "profiles"
 
+    err = rate_limit("profile_view", profile_url=profile_url, record=False)
+    if err:
+        return json.dumps({"ok": False, "error": err}, ensure_ascii=False, indent=2)
+
     logger.info("download_profile_pdf called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
         path = await li.download_profile_pdf(profile_url, save_dir=save_dir, filename=filename)
 
+    rate_limit("profile_view", profile_url=profile_url, record=True)
     out = {
         "ok": True,
         "profile_url": profile_url.strip(),
@@ -666,6 +698,25 @@ from datetime import datetime, timezone
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _parse_schedule_datetime(raw: str) -> datetime | None:
+    """Parse an ISO 8601 instant (``...Z`` or with offset) into a UTC datetime."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _planner_config_path() -> Path:
@@ -987,6 +1038,57 @@ def _sync_prospect_outreach_stage(prospect_id: str, stage: str) -> None:
         logger.exception("_sync_prospect_outreach_stage failed for %s", prospect_id)
 
 
+def _notify_conversation_ended(prospect_id: str, conversation: object) -> str:
+    """
+    Email the operator that a conversation just transitioned into a terminal stage.
+
+    Returns the notifier status string (``"sent"`` / ``"skipped"`` / ``"error: ..."``).
+    Never raises: SMTP failures are logged and swallowed so the calling upsert
+    is not rolled back.
+    """
+    data = conversation if isinstance(conversation, dict) else {}
+    stage = str(data.get("outreach_stage") or "")
+    linkedin_url = data.get("linkedin_url") if isinstance(data, dict) else None
+    prospect_name, resolved_url = _lookup_prospect_identity(
+        prospect_id, linkedin_url if isinstance(linkedin_url, str) else None
+    )
+    sequence_step = data.get("sequence_step")
+    if not isinstance(sequence_step, int):
+        sequence_step = None
+    try:
+        status = _notify.send_conversation_ended_email(
+            prospect_id=prospect_id,
+            prospect_name=prospect_name,
+            profile_url=resolved_url,
+            outreach_stage=stage,
+            ended_reason=str(data.get("ended_reason") or ""),
+            ended_at=str(data.get("ended_at") or ""),
+            sequence_step=sequence_step,
+            report_path=(
+                str(data.get("report_path"))
+                if isinstance(data.get("report_path"), str)
+                else None
+            ),
+            end_goal=(
+                str(data.get("end_goal"))
+                if isinstance(data.get("end_goal"), str)
+                else None
+            ),
+        )
+    except Exception as exc:
+        logger.exception(
+            "_notify_conversation_ended: notifier raised for %s", prospect_id
+        )
+        return f"error: {exc}"
+    logger.info(
+        "_notify_conversation_ended: prospect_id=%s stage=%s status=%s",
+        prospect_id,
+        stage,
+        status,
+    )
+    return status
+
+
 def _lookup_connection_name(profile_url: str) -> str | None:
     """
     Read clean name for a profile URL from connections.json under the active outreach root.
@@ -1167,6 +1269,53 @@ async def save_connection(
         return f"error: {exc}"
 
 
+def _lookup_prospect_identity(
+    prospect_id: str,
+    profile_url: str | None,
+) -> tuple[str, str]:
+    """
+    Resolve ``(display_name, profile_url)`` for a prospect for notification copy.
+
+    Reads ``connections.json`` first (fast, single file), then falls back to
+    ``prospects/<id>.json``. Returns empty strings rather than failing so the
+    notifier can still send a useful subject/body.
+    """
+    name = ""
+    url = (profile_url or "").strip()
+    conn_path = _outreach_base() / "connections.json"
+    if conn_path.is_file():
+        try:
+            data = json.loads(conn_path.read_text(encoding="utf-8"))
+            rows = data.get("connections") if isinstance(data, dict) else None
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    row_pid = _normalize_prospect_id_slug(row.get("prospect_id"))
+                    row_url = (row.get("profile_url") or "").strip()
+                    if (row_pid and row_pid == prospect_id) or (url and row_url == url):
+                        name = _sanitize_connection_name(row.get("name")) or name
+                        url = url or row_url
+                        break
+        except (OSError, json.JSONDecodeError):
+            logger.exception("_lookup_prospect_identity: could not read %s", conn_path)
+
+    if not name or not url:
+        prospect_path = _outreach_base() / "prospects" / f"{prospect_id}.json"
+        if prospect_path.is_file():
+            try:
+                prospect = json.loads(prospect_path.read_text(encoding="utf-8"))
+                if isinstance(prospect, dict):
+                    name = name or _sanitize_connection_name(prospect.get("name")) or ""
+                    url = url or (prospect.get("linkedin_url") or "").strip()
+            except (OSError, json.JSONDecodeError):
+                logger.exception(
+                    "_lookup_prospect_identity: could not read %s", prospect_path
+                )
+
+    return name, url
+
+
 async def _schedule_meeting_live(
     email: str,
     datetime: str,
@@ -1174,12 +1323,97 @@ async def _schedule_meeting_live(
     profile_url: str | None = None,
     cdp_url: str = "http://localhost:9222",
 ) -> str:
-    del email, datetime, prospect_id, profile_url, cdp_url
-    return (
-        "error: schedule_meeting is not implemented in live mode yet. "
-        "Use mock mode for regression, or book manually and set meeting_link "
-        "via upsert_conversation."
+    """
+    Live ``schedule_meeting``: validate inputs, persist email + meeting state on
+    the prospect's conversation file, append an action log entry, and email the
+    operator if SMTP is configured. No real calendar integration yet —
+    ``meeting_link`` defaults to ``""`` and the operator books the invite
+    manually using the email + ``scheduled_at`` from the notification.
+    """
+    del cdp_url
+
+    email_clean = (email or "").strip()
+    if not email_clean or not _EMAIL_RE.match(email_clean):
+        return "error: invalid email"
+
+    dt = _parse_schedule_datetime(datetime)
+    if dt is None:
+        return "error: invalid datetime"
+
+    pid = _normalize_prospect_id_slug(prospect_id)
+    if not pid and profile_url:
+        pid = _derive_prospect_id_from_profile_url(profile_url)
+    if not pid:
+        return "error: prospect context required"
+
+    scheduled_at = dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    meeting_link = ""
+
+    conv_path = _outreach_base() / "conversations" / f"{pid}.json"
+    if conv_path.is_file():
+        try:
+            conv = json.loads(conv_path.read_text(encoding="utf-8"))
+            if not isinstance(conv, dict):
+                conv = {}
+        except (OSError, json.JSONDecodeError):
+            logger.exception("_schedule_meeting_live: could not read %s", conv_path)
+            conv = {}
+    else:
+        conv = {"prospect_id": pid, "messages": [], "outreach_stage": "engaged"}
+
+    conv["prospect_id"] = pid
+    conv["email"] = email_clean
+    conv["meeting_link"] = meeting_link
+    conv["last_action"] = "confirm_meeting"
+    conv["last_action_timestamp"] = _iso_now()
+    try:
+        _atomic_write_json(conv_path, conv)
+    except OSError as exc:
+        logger.exception("_schedule_meeting_live: could not write %s", conv_path)
+        return f"error: could not persist conversation: {exc}"
+
+    action_entry = {
+        "action": "schedule_meeting",
+        "prospect_id": pid,
+        "email": email_clean,
+        "scheduled_at": scheduled_at,
+        "meeting_link": meeting_link,
+        "timestamp": _iso_now(),
+    }
+    try:
+        log_path = _outreach_base() / "logs" / "actions.jsonl"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(action_entry, ensure_ascii=False) + "\n")
+    except OSError:
+        logger.exception("_schedule_meeting_live: could not append action log")
+
+    prospect_name, resolved_profile_url = _lookup_prospect_identity(pid, profile_url)
+    notify_status = _notify.send_meeting_scheduled_email(
+        prospect_id=pid,
+        prospect_name=prospect_name,
+        profile_url=resolved_profile_url,
+        email=email_clean,
+        scheduled_at=scheduled_at,
+        meeting_link=meeting_link,
     )
+
+    payload = {
+        "status": "scheduled",
+        "meeting_link": meeting_link,
+        "scheduled_at": scheduled_at,
+        "email": email_clean,
+        "prospect_id": pid,
+        "notified": notify_status == "sent",
+        "notify_status": notify_status,
+    }
+    logger.info(
+        "schedule_meeting LIVE  prospect_id=%s scheduled_at=%s notify=%s",
+        pid,
+        scheduled_at,
+        notify_status,
+    )
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()
@@ -1253,16 +1487,31 @@ async def upsert_conversation(
         "ok" on success, or an error description.
     """
     path = _outreach_base() / "conversations" / f"{prospect_id}.json"
+    prior_stage: str | None = None
+    if path.is_file():
+        try:
+            prior = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(prior, dict):
+                raw_prior_stage = prior.get("outreach_stage")
+                if isinstance(raw_prior_stage, str):
+                    prior_stage = raw_prior_stage
+        except (OSError, json.JSONDecodeError):
+            logger.exception(
+                "upsert_conversation: could not read prior state at %s", path
+            )
+
     try:
         data = json.loads(conversation)
         _atomic_write_json(path, data)
         stage = data.get("outreach_stage") if isinstance(data, dict) else None
         if stage in _TERMINAL_CONVERSATION_STAGES:
-            _mark_connection_ended(
-                prospect_id,
-                data.get("linkedin_url") if isinstance(data, dict) else None,
+            linkedin_url = (
+                data.get("linkedin_url") if isinstance(data, dict) else None
             )
+            _mark_connection_ended(prospect_id, linkedin_url)
             _sync_prospect_outreach_stage(prospect_id, str(stage))
+            if prior_stage not in _TERMINAL_CONVERSATION_STAGES:
+                _notify_conversation_ended(prospect_id, data)
         logger.info("upsert_conversation: wrote %s", path)
         return f"ok — wrote {path}"
     except Exception as exc:
