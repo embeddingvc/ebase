@@ -32,6 +32,8 @@ outreach/generated/
 outreach/mock/connections.json
 outreach/mock/*/*.json
 outreach/mock/storage/
+outreach/logs/planned_messages.jsonl
+outreach/conversations/*.json
 
 # Claude Code local config + gstack skills (per-machine)
 .claude/
