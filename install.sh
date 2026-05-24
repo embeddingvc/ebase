@@ -28,6 +28,8 @@ SKIP_LINKEDIN_LOGIN="${LINKEDIN_OUTREACH_SKIP_LINKEDIN_LOGIN:-0}"
 LINKEDIN_LOGIN_URL="${LINKEDIN_LOGIN_URL:-https://www.linkedin.com}"
 SKIP_EMAIL_SETUP="${LINKEDIN_OUTREACH_SKIP_EMAIL_SETUP:-0}"
 GMAIL_APP_PASSWORD_URL="${GMAIL_APP_PASSWORD_URL:-https://myaccount.google.com/apppasswords}"
+SKIP_PERSONA_SYNC="${LINKEDIN_OUTREACH_SKIP_PERSONA_SYNC:-0}"
+PERSONA_PROFILE_URL="${PERSONA_PROFILE_URL:-https://www.linkedin.com/in/me/}"
 
 info() { printf '%s\n' "[install] $*"; }
 warn() { printf '%s\n' "[install] $*" >&2; }
@@ -58,6 +60,11 @@ Usage: install.sh [options]
     (same as LINKEDIN_OUTREACH_SKIP_EMAIL_SETUP=1). Always skipped when stdin
     is not a TTY (e.g. curl | bash).
 
+  --skip-persona-sync
+    Do not run the sync-planner-persona-from-linkedin skill after sign-in
+    (same as LINKEDIN_OUTREACH_SKIP_PERSONA_SYNC=1). Auto-skipped when the
+    claude CLI is missing or Chrome CDP is unreachable.
+
   Other:
     LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
     WEB_HOST, WEB_PORT                     Dashboard bind (default 127.0.0.1:3847).
@@ -84,6 +91,10 @@ parse_args() {
         ;;
       --skip-email-setup)
         SKIP_EMAIL_SETUP=1
+        shift
+        ;;
+      --skip-persona-sync)
+        SKIP_PERSONA_SYNC=1
         shift
         ;;
       -h | --help)
@@ -343,6 +354,75 @@ prompt_linkedin_login() {
   fi
 }
 
+run_sync_planner_persona_skill() {
+  local prompt="Run the sync-planner-persona-from-linkedin skill for profile ${PERSONA_PROFILE_URL}"
+  local rerun_cmd="cd \"${REPO_ROOT}\" && claude -p '${prompt}'"
+
+  if [[ "${SKIP_PERSONA_SYNC}" == "1" ]]; then
+    info "Skipping planner persona sync (--skip-persona-sync)."
+    return 0
+  fi
+  if ! command -v claude >/dev/null 2>&1; then
+    info "claude CLI not on PATH — skipping planner persona sync."
+    info "After installing Claude Code, run: ${rerun_cmd}"
+    return 0
+  fi
+  if [[ "${SKIP_LINKEDIN_LOGIN}" == "1" ]] || [[ -z "$(chrome_binary)" ]]; then
+    info "LinkedIn sign-in was skipped — skipping planner persona sync."
+    info "After signing in, run: ${rerun_cmd}"
+    return 0
+  fi
+  if ! wait_for_cdp; then
+    warn "Chrome CDP unreachable on port ${CDP_PORT} — skipping planner persona sync."
+    warn "Start Chrome (make browser), sign in to LinkedIn, then run: ${rerun_cmd}"
+    return 0
+  fi
+
+  printf '\n'
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  info "Sync planner persona from your LinkedIn profile (optional)"
+  printf '%s\n' ""
+  printf '%s\n' "  Runs the 'sync-planner-persona-from-linkedin' Skill via Claude CLI."
+  printf '%s\n' "  Reads your signed-in LinkedIn profile (${PERSONA_PROFILE_URL}),"
+  printf '%s\n' "  synthesizes persona + organization prose, then writes"
+  printf '%s\n' "  outreach/config/persona.json so the conversation-planner"
+  printf '%s\n' "  introduces you accurately."
+  printf '%s\n' ""
+  printf '%s\n' "  Takes ~30–60s and uses your Claude credits."
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  printf '\n'
+
+  if [[ -t 0 ]]; then
+    local reply=""
+    read -r -p "[install] Sync planner persona from LinkedIn now? [Y/n] " reply || reply=""
+    case "${reply}" in
+      n|N|no|NO)
+        info "Skipped — run later: ${rerun_cmd}"
+        return 0
+        ;;
+    esac
+  else
+    info "Non-interactive install — running planner persona sync (override with --skip-persona-sync)."
+  fi
+
+  local model="${CLAUDE_MODEL:-haiku}"
+  local perm="${REGRESSION_CLAUDE_PERMISSION_MODE:-bypassPermissions}"
+
+  info "Invoking: claude -p \"${prompt}\" --model ${model} --permission-mode ${perm}"
+  info "(streaming output; this may take 30–60 seconds)"
+  printf '\n'
+
+  if (cd "${REPO_ROOT}" && claude -p "${prompt}" --model "${model}" --permission-mode "${perm}"); then
+    printf '\n'
+    info "Planner persona sync complete. Inspect: outreach/config/persona.json"
+    info "Or ask Claude in this repo: 'Show me my planner persona'."
+  else
+    printf '\n'
+    warn "claude -p exited non-zero. Re-run later with:"
+    warn "  ${rerun_cmd}"
+  fi
+}
+
 start_web_dashboard() {
   cd "${REPO_ROOT}"
   local pid_file="${REPO_ROOT}/${WEB_PID_FILE}"
@@ -561,6 +641,7 @@ main() {
   register_claude_mcp
   launch_chrome_cdp
   prompt_linkedin_login
+  run_sync_planner_persona_skill
   setup_email_notifications
   start_web_dashboard
 
