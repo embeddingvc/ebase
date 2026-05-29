@@ -60,7 +60,14 @@ Lists prospects from **`connections.json` only** (master registry). For each row
 - **Run now** (play button) — `POST /api/dashboard/routines/{id}/run`; updates `last_run_at` (resets the interval timer for active routines). Ignores the daily active window so operators can always trigger a run on demand.
 - **Routine run history** — append-only `logs/routine_runs.jsonl` (not queue or planned-message logs)
 
-Default routines: `sync-pending-connections`, `conversation-planner` (both inactive until enabled in Configure).
+Default install ships with the **per-prospect scheduler** (`scheduler_kind: "per_prospect"`) — two typed sweeps replace the old loop routines:
+
+- **Connection sync sweep** — deterministic Python (no LLM); reads `connections.json`, probes `is_first_degree_connection` for pending rows whose `sync_backoff.next_check_at` is past, promotes accepted invites.
+- **Conversation plan sweep** — dispatches `claude -p` per actionable prospect (single-prospect mode of `conversation-planner`), with `plan_backoff` per row.
+
+Both honour daily caps in `tools/rate_limits.py` and exponential-backoff schedules configured under `per_prospect.{connection_sync,conversation_plan}.backoff` in `dashboard_routines.json`. See `docs/designs/per-connection-routines-with-backoff-design.md`.
+
+Legacy `scheduler_kind: "loop"` is still supported for custom routines pointing at single-action skills (e.g. `reply-to-post`, `send-connection-request`).
 
 #### Daily active window
 
@@ -144,16 +151,24 @@ The `web/server.py` process is the production driver for the workflow — the da
 
 `./install.sh` already starts this process in the background (see `start_web_dashboard` in `install.sh`), so after the installer finishes the workflow runs unattended. You only need the browser at `http://127.0.0.1:3847/` if you want to inspect state or hand-toggle routines.
 
-### Default routines
+### Default routines (per-prospect scheduler)
 
-`web/routines_config.DEFAULT_ROUTINES` ships two active routines:
+A fresh install writes `{outreach_base}/config/dashboard_routines.json` with
+`scheduler_kind: "per_prospect"` and these two sweeps active inside
+business hours (09:00–17:00 server-local):
 
-| Routine | Skill | Interval | Active by default |
-|---------|-------|----------|-------------------|
-| Sync Pending Connections | `sync-pending-connections` | 30 min | yes |
-| Conversation Planner | `conversation-planner` | 30 min | yes |
+| Sweep | Initial cadence | Backoff curve | Active by default |
+|-------|-----------------|---------------|-------------------|
+| Connection sync (Python, no LLM) | 30 min | ×1.5 per "still pending" up to 24 h | yes |
+| Conversation plan (per-prospect `claude -p`) | 60 min | ×2.0 per "no action" up to 12 h | yes |
 
-They are written to `{outreach_base}/config/dashboard_routines.json` on first read. To pause one, either toggle it in the dashboard UI or edit that file and set `"active": false`. The scheduler picks up file edits on the next tick.
+Tune the schedules under `per_prospect.{connection_sync,conversation_plan}` in
+`dashboard_routines.json`, or pause one by setting `active: false`. The
+scheduler picks up file edits on the next tick.
+
+`DEFAULT_ROUTINES` (legacy loop list) is now empty — the per-prospect sweep
+covers the old defaults. Add custom loop routines (for `reply-to-post`,
+`send-connection-request`, etc.) via the Configure modal if you want them.
 
 ### Notes
 

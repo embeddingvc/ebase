@@ -133,8 +133,8 @@ def test_get_execution_history(outreach_tmp: Path, monkeypatch: pytest.MonkeyPat
     (logs / "routine_runs.jsonl").write_text(
         json.dumps(
             {
-                "routine_id": "sync_pending",
-                "skill": "sync-pending-connections",
+                "routine_id": "send_connect",
+                "skill": "send-connection-request",
                 "status": "success",
                 "started_at": "2026-05-03T10:00:00+00:00",
                 "finished_at": "2026-05-03T10:00:16+00:00",
@@ -158,15 +158,16 @@ def test_get_execution_history(outreach_tmp: Path, monkeypatch: pytest.MonkeyPat
     (outreach_tmp / "config" / "dashboard_routines.json").write_text(
         json.dumps(
             {
+                "scheduler_kind": "loop",
                 "routines": [
                     {
-                        "id": "sync_pending",
-                        "name": "Sync Pending Connections",
-                        "skill": "sync-pending-connections",
+                        "id": "send_connect",
+                        "name": "Send Connection Request",
+                        "skill": "send-connection-request",
                         "interval_minutes": 30,
                         "active": False,
                     }
-                ]
+                ],
             }
         ),
         encoding="utf-8",
@@ -175,8 +176,8 @@ def test_get_execution_history(outreach_tmp: Path, monkeypatch: pytest.MonkeyPat
 
     data = dd.get_execution_history(limit=10)
     assert data["total"] == 1
-    assert data["entries"][0]["routine_name"] == "Sync Pending Connections"
-    assert data["entries"][0]["skill"] == "sync-pending-connections"
+    assert data["entries"][0]["routine_name"] == "Send Connection Request"
+    assert data["entries"][0]["skill"] == "send-connection-request"
     assert data["entries"][0]["duration_label"] == "16s"
     assert data["stats"]["pending"] == 0
 

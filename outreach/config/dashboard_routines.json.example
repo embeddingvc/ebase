@@ -1,18 +1,28 @@
 {
-  "routines": [
-    {
-      "id": "sync_pending",
-      "name": "Sync Pending Connections",
-      "skill": "sync-pending-connections",
-      "interval_minutes": 30,
-      "active": false
+  "scheduler_kind": "per_prospect",
+  "routines": [],
+  "per_prospect": {
+    "connection_sync": {
+      "active": true,
+      "active_window_start": "09:00",
+      "active_window_end": "17:00",
+      "backoff": {
+        "initial_minutes": 30,
+        "multiplier": 1.5,
+        "max_minutes": 1440,
+        "error_jitter": true
+      }
     },
-    {
-      "id": "conversation_planner",
-      "name": "Conversation Planner",
-      "skill": "conversation-planner",
-      "interval_minutes": 30,
-      "active": false
+    "conversation_plan": {
+      "active": true,
+      "active_window_start": "09:00",
+      "active_window_end": "17:00",
+      "backoff": {
+        "initial_minutes": 60,
+        "multiplier": 2.0,
+        "max_minutes": 720,
+        "error_jitter": true
+      }
     }
-  ]
+  }
 }

@@ -32,7 +32,8 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     scrape_profile            Scrape a profile → structured JSON.
     parse_profile             Structured multi-page parse (v2 schema; no raw page dump).
     is_first_degree_connection  Check whether a profile is a 1st-degree connection.
-      (Used by outreach/skills/sync-pending-connections/SKILL.md with get_connections / save_connection.)
+      (Driven by the dashboard's deterministic connection sync sweep —
+      see web/connection_sync_sweep.py — and ad-hoc operator invocations.)
     send_connection_request   Send a connection request with an optional note.
     send_message              Send a DM to a 1st-degree connection.
     fetch_chat_history        Read the DM thread for a connection.

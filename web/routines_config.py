@@ -31,10 +31,18 @@ CONFIG_NAME = "dashboard_routines.json"
 RUNS_LOG = "routine_runs.jsonl"
 
 # Top-level scheduler flag controlling which executor the scheduler uses.
+#
+# The legacy ``"loop"`` mode (one ``claude -p "Run {skill} skill"`` per row,
+# skill loops over connections inside the call) is preserved for ad-hoc
+# routines pointing at single-prospect / single-action skills like
+# ``send-connection-request``. The "all in one" skills it used to drive
+# (``sync-pending-connections``, ``conversation-planner`` batch mode) have
+# been removed; default installs now use ``"per_prospect"`` which dispatches
+# typed sweeps from ``web.routine_scheduler``.
 SCHEDULER_KIND_LOOP = "loop"
 SCHEDULER_KIND_PER_PROSPECT = "per_prospect"
 _VALID_SCHEDULER_KINDS = frozenset({SCHEDULER_KIND_LOOP, SCHEDULER_KIND_PER_PROSPECT})
-DEFAULT_SCHEDULER_KIND = SCHEDULER_KIND_LOOP
+DEFAULT_SCHEDULER_KIND = SCHEDULER_KIND_PER_PROSPECT
 
 # Per-prospect routine kinds (the ``kind`` field on a per_prospect row).
 ROUTINE_KIND_CONNECTION_SYNC = "connection_sync"
@@ -66,26 +74,13 @@ _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 DEFAULT_WINDOW_START = "09:00"
 DEFAULT_WINDOW_END = "17:00"
 
-DEFAULT_ROUTINES: list[dict[str, Any]] = [
-    {
-        "id": "sync_pending",
-        "name": "Sync Pending Connections",
-        "skill": "sync-pending-connections",
-        "interval_minutes": 30,
-        "active": True,
-        "active_window_start": DEFAULT_WINDOW_START,
-        "active_window_end": DEFAULT_WINDOW_END,
-    },
-    {
-        "id": "conversation_planner",
-        "name": "Conversation Planner",
-        "skill": "conversation-planner",
-        "interval_minutes": 30,
-        "active": True,
-        "active_window_start": DEFAULT_WINDOW_START,
-        "active_window_end": DEFAULT_WINDOW_END,
-    },
-]
+# Legacy "loop" routines are no longer auto-created. The two old defaults
+# (sync-pending-connections + conversation-planner batch) were the only
+# all-in-one skills and have been removed; per-prospect sweeps in
+# ``web.routine_scheduler`` cover the same ground without an LLM in the
+# loop. Users can still add custom ``"loop"`` routines pointing at the
+# remaining single-action skills via the dashboard.
+DEFAULT_ROUTINES: list[dict[str, Any]] = []
 
 
 def _backoff_to_dict(policy: BackoffPolicy) -> dict[str, Any]:
@@ -157,6 +152,13 @@ def _allowed_skills() -> frozenset[str]:
     return ALLOWED_SKILLS
 
 
+# Skills that used to be auto-created routines but have been removed from
+# the allow-list (their "all in one" loop behaviour is now owned by the
+# per-prospect scheduler sweeps). Rows pointing at these are dropped during
+# migration rather than retained as broken.
+_REMOVED_LOOP_SKILLS = frozenset({"sync-pending-connections", "conversation-planner"})
+
+
 def _is_legacy_routine(row: dict[str, Any]) -> bool:
     """Old dashboard used stage-funnel rows without ``skill``."""
     if not row.get("skill"):
@@ -164,6 +166,10 @@ def _is_legacy_routine(row: dict[str, Any]) -> bool:
     if "stages" in row or "prospect_count" in row or "progress_pct" in row:
         return True
     return row.get("skill") not in _allowed_skills()
+
+
+def _is_removed_loop_routine(row: dict[str, Any]) -> bool:
+    return (row.get("skill") or "").strip() in _REMOVED_LOOP_SKILLS
 
 
 def _normalize_stored_routine(raw: dict[str, Any]) -> dict[str, Any]:
@@ -187,7 +193,17 @@ def _migrate_routines(routines: list[Any] | None) -> list[dict[str, Any]]:
     if not routines:
         return [dict(r) for r in DEFAULT_ROUTINES]
     rows = [r for r in routines if isinstance(r, dict)]
-    if not rows or any(_is_legacy_routine(r) for r in rows):
+    if not rows:
+        return [dict(r) for r in DEFAULT_ROUTINES]
+
+    # Drop rows that point at skills we removed (all-in-one loop skills).
+    # These previously auto-ran nightly even after the per-prospect sweep
+    # took over the same workload, so we delete them on next load.
+    rows = [r for r in rows if not _is_removed_loop_routine(r)]
+    if not rows:
+        return [dict(r) for r in DEFAULT_ROUTINES]
+
+    if any(_is_legacy_routine(r) for r in rows):
         return [dict(r) for r in DEFAULT_ROUTINES]
     return [_normalize_stored_routine(r) for r in rows]
 
