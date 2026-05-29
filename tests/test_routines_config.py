@@ -216,3 +216,102 @@ def test_upsert_routines_rejects_bad_window(
                 }
             ]
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-prospect scheduler config (added in
+# docs/designs/per-connection-routines-with-backoff-design.md)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    base = tmp_path / "outreach"
+    (base / "config").mkdir(parents=True)
+    monkeypatch.setenv("OUTREACH_DATA_ROOT", str(base))
+    monkeypatch.setenv("OUTREACH_MOCK", "0")
+    return base
+
+
+def test_load_config_defaults_to_loop_kind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    data = rc.load_config()
+    assert data["scheduler_kind"] == rc.SCHEDULER_KIND_LOOP
+    assert rc.ROUTINE_KIND_CONNECTION_SYNC in data["per_prospect"]
+    assert rc.ROUTINE_KIND_CONVERSATION_PLAN in data["per_prospect"]
+
+
+def test_set_scheduler_kind_persists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    new_kind = rc.set_scheduler_kind(rc.SCHEDULER_KIND_PER_PROSPECT)
+    assert new_kind == rc.SCHEDULER_KIND_PER_PROSPECT
+    assert rc.get_scheduler_kind() == rc.SCHEDULER_KIND_PER_PROSPECT
+
+
+def test_set_scheduler_kind_rejects_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    # Unknown kinds silently fall back to the legacy loop mode.
+    new_kind = rc.set_scheduler_kind("ascii-art-mode")
+    assert new_kind == rc.SCHEDULER_KIND_LOOP
+
+
+def test_upsert_per_prospect_patches_backoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    updated = rc.upsert_per_prospect(
+        rc.ROUTINE_KIND_CONNECTION_SYNC,
+        {"backoff": {"initial_minutes": 45, "multiplier": 1.25, "max_minutes": 999}},
+    )
+    sync_row = updated[rc.ROUTINE_KIND_CONNECTION_SYNC]
+    assert sync_row["backoff"]["initial_minutes"] == 45
+    assert sync_row["backoff"]["multiplier"] == 1.25
+    assert sync_row["backoff"]["max_minutes"] == 999
+    # Reloading shows the patched values.
+    fresh = rc.load_config()["per_prospect"][rc.ROUTINE_KIND_CONNECTION_SYNC]
+    assert fresh["backoff"]["initial_minutes"] == 45
+
+
+def test_upsert_per_prospect_rejects_unknown_kind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    with pytest.raises(ValueError):
+        rc.upsert_per_prospect("not-a-kind", {})
+
+
+def test_upsert_per_prospect_rejects_bad_multiplier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    with pytest.raises(ValueError):
+        rc.upsert_per_prospect(
+            rc.ROUTINE_KIND_CONVERSATION_PLAN,
+            {"backoff": {"initial_minutes": 30, "multiplier": 0.5, "max_minutes": 60}},
+        )
+
+
+def test_upsert_per_prospect_rejects_partial_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    with pytest.raises(ValueError):
+        rc.upsert_per_prospect(
+            rc.ROUTINE_KIND_CONVERSATION_PLAN,
+            {"active_window_start": "09:00", "active_window_end": ""},
+        )
+
+
+def test_get_routines_for_api_exposes_new_top_level_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    payload = rc.get_routines_for_api()
+    assert "scheduler_kind" in payload
+    assert "per_prospect" in payload
+    assert payload["scheduler_kind"] == rc.SCHEDULER_KIND_LOOP

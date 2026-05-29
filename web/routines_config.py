@@ -1,8 +1,18 @@
 """
-Scheduled skill routines for the dashboard background runner.
+Scheduled routines for the dashboard background runner.
 
-Each routine is a scheduled ``claude -p "Run {skill} skill"`` invocation.
-Stored at ``{outreach_base}/config/dashboard_routines.json``.
+Two execution modes are supported (selected via the top-level
+``scheduler_kind`` field in ``dashboard_routines.json``):
+
+- ``"loop"`` (default, legacy): each routine is a ``claude -p "Run {skill} skill"``
+  invocation. The skill itself fans out across connections inside one Claude call.
+- ``"per_prospect"`` (new, see ``docs/designs/per-connection-routines-with-backoff-design.md``):
+  the dashboard runs typed sweeps. ``connection_sync`` is a deterministic
+  Python sweep (no LLM); ``conversation_plan`` dispatches a fresh ``claude -p``
+  per actionable prospect with per-row exponential backoff and rate-limit
+  awareness.
+
+Config lives at ``{outreach_base}/config/dashboard_routines.json``.
 """
 
 from __future__ import annotations
@@ -15,9 +25,23 @@ from pathlib import Path
 from typing import Any
 
 from web.dashboard_data import _atomic_write_json, _read_json, outreach_base
+from web.routine_backoff import PLAN_DEFAULT, SYNC_DEFAULT, BackoffPolicy
 
 CONFIG_NAME = "dashboard_routines.json"
 RUNS_LOG = "routine_runs.jsonl"
+
+# Top-level scheduler flag controlling which executor the scheduler uses.
+SCHEDULER_KIND_LOOP = "loop"
+SCHEDULER_KIND_PER_PROSPECT = "per_prospect"
+_VALID_SCHEDULER_KINDS = frozenset({SCHEDULER_KIND_LOOP, SCHEDULER_KIND_PER_PROSPECT})
+DEFAULT_SCHEDULER_KIND = SCHEDULER_KIND_LOOP
+
+# Per-prospect routine kinds (the ``kind`` field on a per_prospect row).
+ROUTINE_KIND_CONNECTION_SYNC = "connection_sync"
+ROUTINE_KIND_CONVERSATION_PLAN = "conversation_plan"
+_VALID_PER_PROSPECT_KINDS = frozenset(
+    {ROUTINE_KIND_CONNECTION_SYNC, ROUTINE_KIND_CONVERSATION_PLAN}
+)
 
 # Canonical on-disk shape per routine row.
 ROUTINE_FIELDS = frozenset(
@@ -62,6 +86,31 @@ DEFAULT_ROUTINES: list[dict[str, Any]] = [
         "active_window_end": DEFAULT_WINDOW_END,
     },
 ]
+
+
+def _backoff_to_dict(policy: BackoffPolicy) -> dict[str, Any]:
+    return {
+        "initial_minutes": policy.initial_minutes,
+        "multiplier": policy.multiplier,
+        "max_minutes": policy.max_minutes,
+        "error_jitter": policy.error_jitter,
+    }
+
+
+DEFAULT_PER_PROSPECT_ROUTINES: dict[str, dict[str, Any]] = {
+    ROUTINE_KIND_CONNECTION_SYNC: {
+        "active": True,
+        "active_window_start": DEFAULT_WINDOW_START,
+        "active_window_end": DEFAULT_WINDOW_END,
+        "backoff": _backoff_to_dict(SYNC_DEFAULT),
+    },
+    ROUTINE_KIND_CONVERSATION_PLAN: {
+        "active": True,
+        "active_window_start": DEFAULT_WINDOW_START,
+        "active_window_end": DEFAULT_WINDOW_END,
+        "backoff": _backoff_to_dict(PLAN_DEFAULT),
+    },
+}
 
 
 def _normalize_time_str(value: Any) -> str | None:
@@ -141,6 +190,60 @@ def _migrate_routines(routines: list[Any] | None) -> list[dict[str, Any]]:
     if not rows or any(_is_legacy_routine(r) for r in rows):
         return [dict(r) for r in DEFAULT_ROUTINES]
     return [_normalize_stored_routine(r) for r in rows]
+
+
+def _coerce_scheduler_kind(value: Any) -> str:
+    raw = (str(value or "")).strip().lower()
+    if raw in _VALID_SCHEDULER_KINDS:
+        return raw
+    return DEFAULT_SCHEDULER_KIND
+
+
+def _normalize_per_prospect(
+    raw: Any,
+) -> dict[str, dict[str, Any]]:
+    """Fill in defaults for the optional ``per_prospect`` config block.
+
+    Missing routines or fields use the canonical defaults so a config edited
+    by hand can never disable the new path by accident.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    src = raw if isinstance(raw, dict) else {}
+    for kind, defaults in DEFAULT_PER_PROSPECT_ROUTINES.items():
+        row_raw = src.get(kind)
+        row = row_raw if isinstance(row_raw, dict) else {}
+
+        backoff_raw = row.get("backoff")
+        backoff_dict = backoff_raw if isinstance(backoff_raw, dict) else {}
+        merged_backoff = dict(defaults["backoff"])
+        for k in ("initial_minutes", "multiplier", "max_minutes"):
+            v = backoff_dict.get(k)
+            try:
+                if v is not None:
+                    merged_backoff[k] = (
+                        float(v) if k == "multiplier" else int(v)
+                    )
+            except (TypeError, ValueError):
+                pass
+        if "error_jitter" in backoff_dict:
+            merged_backoff["error_jitter"] = bool(backoff_dict["error_jitter"])
+        merged_backoff["initial_minutes"] = max(
+            1, int(merged_backoff["initial_minutes"])
+        )
+        merged_backoff["multiplier"] = max(1.0, float(merged_backoff["multiplier"]))
+        merged_backoff["max_minutes"] = max(1, int(merged_backoff["max_minutes"]))
+
+        out[kind] = {
+            "active": bool(row.get("active", defaults["active"])),
+            "active_window_start": _coerce_time_str_silent(
+                row.get("active_window_start", defaults["active_window_start"])
+            ),
+            "active_window_end": _coerce_time_str_silent(
+                row.get("active_window_end", defaults["active_window_end"])
+            ),
+            "backoff": merged_backoff,
+        }
+    return out
 
 
 def _skill_icon(skill: str) -> str:
@@ -224,18 +327,113 @@ def to_display_routine(stored: dict[str, Any]) -> dict[str, Any]:
 def load_config() -> dict[str, Any]:
     path = _config_path()
     raw = _read_json(path, None)
-    existing = raw.get("routines") if isinstance(raw, dict) else None
-    migrated = _migrate_routines(existing)
-    data = {"routines": migrated}
-    if existing != migrated:
-        save_config(data)
-    elif not path.is_file():
+    existing_routines = raw.get("routines") if isinstance(raw, dict) else None
+    existing_kind = raw.get("scheduler_kind") if isinstance(raw, dict) else None
+    existing_pp = raw.get("per_prospect") if isinstance(raw, dict) else None
+
+    migrated_routines = _migrate_routines(existing_routines)
+    scheduler_kind = _coerce_scheduler_kind(existing_kind)
+    per_prospect = _normalize_per_prospect(existing_pp)
+
+    data: dict[str, Any] = {
+        "scheduler_kind": scheduler_kind,
+        "routines": migrated_routines,
+        "per_prospect": per_prospect,
+    }
+
+    needs_save = (
+        not path.is_file()
+        or existing_routines != migrated_routines
+        or existing_kind != scheduler_kind
+        or existing_pp != per_prospect
+    )
+    if needs_save:
         save_config(data)
     return data
 
 
 def save_config(data: dict[str, Any]) -> None:
     _atomic_write_json(_config_path(), data)
+
+
+def set_scheduler_kind(kind: str) -> str:
+    """Persist a new scheduler kind. Returns the normalized value actually written."""
+    normalized = _coerce_scheduler_kind(kind)
+    data = load_config()
+    if data.get("scheduler_kind") != normalized:
+        data["scheduler_kind"] = normalized
+        save_config(data)
+    return normalized
+
+
+def upsert_per_prospect(kind: str, row: dict[str, Any]) -> dict[str, Any]:
+    """Patch one per-prospect routine block; returns the updated section.
+
+    Strict validation runs on the *merged input* (defaults + caller's patch)
+    before the lenient normalizer clamps anything, so callers cannot sneak in
+    a sub-1 multiplier or a negative interval. The lenient normalizer still
+    runs after validation passes so the on-disk format stays canonical.
+    """
+    if kind not in _VALID_PER_PROSPECT_KINDS:
+        raise ValueError(
+            f"invalid per_prospect kind: {kind!r}; "
+            f"expected one of {sorted(_VALID_PER_PROSPECT_KINDS)}"
+        )
+
+    data = load_config()
+    pp = data.get("per_prospect") or _normalize_per_prospect({})
+    merged_row = {**pp.get(kind, {}), **dict(row)}
+
+    err = _validate_per_prospect_row_strict(merged_row)
+    if err:
+        raise ValueError(err)
+
+    pp_normalized = _normalize_per_prospect({**pp, kind: merged_row})
+
+    data["per_prospect"] = pp_normalized
+    save_config(data)
+    return pp_normalized
+
+
+def _validate_per_prospect_row_strict(row: dict[str, Any]) -> str | None:
+    """Strict validator used on user input — rejects values the lenient
+    normalizer would silently clamp."""
+    try:
+        start = _normalize_time_str(row.get("active_window_start"))
+        end = _normalize_time_str(row.get("active_window_end"))
+    except ValueError as exc:
+        return str(exc)
+    if (start is None) != (end is None):
+        return "active_window_start and active_window_end must both be set or both blank"
+    if start is not None and start == end:
+        return "active_window_start and active_window_end must differ"
+
+    bo_raw = row.get("backoff")
+    if bo_raw is None:
+        return None  # caller wants to inherit defaults
+    if not isinstance(bo_raw, dict):
+        return "backoff must be an object"
+
+    for k in ("initial_minutes", "max_minutes"):
+        v = bo_raw.get(k)
+        if v is None:
+            continue
+        if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+            return f"backoff.{k} must be a positive integer"
+    mult = bo_raw.get("multiplier")
+    if mult is not None:
+        if isinstance(mult, bool) or not isinstance(mult, (int, float)) or mult < 1.0:
+            return "backoff.multiplier must be >= 1.0"
+    return None
+
+
+def get_per_prospect_config() -> dict[str, Any]:
+    """Public accessor for the per-prospect config block."""
+    return dict(load_config().get("per_prospect") or {})
+
+
+def get_scheduler_kind() -> str:
+    return _coerce_scheduler_kind(load_config().get("scheduler_kind"))
 
 
 def _now_iso() -> str:
@@ -286,7 +484,12 @@ def get_routines_for_api() -> dict[str, Any]:
     """Raw stored routines (for the Configure modal)."""
     data = load_config()
     routines = list(data.get("routines") or [])
-    return {"routines": routines, "total": len(routines)}
+    return {
+        "routines": routines,
+        "total": len(routines),
+        "scheduler_kind": _coerce_scheduler_kind(data.get("scheduler_kind")),
+        "per_prospect": dict(data.get("per_prospect") or {}),
+    }
 
 
 def get_routines_display() -> dict[str, Any]:
@@ -294,7 +497,12 @@ def get_routines_display() -> dict[str, Any]:
     data = load_config()
     stored = list(data.get("routines") or [])
     routines = [to_display_routine(r) for r in stored]
-    return {"routines": routines, "total": len(routines)}
+    return {
+        "routines": routines,
+        "total": len(routines),
+        "scheduler_kind": _coerce_scheduler_kind(data.get("scheduler_kind")),
+        "per_prospect": dict(data.get("per_prospect") or {}),
+    }
 
 
 def validate_routine(row: dict[str, Any]) -> str | None:
