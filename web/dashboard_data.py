@@ -27,13 +27,13 @@ MEETING_END_REASONS = frozenset({"call_scheduled"})
 MEETING_NEXT_ACTIONS = frozenset({"confirm_meeting"})
 
 def mock_mcp_enabled() -> bool:
-    """Match tools.server._mock_mcp_enabled() until env-driven toggle exists."""
+    """Match tools.server._mock_mcp_enabled() (defaults to live)."""
     env = os.environ.get("OUTREACH_MOCK", "").strip().lower()
     if env in ("1", "true", "yes"):
         return True
     if env in ("0", "false", "no"):
         return False
-    return True
+    return False
 
 
 def outreach_base() -> Path:
