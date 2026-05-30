@@ -1,12 +1,13 @@
 ---
 name: conversation-planner
 description: >
-  Orchestrates the LinkedIn DM sequence workflow: sync the live thread via MCP
-  fetch_chat_history, merge state per state-updater rules, plan the next step
-  and message copy, deliver with MCP send_message or send_connection_request,
-  then persist outcomes via MCP outreach tools (get_* / upsert_* / append_* /
-  save_outreach_report) so no workspace paths are hardcoded. Emits PlannedMessage
-  through append_planned_message_log.
+  Single-prospect LinkedIn DM sequencer. Given a prospect_id, sync the live
+  thread via MCP fetch_chat_history, plan exactly one next step, deliver with
+  send_message or send_connection_request, then persist outcomes via outreach
+  filesystem MCP tools (get_* / upsert_* / append_* / save_outreach_report).
+  Emits one PlannedMessage through append_planned_message_log. **Never loops
+  over multiple prospects** — batch fan-out is owned by the dashboard
+  scheduler's per-prospect plan sweep (web/conversation_plan_sweep.py).
 ---
 
 # Conversation Planner
@@ -14,9 +15,18 @@ description: >
 ## Role
 
 You are the configured outreach operator defined in runtime planner config.
-You **plan and compose** every outbound touch, and you **drive delivery** through the LinkedIn MCP
-tools (`fetch_chat_history`, `send_message`, `send_connection_request` — see `tools/server.py`).
-You still **do not** hand-operate the browser outside those tools.
+You **plan and compose** exactly one outbound touch for **one** prospect per
+run, and you **drive delivery** through the LinkedIn MCP tools
+(`fetch_chat_history`, `send_message`, `send_connection_request` — see
+`tools/server.py`). You still **do not** hand-operate the browser outside
+those tools.
+
+> **Per-prospect only.** This skill operates on a single `prospect_id` per
+> invocation. Fan-out across the connection list is performed by the
+> dashboard's per-prospect plan sweep (see
+> `docs/designs/per-connection-routines-with-backoff-design.md`). Do not
+> attempt to enumerate other prospects in the same run — keep your context
+> window tight on the one prospect you were given.
 
 **Filesystem rule:** Never read or write `outreach/` data with raw paths, `read_file`, or shell
 commands. The MCP host’s cwd is unknown — always use the **outreach filesystem tools** in
@@ -69,8 +79,6 @@ allows it; rely on documented fields below and MCP-returned JSON.
 
 | Tool | Use |
 |------|-----|
-| `get_connections` | Load the connections list (returns JSON text; parse `connections` array). |
-| `is_first_degree_connection` | Check DM-ready (1st-degree) status for a profile URL; used by **sync-pending-connections** to flip `pending` → `connected`. |
 | `get_prospect` | Load one prospect by `prospect_id`. On `error: prospect not found`, stop or branch per operator. |
 | `get_conversation` | Load one conversation by `prospect_id`. If missing, initialise a new object in memory that matches the conversation schema, then `upsert_conversation` when persisting. |
 | `upsert_conversation` | Persist the full conversation object: pass `prospect_id` and `conversation` = **stringified JSON** of the whole document. |
@@ -89,20 +97,16 @@ allows it; rely on documented fields below and MCP-returned JSON.
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `prospect_id` | string | no | Single-prospect run. **Omit to run batch mode** over all connections from `get_connections`. |
+| `prospect_id` | string | **yes** | Required. The single prospect this run will plan for. If omitted or empty, **abort** with a clear error — never fall back to walking the connections list. |
 | (echo) | — | — | Surface PlannedMessage JSON to the user if helpful; **persistence** is always `append_planned_message_log`. |
 
 ### Loading records (MCP only)
 
-**Single-prospect mode** (`prospect_id` provided):
-
 1. `get_prospect(prospect_id)` → parse JSON → `prospect` (abort if tool returns `error: ...`).
 2. `get_conversation(prospect_id)` → if success, parse → `conversation`; if `error: conversation not found`, build a minimal valid in-memory `conversation` with `prospect_id`, `outreach_stage`, `messages: []`, etc., then persist with `upsert_conversation` when appropriate.
 
-**Batch mode** (`prospect_id` omitted — see [Batch Mode](#batch-mode) below):
-
-1. `get_connections()` → parse → `connections` array.
-2. For each entry, derive `prospect_id` and run the full single-prospect workflow.
+Do **not** call `get_connections` in this skill. The connections list is for
+the dashboard sweep; this skill operates on the one prospect handed to it.
 
 ---
 
@@ -406,7 +410,7 @@ c. **`append_action_log(entry=json.dumps({...}))`**:
 
 d. Sync **`prospect.outreach_stage`** with **`upsert_prospect`** if needed.
 
-e. Mark the connection row complete: **`save_connection`** with the same `profile_url`, `name`, `title`, and `prospect_id` as the existing row, and **`connection_status`** → **`"ended"`**. Batch mode skips rows already **`"ended"`**. (A terminal **`upsert_conversation`** also promotes the row when `outreach_stage` is **`"ended"`** or **`"dead"`**, but call **`save_connection`** explicitly so batch filters stay correct even if conversation sync order varies.)
+e. Mark the connection row complete: **`save_connection`** with the same `profile_url`, `name`, `title`, and `prospect_id` as the existing row, and **`connection_status`** → **`"ended"`**. The dashboard sweep skips rows already **`"ended"`**. (A terminal **`upsert_conversation`** also promotes the row when `outreach_stage` is **`"ended"`** or **`"dead"`**, but call **`save_connection`** explicitly so sweep filters stay correct even if conversation sync order varies.)
 
 ---
 
@@ -464,57 +468,6 @@ Expected: `end_conversation = true`, `ended_reason = "no_response"`, `message = 
 
 ---
 
-## Batch Mode
-
-When `prospect_id` is **not** provided, run planning for every connection returned by **`get_connections()`**.
-
-### Steps
-
-1. **`get_connections()`** → parse JSON. If `connections` is missing or empty, stop and report:  
-   `"No connections in project data. Add connections (e.g. send connection requests) first."`
-
-2. **Filter actionable connections.**  
-   Optionally run **`sync-pending-connections`** (`outreach/skills/sync-pending-connections/SKILL.md`) first so accepted invites are promoted from `"pending"` to `"connected"` before this step.  
-   Skip entries where any of the following is true:
-   - `connection_status` is `"pending"` — invitation not yet accepted; nothing to plan.
-   - `connection_status` is `"ended"` — outreach sequence complete for this connection.
-   - **`get_conversation(prospect_id)`** shows `outreach_stage` is `"ended"` or `"dead"` — sequence is complete.
-   - Same conversation has `next_action` `"mark_ended"` or `"mark_dead"`.
-
-3. **For each remaining connection, run the full single-prospect workflow** (Phases A → B → C → D):
-   - Derive `prospect_id` from the connection entry's `prospect_id` field.
-   - If `prospect_id` is `null` (connection added outside the pipeline), skip and log a warning.
-   - Run the workflow exactly as described in [LinkedIn sequence workflow](#linkedin-sequence-workflow-mcp--state-updater--planner).
-   - **One outbound touch per prospect per run** — the single-touch constraint still applies per prospect.
-   - Collect the `PlannedMessage` result (or end-of-sequence outcome) for the summary.
-
-4. **Print a batch run summary** after all prospects are processed:
-
-```
-── Batch Planner Run ─────────────────────────────────────────
-Run at:    <ISO UTC timestamp>
-Total:     <N> connections loaded
-Skipped:   <N> (pending acceptance / already ended / no prospect_id)
-Processed: <N>
-  ✓ Sent:  <N>   (list of names + actions)
-  ✗ Error: <N>   (list of names + error reasons)
-  → Ended: <N>   (list of names + ended_reason)
-─────────────────────────────────────────────────────────────
-```
-
-5. **`append_action_log`** with a batch summary object, e.g.:
-```json
-{ "action": "batch_plan_run", "timestamp": "<ISO UTC>", "total": <N>, "sent": <N>, "errors": <N>, "ended": <N> }
-```
-
-### Batch mode notes
-
-- Process connections **sequentially**, not in parallel — LinkedIn rate limits apply.
-- If any single prospect run hits an MCP error (bot detection, Chrome offline, etc.), log it in the summary but **continue** to the next prospect rather than aborting the whole batch.
-- Batch mode honours all single-prospect constraints: one touch per prospect, never skip a step, no automatic retry on failure.
-
----
-
 ## Test and fixture data (do not corrupt)
 
 - **`tests/` is off-limits for outreach writes.** Under `tests/` — especially `tests/fixtures/` (e.g.
@@ -531,12 +484,20 @@ Processed: <N>
 
 ## Important constraints
 
-- **MCP only for LinkedIn automation.** Use `fetch_chat_history`, `send_message`, and
-  `send_connection_request` — no ad-hoc scraping or undocumented APIs.
-- **MCP only for outreach data I/O.** Use `get_*`, `upsert_*`, `append_*`, `save_outreach_report`,
-  `save_connection`, `remove_pending_queue_entry` — **never** construct `outreach/...` paths or use
-  workspace file tools for these records.
-- **One outbound touch per run.** Never compose or send two sequence steps in a single execution.
+- **One prospect per run.** `prospect_id` is required; if missing, abort with
+  a clear error rather than walking the connections list. Connection-list
+  fan-out is the dashboard sweep's job, not this skill's.
+- **MCP only for LinkedIn automation.** Use `fetch_chat_history`,
+  `send_message`, and `send_connection_request` — no ad-hoc scraping or
+  undocumented APIs.
+- **MCP only for outreach data I/O.** Use `get_*`, `upsert_*`, `append_*`,
+  `save_outreach_report`, `save_connection`,
+  `remove_pending_queue_entry` — **never** construct `outreach/...` paths or
+  use workspace file tools for these records.
+- **One outbound touch per run.** Never compose or send two sequence steps
+  in a single execution.
 - **Never skip a step.** Do not jump from Step 1 to Step 3.
-- **Never retry automatically** after an MCP failure; report the error and stop or wait for operator input.
-- **Prospect stage:** When `conversation.outreach_stage` changes, update `prospect` and **`upsert_prospect`** unless the operator forbids it.
+- **Never retry automatically** after an MCP failure; report the error and
+  stop or wait for operator input.
+- **Prospect stage:** When `conversation.outreach_stage` changes, update
+  `prospect` and **`upsert_prospect`** unless the operator forbids it.

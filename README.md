@@ -199,16 +199,20 @@ Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is i
 
 **Core skills (this repo):**
 
-- `conversation-planner`
+- `conversation-planner` (single-prospect only; dispatched per row by the dashboard's per-prospect plan sweep)
 - `sync-planner-persona-from-linkedin`
 - `send-connection-request`
-- `sync-pending-connections`
 - `reply-to-post`
+
+The former `sync-pending-connections` skill has been retired — the dashboard
+now runs that workload as a deterministic Python sweep
+(`web/connection_sync_sweep.py`) with no LLM in the loop. See
+`docs/designs/per-connection-routines-with-backoff-design.md`.
 
 ### Claude
 1. `Customize` → `Skills` → `+` → `Create skill` → `Upload a skill`
 2. Select the `SKILL.md` files under `outreach/skills/`
-3. Repeat for `conversation-planner`, `sync-planner-persona-from-linkedin`, `send-connection-request`, and `sync-pending-connections`
+3. Repeat for `conversation-planner`, `sync-planner-persona-from-linkedin`, `send-connection-request`, and `reply-to-post`
 
 ## Runtime Conversation Planner Config
 
@@ -342,7 +346,7 @@ flowchart TB
 
   CONNECT --> WAIT
 
-  WAIT["③ Wait for acceptance<br/>• Skill: sync-pending-connections<br/>• MCP: is_first_degree_connection<br/>• Playwright verifies connection state / badge"]:::step
+  WAIT["③ Wait for acceptance<br/>• Dashboard sweep: web/connection_sync_sweep.py (no LLM)<br/>• MCP: is_first_degree_connection<br/>• Playwright verifies connection state / badge"]:::step
 
   WAIT --> ACC{"Accepted?"}:::decision
   ACC -->|No · &gt; 48h| DEAD

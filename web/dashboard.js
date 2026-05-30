@@ -386,9 +386,13 @@ function hideModals() {
 }
 
 function skillOptions(selected) {
+  // sync-pending-connections and conversation-planner are no longer
+  // dashboard-runnable as standalone loop routines (per-prospect scheduler
+  // sweep owns that workload). Fall back to the remaining single-action
+  // skills if the API hasn't returned the live list yet.
   const skills = allowedSkills.length
     ? allowedSkills
-    : ["sync-pending-connections", "conversation-planner"];
+    : ["send-connection-request", "reply-to-post", "sync-planner-persona-from-linkedin"];
   return skills
     .map(
       (s) =>
@@ -450,7 +454,7 @@ async function openRoutinesConfigModal() {
       const data = await fetchJson(API.skills);
       allowedSkills = data.skills || [];
     } catch {
-      allowedSkills = ["sync-pending-connections", "conversation-planner"];
+      allowedSkills = ["send-connection-request", "reply-to-post", "sync-planner-persona-from-linkedin"];
     }
   }
   const cfg = await fetchJson(API.routinesConfig);
@@ -526,7 +530,7 @@ function initModals() {
     routinesConfigDraft.push({
       id: `routine_${Date.now()}`,
       name: "New routine",
-      skill: allowedSkills[0] || "sync-pending-connections",
+      skill: allowedSkills[0] || "send-connection-request",
       interval_minutes: 60,
       active: true,
       active_window_start: "09:00",
