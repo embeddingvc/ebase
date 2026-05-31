@@ -427,17 +427,26 @@ async def run_plan_sweep(
                 current["connections"].append(target_row)
             _save_connections(current)
 
-    _append_jsonl(
-        RUNS_LOG,
-        {
-            "routine_id": "conversation_plan",
-            "kind": "plan_sweep",
-            "status": "success" if not result.errors else "partial",
-            "started_at": started_iso,
-            "finished_at": _utcnow_iso(),
-            **result.to_log_row(),
-        },
+    # Skip the per-sweep run-log entry when the tick did nothing actionable
+    # (every row was inside its plan backoff window) — the dashboard run
+    # history should reflect actual claude dispatches, not idle ticks.
+    did_work = (
+        result.dispatched > 0
+        or result.errors
+        or result.skipped_rate_limited > 0
     )
+    if did_work:
+        _append_jsonl(
+            RUNS_LOG,
+            {
+                "routine_id": "conversation_plan",
+                "kind": "plan_sweep",
+                "status": "success" if not result.errors else "partial",
+                "started_at": started_iso,
+                "finished_at": _utcnow_iso(),
+                **result.to_log_row(),
+            },
+        )
 
     return result
 

@@ -104,12 +104,35 @@ async function refreshHealth() {
   }
 }
 
+function renderConnectionSchedule(schedule) {
+  if (!schedule || !schedule.routine) {
+    return '<span class="text-[11px] text-[#404850]">—</span>';
+  }
+  const routine = escapeHtml(schedule.routine_label || schedule.routine);
+  const lastLine = schedule.last_run_relative
+    ? `Last ${escapeHtml(schedule.last_run_relative)}`
+    : "Last —";
+  const nextRel = schedule.next_run_relative;
+  const nextDue = nextRel === "due now";
+  const nextLine = nextRel
+    ? `Next ${escapeHtml(nextRel)}`
+    : "Next —";
+  const nextClass = nextDue ? "text-emerald-700 font-bold" : "text-[#404850]";
+  return [
+    '<div class="flex flex-col">',
+    `<span class="text-[11px] text-[#005d8f] font-semibold">${routine}</span>`,
+    `<span class="text-[11px] text-[#404850]">${lastLine}</span>`,
+    `<span class="text-[11px] ${nextClass}">${nextLine}</span>`,
+    "</div>",
+  ].join("");
+}
+
 function renderConnections(data) {
   const rows = data.connections || [];
   el("connections-count").textContent = `${rows.length} Active`;
   const tbody = el("connections-tbody");
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-[#404850]">No connections yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-[#404850]">No connections yet.</td></tr>';
     return;
   }
   tbody.innerHTML = rows
@@ -132,6 +155,7 @@ function renderConnections(data) {
         "</div></td>",
         `<td class="py-3 px-4">${statusBadge(row.stage_label)}</td>`,
         `<td class="py-3 px-4 text-sm text-[#404850]">${escapeHtml(last)}</td>`,
+        `<td class="py-3 px-4">${renderConnectionSchedule(row.routine_schedule)}</td>`,
         `<td class="py-3 px-4 text-right">${profile}</td>`,
         "</tr>",
       ].join("");

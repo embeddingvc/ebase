@@ -333,3 +333,35 @@ def test_plan_sweep_writes_run_log_entry(outreach_tmp: Path) -> None:
     row = json.loads(log_lines[-1])
     assert row["routine_id"] == "conversation_plan"
     assert row["kind"] == "plan_sweep"
+
+
+def test_plan_sweep_skips_run_log_when_only_backoff_skipped(
+    outreach_tmp: Path,
+) -> None:
+    """No claude dispatch happened — just every row was inside its plan
+    backoff window — so the dashboard's run history stays clean."""
+    future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    _write_connections(
+        outreach_tmp,
+        [
+            {
+                "prospect_id": "alex",
+                "profile_url": "https://www.linkedin.com/in/alex/",
+                "connection_status": "connected",
+                "plan_backoff": {
+                    "current_interval_minutes": 120,
+                    "next_check_at": future,
+                    "last_result": "no_change",
+                },
+            }
+        ],
+    )
+
+    async def runner(prospect_id: str) -> cps.PlanRunResult:
+        return _make_run_result()
+
+    result = cps.run_plan_sweep_sync(_default_rcfg(), runner=runner)
+    assert result.dispatched == 0
+    assert result.skipped_not_due == 1
+    log_path = outreach_tmp / "logs" / "routine_runs.jsonl"
+    assert not log_path.exists() or log_path.read_text(encoding="utf-8").strip() == ""

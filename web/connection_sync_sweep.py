@@ -316,17 +316,27 @@ async def run_sync_sweep(
     _save_connections(data)
 
     # Per-sweep run-log line so the dashboard can show a one-row summary.
-    _append_jsonl(
-        RUNS_LOG,
-        {
-            "routine_id": "connection_sync",
-            "kind": "sync_sweep",
-            "status": "success" if not result.errors else "partial",
-            "started_at": started_iso,
-            "finished_at": _utcnow_iso(),
-            **{k: v for k, v in result.to_log_row().items() if k != "kind"},
-        },
+    # Skip the entry when the tick did nothing actionable — every row was
+    # still inside its backoff window — so the run history reflects actual
+    # work, not bookkeeping ticks.
+    did_work = (
+        result.checked > 0
+        or result.promoted
+        or result.errors
+        or result.skipped_rate_limited > 0
     )
+    if did_work:
+        _append_jsonl(
+            RUNS_LOG,
+            {
+                "routine_id": "connection_sync",
+                "kind": "sync_sweep",
+                "status": "success" if not result.errors else "partial",
+                "started_at": started_iso,
+                "finished_at": _utcnow_iso(),
+                **{k: v for k, v in result.to_log_row().items() if k != "kind"},
+            },
+        )
 
     return result
 

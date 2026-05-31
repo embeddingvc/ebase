@@ -258,3 +258,69 @@ def test_sync_sweep_writes_run_log_entry(outreach_tmp: Path) -> None:
     assert row["kind"] == "sync_sweep"
     assert row["checked"] == 1
     assert row["promoted"] == ["p1"]
+
+
+def test_sync_sweep_skips_run_log_when_only_backoff_skipped(
+    outreach_tmp: Path,
+) -> None:
+    """A tick where every row is still inside its backoff window should
+    *not* append to ``routine_runs.jsonl`` — the run history reflects real
+    work, not bookkeeping ticks."""
+    future_iso = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    _write_connections(
+        outreach_tmp,
+        [
+            {
+                "prospect_id": "p1",
+                "profile_url": "https://www.linkedin.com/in/p1/",
+                "connection_status": "pending",
+                "sync_backoff": {
+                    "current_interval_minutes": 120,
+                    "next_check_at": future_iso,
+                    "last_result": "no_change",
+                },
+            }
+        ],
+    )
+
+    async def probe(_url: str) -> bool:
+        return False
+
+    result = css.run_sync_sweep_sync(_default_rcfg(), probe=probe)
+    assert result.skipped_not_due == 1
+    assert result.checked == 0
+    log_path = outreach_tmp / "logs" / "routine_runs.jsonl"
+    assert not log_path.exists() or log_path.read_text(encoding="utf-8").strip() == ""
+
+
+def test_sync_sweep_logs_run_when_rate_limited(outreach_tmp: Path) -> None:
+    """If a row was due but the daily cap blocked it, surface the tick — the
+    operator wants to see why the sweep stopped."""
+    _write_connections(
+        outreach_tmp,
+        [
+            {
+                "prospect_id": "p1",
+                "profile_url": "https://www.linkedin.com/in/p1/",
+                "connection_status": "pending",
+            }
+        ],
+    )
+
+    async def probe(_url: str) -> bool:
+        return False
+
+    def rate_limit_check() -> str:
+        return "Daily profile view limit reached. Resume tomorrow."
+
+    css.run_sync_sweep_sync(
+        _default_rcfg(), probe=probe, rate_limit_check=rate_limit_check
+    )
+    log_lines = (
+        (outreach_tmp / "logs" / "routine_runs.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    assert log_lines
+    row = json.loads(log_lines[-1])
+    assert row["skipped_rate_limited"] >= 1
