@@ -1,6 +1,6 @@
 # LinkedIn Outreach
 
-Automation + workflow tooling for LinkedIn outreach: a LinkedIn MCP server, Claude skills, a queue worker, and a local web dashboard.
+Automation + workflow tooling for LinkedIn outreach: a LinkedIn MCP server, Claude skills, a queue worker.
 
 ## Install (one command)
 
