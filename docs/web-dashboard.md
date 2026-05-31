@@ -4,7 +4,7 @@ Local FastAPI app for monitoring connections, scheduling skill routines, and tri
 
 ## Quick start
 
-After [install](../README.md#one-command-install-clone-deps-mcp-skills-chrome):
+After [install](../README.md#install-one-command):
 
 ```text
 http://127.0.0.1:3847/
@@ -100,8 +100,8 @@ Resolved by `web/dashboard_data.outreach_base()`:
 | Env | Effect |
 |-----|--------|
 | `OUTREACH_DATA_ROOT` | Absolute path override (live data dir) |
-| `OUTREACH_MOCK=1` (default) | Use `{repo}/outreach/mock` |
-| `OUTREACH_MOCK=0` | Use `{repo}/outreach` |
+| `OUTREACH_MOCK=1` | Use `{repo}/outreach/mock` |
+| `OUTREACH_MOCK=0` (default) | Use `{repo}/outreach` |
 
 Important files:
 
@@ -121,7 +121,7 @@ Important files:
 |----------|---------|---------|
 | `WEB_HOST` | `127.0.0.1` | Bind address |
 | `WEB_PORT` | `3847` | HTTP port |
-| `OUTREACH_MOCK` | `1` | Mock vs live outreach tree |
+| `OUTREACH_MOCK` | `0` | Mock vs live outreach tree |
 | `OUTREACH_DATA_ROOT` | — | Override data directory |
 | `CLAUDE_MODEL` | `haiku` | Model for `claude -p` skill runs |
 | `CLAUDE_WEB_TIMEOUT_SEC` | `600` | Skill subprocess timeout |
