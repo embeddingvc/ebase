@@ -44,6 +44,7 @@ logger = logging.getLogger("web.conversation_plan_sweep")
 CONNECTIONS_FILE = "connections.json"
 ACTIONS_LOG = "logs/actions.jsonl"
 RUNS_LOG = "logs/routine_runs.jsonl"
+TICKS_LOG = "logs/routine_ticks.jsonl"
 
 TERMINAL_OUTREACH_STAGES = frozenset({"ended", "dead"})
 TERMINAL_CONNECTION_STATUSES = frozenset({"ended"})
@@ -427,17 +428,29 @@ async def run_plan_sweep(
                 current["connections"].append(target_row)
             _save_connections(current)
 
-    _append_jsonl(
-        RUNS_LOG,
-        {
-            "routine_id": "conversation_plan",
-            "kind": "plan_sweep",
-            "status": "success" if not result.errors else "partial",
-            "started_at": started_iso,
-            "finished_at": _utcnow_iso(),
-            **result.to_log_row(),
-        },
+    # Split run-log lines: actual dispatches (or rate-limited / error ticks)
+    # land in routine_runs.jsonl which drives the dashboard run history;
+    # purely-skipped ticks land in routine_ticks.jsonl for diagnostics so
+    # the operator can still see the scheduler is healthy without polluting
+    # the run history.
+    did_work = (
+        result.dispatched > 0
+        or result.errors
+        or result.skipped_rate_limited > 0
     )
+    log_row: dict[str, Any] = {
+        "routine_id": "conversation_plan",
+        "kind": "plan_sweep",
+        "status": ("success" if not result.errors else "partial")
+        if did_work
+        else "skipped",
+        "started_at": started_iso,
+        "finished_at": _utcnow_iso(),
+        **result.to_log_row(),
+    }
+    if not did_work:
+        log_row["reason"] = "all_rows_in_backoff"
+    _append_jsonl(RUNS_LOG if did_work else TICKS_LOG, log_row)
 
     return result
 

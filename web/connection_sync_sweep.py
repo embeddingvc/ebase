@@ -37,6 +37,7 @@ logger = logging.getLogger("web.connection_sync_sweep")
 CONNECTIONS_FILE = "connections.json"
 ACTIONS_LOG = "logs/actions.jsonl"
 RUNS_LOG = "logs/routine_runs.jsonl"
+TICKS_LOG = "logs/routine_ticks.jsonl"
 
 SyncProbe = Callable[[str], Awaitable[bool | str]]
 """Async callable returning either ``True``/``False`` or an error string."""
@@ -315,18 +316,28 @@ async def run_sync_sweep(
 
     _save_connections(data)
 
-    # Per-sweep run-log line so the dashboard can show a one-row summary.
-    _append_jsonl(
-        RUNS_LOG,
-        {
-            "routine_id": "connection_sync",
-            "kind": "sync_sweep",
-            "status": "success" if not result.errors else "partial",
-            "started_at": started_iso,
-            "finished_at": _utcnow_iso(),
-            **{k: v for k, v in result.to_log_row().items() if k != "kind"},
-        },
+    # Split run-log lines so the dashboard's run history reflects actual
+    # work (claude dispatches, promotions, errors, rate-limit aborts) while
+    # purely-skipped ticks land in a separate ticks log for diagnostics.
+    did_work = (
+        result.checked > 0
+        or result.promoted
+        or result.errors
+        or result.skipped_rate_limited > 0
     )
+    log_row: dict[str, Any] = {
+        "routine_id": "connection_sync",
+        "kind": "sync_sweep",
+        "status": ("success" if not result.errors else "partial")
+        if did_work
+        else "skipped",
+        "started_at": started_iso,
+        "finished_at": _utcnow_iso(),
+        **{k: v for k, v in result.to_log_row().items() if k != "kind"},
+    }
+    if not did_work:
+        log_row["reason"] = "all_rows_in_backoff"
+    _append_jsonl(RUNS_LOG if did_work else TICKS_LOG, log_row)
 
     return result
 

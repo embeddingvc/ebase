@@ -87,6 +87,49 @@ def test_get_connections(outreach_tmp: Path) -> None:
     assert row["connection_status"] == "connected"
     assert row["stage_label"] == "Replied"
     assert row["outreach_stage"] == "replied"
+    # Connected rows track conversation_plan scheduling.
+    sched = row["routine_schedule"]
+    assert sched["routine"] == "conversation_plan"
+    assert sched["last_run_at"] is None  # no plan_backoff yet
+    assert sched["next_run_at"] is None
+
+
+def test_get_connections_surfaces_pending_sync_backoff(
+    outreach_tmp: Path,
+) -> None:
+    """A pending connection's per-row ``sync_backoff`` becomes the
+    last/next-run displayed in the connections table."""
+    (outreach_tmp / "connections.json").write_text(
+        json.dumps(
+            {
+                "connections": [
+                    {
+                        "prospect_id": "p1",
+                        "profile_url": "https://www.linkedin.com/in/p1/",
+                        "name": "Pending One",
+                        "connection_status": "pending",
+                        "sync_backoff": {
+                            "current_interval_minutes": 60,
+                            "last_check_at": "2026-05-30T20:00:00+00:00",
+                            "next_check_at": "2027-01-01T00:00:00+00:00",
+                            "last_result": "no_change",
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    data = dd.get_connections()
+    row = next(r for r in data["connections"] if r["prospect_id"] == "p1")
+    sched = row["routine_schedule"]
+    assert sched["routine"] == "connection_sync"
+    assert sched["routine_label"] == "Connection sync"
+    assert sched["last_run_at"] == "2026-05-30T20:00:00+00:00"
+    assert sched["next_run_at"] == "2027-01-01T00:00:00+00:00"
+    assert sched["current_interval_minutes"] == 60
+    assert sched["last_run_relative"]
+    assert sched["next_run_relative"]
 
 
 def test_get_connections_prefers_connections_json_over_prospect(
