@@ -9,7 +9,9 @@ From any directory, download and run the installer (uses [bash](https://www.gnu.
 ```bash
 curl -fsSL https://raw.githubusercontent.com/huangruoqi/LinkedIn-Outreach/main/install.sh | bash
 ```
-- To start outreach workflow: Call `connect to <linkedin-url>` in claude cli. 
+- To start outreach workflow: Call `connect to <linkedin-url>` in claude cli.
+---
+
 By default this clones or updates the repo at **`~/LinkedIn-Outreach`**. Override the directory with **`LINKEDIN_OUTREACH_DIR`**, the remote URL with **`LINKEDIN_OUTREACH_REPO`** (for forks), or **`git clone`** the repo and run **`./install.sh`** from the repository root so an existing clone is used instead.
 
 ### What the installer does
