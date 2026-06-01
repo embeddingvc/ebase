@@ -260,12 +260,13 @@ def test_sync_sweep_writes_run_log_entry(outreach_tmp: Path) -> None:
     assert row["promoted"] == ["p1"]
 
 
-def test_sync_sweep_skips_run_log_when_only_backoff_skipped(
+def test_sync_sweep_routes_skipped_tick_to_ticks_log(
     outreach_tmp: Path,
 ) -> None:
-    """A tick where every row is still inside its backoff window should
-    *not* append to ``routine_runs.jsonl`` — the run history reflects real
-    work, not bookkeeping ticks."""
+    """A tick where every row is still inside its backoff window must not
+    pollute ``routine_runs.jsonl`` (the dashboard's run history) — it lands
+    in ``routine_ticks.jsonl`` instead so the scheduler heartbeat stays
+    visible without burying actual work."""
     future_iso = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
     _write_connections(
         outreach_tmp,
@@ -289,8 +290,15 @@ def test_sync_sweep_skips_run_log_when_only_backoff_skipped(
     result = css.run_sync_sweep_sync(_default_rcfg(), probe=probe)
     assert result.skipped_not_due == 1
     assert result.checked == 0
-    log_path = outreach_tmp / "logs" / "routine_runs.jsonl"
-    assert not log_path.exists() or log_path.read_text(encoding="utf-8").strip() == ""
+    runs_path = outreach_tmp / "logs" / "routine_runs.jsonl"
+    ticks_path = outreach_tmp / "logs" / "routine_ticks.jsonl"
+    assert not runs_path.exists() or runs_path.read_text(encoding="utf-8").strip() == ""
+    tick_lines = ticks_path.read_text(encoding="utf-8").splitlines()
+    assert tick_lines
+    tick = json.loads(tick_lines[-1])
+    assert tick["routine_id"] == "connection_sync"
+    assert tick["skipped_not_due"] == 1
+    assert tick["checked"] == 0
 
 
 def test_sync_sweep_logs_run_when_rate_limited(outreach_tmp: Path) -> None:

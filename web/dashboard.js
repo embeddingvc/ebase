@@ -2,16 +2,11 @@ const API = {
   health: "/api/dashboard/health",
   connections: "/api/dashboard/connections",
   routines: "/api/dashboard/routines",
-  routinesConfig: "/api/dashboard/routines/config",
-  skills: "/api/dashboard/skills",
   execution: "/api/dashboard/execution-history",
   meetings: "/api/dashboard/meetings",
 };
 
-let allowedSkills = [];
-let routinesConfigDraft = [];
 let currentTab = "connections";
-const runningRoutines = new Set();
 
 const HEALTH_POLL_MS = 15000;
 
@@ -163,88 +158,14 @@ function renderConnections(data) {
     .join("");
 }
 
-function routineRunUrl(routineId) {
-  return `/api/dashboard/routines/${encodeURIComponent(routineId)}/run`;
-}
-
-function renderRoutines(data) {
-  const list = data.routines || [];
-  if (!list.length) {
-    el("routines-list").innerHTML =
-      '<p class="text-sm text-[#404850]">No routines configured. Click Configure to add one.</p>';
-    return;
-  }
-  el("routines-list").innerHTML = list
-    .map((r) => {
-      const st = r.status || (r.active ? "active" : "disabled");
-      const stColor =
-        st === "error"
-          ? "text-[#ba1a1a]"
-          : st === "active"
-            ? "text-emerald-600"
-            : "text-[#404850]";
-      const last = r.last_run_relative ? `Last run ${r.last_run_relative}` : "Never run";
-      const interval = r.interval_minutes != null ? r.interval_minutes : "—";
-      const skill = r.skill || "—";
-      const label =
-        st === "disabled" ? "INACTIVE" : st === "error" ? "ERROR" : st === "active" ? "ACTIVE" : "IDLE";
-      const rid = r.id || "";
-      const isRunning = runningRoutines.has(rid);
-      const timerHint = r.active ? " · resets timer" : "";
-      const windowLine = r.active_window_label
-        ? `<div class="text-[10px] text-[#404850]">Window ${escapeHtml(r.active_window_label)} (local)</div>`
-        : "";
-      return `<div class="routine-card flex items-center p-3 rounded-lg border border-[#bfc7d1] bg-[#f7f9fb] gap-3" data-routine-id="${escapeHtml(rid)}">
-        <div class="bg-[#005d8f]/10 p-2 rounded-lg shrink-0">
-          <span class="material-symbols-outlined text-[#005d8f]">${escapeHtml(r.icon || "bolt")}</span>
-        </div>
-        <div class="flex-grow min-w-0">
-          <div class="text-sm font-bold">${escapeHtml(r.name)}</div>
-          <div class="text-[11px] text-[#404850]">${escapeHtml(skill)} · every ${interval}m</div>
-          <div class="text-[10px] text-[#404850]">${escapeHtml(last)}</div>
-          ${windowLine}
-        </div>
-        <span class="text-[11px] font-bold ${stColor} shrink-0 hidden sm:inline">${label}</span>
-        <button type="button" class="routine-trigger shrink-0 p-2 rounded-lg border border-[#bfc7d1] bg-white text-[#005d8f] hover:bg-[#e8f1f8] disabled:opacity-50 disabled:cursor-not-allowed" data-routine-id="${escapeHtml(rid)}" title="Run now${timerHint}" aria-label="Run ${escapeHtml(r.name)} now" ${isRunning ? "disabled" : ""}>
-          <span class="material-symbols-outlined text-xl leading-none ${isRunning ? "animate-spin" : ""}">${isRunning ? "progress_activity" : "play_arrow"}</span>
-        </button>
-      </div>`;
-    })
-    .join("");
-  if (data.campaign_goal) el("campaign-goal").textContent = data.campaign_goal;
-}
-
-async function triggerRoutine(routineId) {
-  if (!routineId || runningRoutines.has(routineId)) return;
-  const errEl = el("error-routines");
-  errEl.hidden = true;
-  runningRoutines.add(routineId);
-  const card = el("routines-list").querySelector(`[data-routine-id="${routineId}"]`);
-  const btn = card?.querySelector(".routine-trigger");
-  if (btn) {
-    btn.disabled = true;
-    const icon = btn.querySelector(".material-symbols-outlined");
-    if (icon) {
-      icon.textContent = "progress_activity";
-      icon.classList.add("animate-spin");
-    }
-  }
+async function refreshCampaignGoal() {
   try {
-    await fetchJson(routineRunUrl(routineId), { method: "POST" });
-    if (currentTab === "routines") {
-      await loadTab("routines");
-    }
-  } catch (err) {
-    errEl.textContent = err.message;
-    errEl.hidden = false;
-    if (currentTab === "routines") {
-      renderRoutines(await fetchJson(API.routines));
-    }
-  } finally {
-    runningRoutines.delete(routineId);
+    const data = await fetchJson(API.routines);
+    if (data.campaign_goal) el("campaign-goal").textContent = data.campaign_goal;
+  } catch {
+    // The campaign-goal sidebar line is best-effort; failures are silent.
   }
 }
-
 
 function renderExecution(data) {
   const stats = data.stats || {};
@@ -365,7 +286,7 @@ function setTab(tabId) {
   });
   const titles = {
     connections: ["Prospect Performance", "Active connections and outreach stages."],
-    routines: ["Routines & Execution", "Scheduled skill routines and their run history."],
+    routines: ["Routine Run History", "Recent runs of the per-prospect scheduler sweeps."],
     meetings: ["Scheduled Meetings", "Prospects who showed meeting interest."],
   };
   const [title, sub] = titles[tabId] || titles.connections;
@@ -380,12 +301,7 @@ async function loadTab(tabId) {
     if (tabId === "connections") {
       renderConnections(await fetchJson(API.connections));
     } else if (tabId === "routines") {
-      const [routines, execution] = await Promise.all([
-        fetchJson(API.routines),
-        fetchJson(`${API.execution}?limit=50&offset=0`),
-      ]);
-      renderRoutines(routines);
-      renderExecution(execution);
+      renderExecution(await fetchJson(`${API.execution}?limit=50&offset=0`));
     } else if (tabId === "meetings") {
       renderMeetings(await fetchJson(API.meetings));
     }
@@ -400,109 +316,11 @@ async function loadTab(tabId) {
 function showModal(panelId) {
   el("modal-overlay").hidden = false;
   el("connection-modal").hidden = panelId !== "connection-modal";
-  el("routines-config-modal").hidden = panelId !== "routines-config-modal";
 }
 
 function hideModals() {
   el("modal-overlay").hidden = true;
   el("connection-modal").hidden = true;
-  el("routines-config-modal").hidden = true;
-}
-
-function skillOptions(selected) {
-  // sync-pending-connections and conversation-planner are no longer
-  // dashboard-runnable as standalone loop routines (per-prospect scheduler
-  // sweep owns that workload). Fall back to the remaining single-action
-  // skills if the API hasn't returned the live list yet.
-  const skills = allowedSkills.length
-    ? allowedSkills
-    : ["send-connection-request", "reply-to-post", "sync-planner-persona-from-linkedin"];
-  return skills
-    .map(
-      (s) =>
-        `<option value="${escapeHtml(s)}"${s === selected ? " selected" : ""}>${escapeHtml(s)}</option>`
-    )
-    .join("");
-}
-
-function renderRoutinesConfigRows() {
-  el("routines-config-rows").innerHTML = routinesConfigDraft
-    .map(
-      (r, i) => `
-    <div class="routine-config-row" data-index="${i}">
-      <div class="flex justify-between items-center mb-2">
-        <span class="text-xs font-bold text-[#404850]">Routine ${i + 1}</span>
-        <button type="button" class="text-[#ba1a1a] text-xs font-bold routine-remove" data-index="${i}">Remove</button>
-      </div>
-      <label>Name</label>
-      <input type="text" class="rc-name" value="${escapeHtml(r.name || "")}" />
-      <label>Skill</label>
-      <select class="rc-skill">${skillOptions(r.skill)}</select>
-      <label>Interval (minutes)</label>
-      <input type="number" class="rc-interval" min="1" value="${Number(r.interval_minutes) || 60}" />
-      <label>Daily active window (local, leave blank for 24/7)</label>
-      <div class="rc-window-row flex gap-2 mb-2">
-        <input type="time" class="rc-window-start" value="${escapeHtml(r.active_window_start || "")}" aria-label="Window start" />
-        <input type="time" class="rc-window-end" value="${escapeHtml(r.active_window_end || "")}" aria-label="Window end" />
-        <button type="button" class="rc-window-clear text-[11px] text-[#005d8f] font-semibold px-2" data-index="${i}" title="Clear window">Clear</button>
-      </div>
-      <label class="flex items-center gap-2 mt-1 mb-0">
-        <input type="checkbox" class="rc-active" ${r.active ? "checked" : ""} />
-        <span class="text-xs font-semibold normal-case">Active</span>
-      </label>
-    </div>`
-    )
-    .join("");
-
-  el("routines-config-rows").querySelectorAll(".routine-remove").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      routinesConfigDraft.splice(Number(btn.dataset.index), 1);
-      renderRoutinesConfigRows();
-    });
-  });
-  el("routines-config-rows").querySelectorAll(".rc-window-clear").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const row = btn.closest(".routine-config-row");
-      if (!row) return;
-      row.querySelector(".rc-window-start").value = "";
-      row.querySelector(".rc-window-end").value = "";
-    });
-  });
-}
-
-async function openRoutinesConfigModal() {
-  const errEl = el("routines-config-error");
-  errEl.hidden = true;
-  if (!allowedSkills.length) {
-    try {
-      const data = await fetchJson(API.skills);
-      allowedSkills = data.skills || [];
-    } catch {
-      allowedSkills = ["send-connection-request", "reply-to-post", "sync-planner-persona-from-linkedin"];
-    }
-  }
-  const cfg = await fetchJson(API.routinesConfig);
-  routinesConfigDraft = (cfg.routines || []).map((r) => ({ ...r }));
-  renderRoutinesConfigRows();
-  showModal("routines-config-modal");
-}
-
-function collectRoutinesConfigFromForm() {
-  const rows = el("routines-config-rows").querySelectorAll(".routine-config-row");
-  return Array.from(rows).map((row, i) => {
-    const prev = routinesConfigDraft[i] || {};
-    const start = row.querySelector(".rc-window-start").value.trim();
-    const end = row.querySelector(".rc-window-end").value.trim();
-    return {
-      id: prev.id || `routine_${i + 1}`,
-      name: row.querySelector(".rc-name").value.trim(),
-      skill: row.querySelector(".rc-skill").value,
-      interval_minutes: Number(row.querySelector(".rc-interval").value) || 60,
-      active: row.querySelector(".rc-active").checked,
-      active_window_start: start || null,
-      active_window_end: end || null,
-    };
-  });
 }
 
 async function submitConnection() {
@@ -544,52 +362,8 @@ function initModals() {
   });
   el("connection-modal-cancel").addEventListener("click", hideModals);
   el("connection-modal-submit").addEventListener("click", submitConnection);
-  el("btn-routines-config").addEventListener("click", () => openRoutinesConfigModal().catch((e) => {
-    el("routines-config-error").textContent = e.message;
-    el("routines-config-error").hidden = false;
-    showModal("routines-config-modal");
-  }));
-  el("routines-config-cancel").addEventListener("click", hideModals);
-  el("routines-config-add").addEventListener("click", () => {
-    routinesConfigDraft.push({
-      id: `routine_${Date.now()}`,
-      name: "New routine",
-      skill: allowedSkills[0] || "send-connection-request",
-      interval_minutes: 60,
-      active: true,
-      active_window_start: "09:00",
-      active_window_end: "17:00",
-    });
-    renderRoutinesConfigRows();
-  });
-  el("routines-config-save").addEventListener("click", async () => {
-    const errEl = el("routines-config-error");
-    errEl.hidden = true;
-    try {
-      const routines = collectRoutinesConfigFromForm();
-      await fetchJson(API.routinesConfig, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ routines }),
-      });
-      hideModals();
-      const routinesPanel = document.querySelector('.tab-panel[data-tab="routines"]');
-      if (routinesPanel && !routinesPanel.hidden) {
-        await loadTab("routines");
-      }
-    } catch (err) {
-      errEl.textContent = err.message;
-      errEl.hidden = false;
-    }
-  });
   el("modal-overlay").addEventListener("click", (e) => {
     if (e.target === el("modal-overlay")) hideModals();
-  });
-  el("routines-list").addEventListener("click", (e) => {
-    const btn = e.target.closest(".routine-trigger");
-    if (!btn || btn.disabled) return;
-    const routineId = btn.dataset.routineId;
-    if (routineId) triggerRoutine(routineId);
   });
 }
 
@@ -605,7 +379,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const validTabs = new Set(["connections", "routines", "meetings"]);
   const initialTab = validTabs.has(location.hash.slice(1)) ? location.hash.slice(1) : "connections";
   setTab(initialTab);
-  Promise.all([refreshHealth(), loadTab(initialTab)]).then(stampLastSynced);
+  Promise.all([refreshHealth(), refreshCampaignGoal(), loadTab(initialTab)]).then(stampLastSynced);
   setInterval(refreshHealth, HEALTH_POLL_MS);
   setInterval(refreshCurrentTab, 60_000);
 });

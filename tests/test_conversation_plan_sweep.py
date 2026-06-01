@@ -335,11 +335,12 @@ def test_plan_sweep_writes_run_log_entry(outreach_tmp: Path) -> None:
     assert row["kind"] == "plan_sweep"
 
 
-def test_plan_sweep_skips_run_log_when_only_backoff_skipped(
+def test_plan_sweep_routes_skipped_tick_to_ticks_log(
     outreach_tmp: Path,
 ) -> None:
-    """No claude dispatch happened — just every row was inside its plan
-    backoff window — so the dashboard's run history stays clean."""
+    """No claude dispatch happened — every row was inside its plan backoff
+    window — so the entry lands in ``routine_ticks.jsonl`` and the
+    dashboard's run history (``routine_runs.jsonl``) stays clean."""
     future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
     _write_connections(
         outreach_tmp,
@@ -363,5 +364,12 @@ def test_plan_sweep_skips_run_log_when_only_backoff_skipped(
     result = cps.run_plan_sweep_sync(_default_rcfg(), runner=runner)
     assert result.dispatched == 0
     assert result.skipped_not_due == 1
-    log_path = outreach_tmp / "logs" / "routine_runs.jsonl"
-    assert not log_path.exists() or log_path.read_text(encoding="utf-8").strip() == ""
+    runs_path = outreach_tmp / "logs" / "routine_runs.jsonl"
+    ticks_path = outreach_tmp / "logs" / "routine_ticks.jsonl"
+    assert not runs_path.exists() or runs_path.read_text(encoding="utf-8").strip() == ""
+    tick_lines = ticks_path.read_text(encoding="utf-8").splitlines()
+    assert tick_lines
+    tick = json.loads(tick_lines[-1])
+    assert tick["routine_id"] == "conversation_plan"
+    assert tick["skipped_not_due"] == 1
+    assert tick["dispatched"] == 0
