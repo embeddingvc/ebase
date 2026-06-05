@@ -4,9 +4,10 @@ Local regression: Claude CLI (``claude -p``) + ``tools/mock.py`` + transition sp
 Requires ``claude`` on PATH and auth for the Claude Code CLI; otherwise scenario
 tests skip. Tier-0 schedule tests: ``tests/test_schedule_meeting.py``.
 
-``happy_path`` expects ``ended_reason: call_scheduled`` and optional ``meeting_link``
-(see ``docs/designs/schedule-meeting-mcp-and-regression-design.md``). Set
-``REGRESSION_APPLY_SCHEDULE=1`` to apply ``schedule_meeting`` when the model skips it.
+``happy_path`` expects ``ended_reason: call_scheduled`` and ``meeting_link`` after the
+scripted email reply (see ``docs/designs/schedule-meeting-mcp-and-regression-design.md``).
+The harness applies ``schedule_meeting`` automatically when the mock thread contains an
+email but the planner skipped booking; set ``REGRESSION_APPLY_SCHEDULE=0`` to disable.
 
 Run: ``make regression`` or ``uv run pytest tests/test_regression_workflow.py -v``
 """
