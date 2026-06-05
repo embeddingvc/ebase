@@ -18,6 +18,7 @@ See ``docs/designs/per-connection-routines-with-backoff-design.md``.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from web import routines_config
+from web.dashboard_data import outreach_base
 from web.skill_runner import run_named_skill
 
 logger = logging.getLogger("web.routine_scheduler")
@@ -124,6 +126,47 @@ def _per_prospect_due(kind: str, now: datetime) -> bool:
     return (now - last).total_seconds() >= _PER_PROSPECT_SWEEP_INTERVAL_SECONDS
 
 
+_TICKS_LOG_REL = "logs/routine_ticks.jsonl"
+
+
+def _append_tick(routine_id: str, kind: str, *, status: str, reason: str) -> None:
+    """Record a heartbeat tick row.
+
+    Used both for "scheduler considered the sweep but the gating prevented
+    work" (window closed / disabled) and "sweep ran but every row was inside
+    its backoff window" (handled inside the sweep modules). Together,
+    ``routine_ticks.jsonl`` answers "is the scheduler alive?" without
+    polluting the dashboard's run history.
+    """
+    path = outreach_base() / _TICKS_LOG_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).isoformat()
+    row = {
+        "routine_id": routine_id,
+        "kind": kind,
+        "status": status,
+        "reason": reason,
+        "started_at": now,
+        "finished_at": now,
+    }
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _gate_reason(rcfg: dict[str, Any]) -> str | None:
+    """Return why a sweep cannot run *now*, or None if it can.
+
+    Order matters: we report ``inactive`` over ``outside_window`` so a
+    disabled-but-misconfigured row reads as inactive rather than reporting a
+    misleading window status.
+    """
+    if not rcfg.get("active"):
+        return "inactive"
+    if not routines_config.in_active_window(rcfg):
+        return "outside_window"
+    return None
+
+
 def _rate_limit_check_factory(category: str):
     """Return ``lambda: rate_limit(category, record=False)`` or None.
 
@@ -150,14 +193,16 @@ def _rate_limit_check_factory(category: str):
 async def _run_sync_sweep_routine(rcfg: dict[str, Any]) -> None:
     """Wrapper to call ``connection_sync_sweep.run_sync_sweep`` with logging."""
     kind = routines_config.ROUTINE_KIND_CONNECTION_SYNC
+    routine_id = "connection_sync"
     lock = _get_sweep_lock(kind)
     if lock.locked():
         logger.info("sync sweep already running, skip")
+        _append_tick(routine_id, "sync_sweep", status="skipped", reason="locked")
         return
     async with lock:
-        if not rcfg.get("active"):
-            return
-        if not routines_config.in_active_window(rcfg):
+        gate = _gate_reason(rcfg)
+        if gate is not None:
+            _append_tick(routine_id, "sync_sweep", status="skipped", reason=gate)
             return
         from web.connection_sync_sweep import run_sync_sweep
 
@@ -174,14 +219,16 @@ async def _run_sync_sweep_routine(rcfg: dict[str, Any]) -> None:
 async def _run_plan_sweep_routine(rcfg: dict[str, Any]) -> None:
     """Wrapper to call ``conversation_plan_sweep.run_plan_sweep`` with logging."""
     kind = routines_config.ROUTINE_KIND_CONVERSATION_PLAN
+    routine_id = "conversation_plan"
     lock = _get_sweep_lock(kind)
     if lock.locked():
         logger.info("plan sweep already running, skip")
+        _append_tick(routine_id, "plan_sweep", status="skipped", reason="locked")
         return
     async with lock:
-        if not rcfg.get("active"):
-            return
-        if not routines_config.in_active_window(rcfg):
+        gate = _gate_reason(rcfg)
+        if gate is not None:
+            _append_tick(routine_id, "plan_sweep", status="skipped", reason=gate)
             return
         from web.conversation_plan_sweep import run_plan_sweep
 
