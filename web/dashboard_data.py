@@ -227,6 +227,32 @@ def _relative_time(iso: str | None) -> str | None:
         return None
 
 
+def _relative_future(iso: str | None) -> str | None:
+    """Render a future timestamp as 'in 2h', 'due now', etc.
+
+    Returns ``None`` if ``iso`` is missing or unparseable. Returns
+    ``"due now"`` when the timestamp is in the past or current minute so the
+    UI can highlight rows the scheduler is actively considering.
+    """
+    if not iso:
+        return None
+    try:
+        ts = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        delta = ts.astimezone(timezone.utc) - datetime.now(timezone.utc)
+        secs = int(delta.total_seconds())
+        if secs <= 60:
+            return "due now"
+        if secs < 3600:
+            return f"in {secs // 60}m"
+        if secs < 86400:
+            return f"in {secs // 3600}h"
+        return f"in {secs // 86400}d"
+    except (ValueError, TypeError):
+        return None
+
+
 def _last_message_summary(conv: dict[str, Any] | None) -> str | None:
     if not conv:
         return None
@@ -262,6 +288,61 @@ def _stage_label(stage: str | None, conn_status: str | None) -> str:
     return "Unknown"
 
 
+_ROUTINE_LABELS = {
+    "connection_sync": "Connection sync",
+    "conversation_plan": "Conversation plan",
+}
+
+
+def _backoff_routine_for(connection_status: str | None) -> str | None:
+    """Which per-prospect routine governs this row's next scheduler tick.
+
+    ``pending`` rows are driven by the connection-sync sweep; everything else
+    that's still actionable goes through the conversation-plan sweep. ``ended``
+    rows have no live routine — we still surface the last ``plan_backoff``
+    record for transparency but mark the next-run as N/A.
+    """
+    if connection_status == "pending":
+        return "connection_sync"
+    if connection_status == "ended":
+        return None
+    return "conversation_plan"
+
+
+def _connection_routine_meta(conn: dict[str, Any]) -> dict[str, Any]:
+    """Last/next per-prospect routine timestamps for the connections list.
+
+    Reads from the row's ``sync_backoff`` / ``plan_backoff`` records (written
+    by the per-prospect scheduler sweeps in ``web.connection_sync_sweep`` /
+    ``web.conversation_plan_sweep``). Returns ``None`` fields when no record
+    exists yet so the UI can render a neutral placeholder.
+    """
+    status = conn.get("connection_status")
+    routine = _backoff_routine_for(status)
+    sync_bo = conn.get("sync_backoff") if isinstance(conn.get("sync_backoff"), dict) else None
+    plan_bo = conn.get("plan_backoff") if isinstance(conn.get("plan_backoff"), dict) else None
+
+    if routine == "connection_sync":
+        backoff = sync_bo
+    elif routine == "conversation_plan":
+        backoff = plan_bo
+    else:
+        backoff = plan_bo or sync_bo  # fallback for ended rows
+
+    last_at = (backoff or {}).get("last_check_at")
+    next_at = (backoff or {}).get("next_check_at") if routine else None
+    return {
+        "routine": routine,
+        "routine_label": _ROUTINE_LABELS.get(routine) if routine else None,
+        "last_run_at": last_at,
+        "last_run_relative": _relative_time(last_at),
+        "next_run_at": next_at,
+        "next_run_relative": _relative_future(next_at) if routine else None,
+        "current_interval_minutes": (backoff or {}).get("current_interval_minutes"),
+        "last_result": (backoff or {}).get("last_result"),
+    }
+
+
 def _connection_display_row(base: Path, conn: dict[str, Any]) -> dict[str, Any]:
     """Build one connections-tab row: identity from ``connections.json``, stage from conversation."""
     pid = (conn.get("prospect_id") or "").strip()
@@ -294,6 +375,7 @@ def _connection_display_row(base: Path, conn: dict[str, Any]) -> dict[str, Any]:
         "last_action_at": last_ts,
         "last_action_relative": _relative_time(last_ts),
         "initials": _initials(str(name)),
+        "routine_schedule": _connection_routine_meta(conn),
     }
 
 
