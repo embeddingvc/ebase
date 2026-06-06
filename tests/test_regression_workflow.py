@@ -28,8 +28,9 @@ from outreach.regression_harness import (  # noqa: E402
     get_server_module,
     run_scenario,
 )
+from outreach.mock.fixtures_loader import list_case_ids  # noqa: E402
 
-ALL_MOCK_CASES = ["happy_path"]
+ALL_MOCK_CASES = list_case_ids()
 
 @pytest.mark.local_regression
 @pytest.mark.parametrize("case_id", ALL_MOCK_CASES)

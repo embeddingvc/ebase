@@ -255,6 +255,17 @@ body {
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35);
 }
 
+.chat-message--scripted .chat-bubble {
+  opacity: 0.82;
+  border-style: dashed;
+  background: #eef2f6;
+  color: #404850;
+}
+
+.chat-message--scripted .chat-meta {
+  color: #005d8f;
+}
+
 /* ── Regression panel ───────────────────────────────────────────────────── */
 
 .regression-log {
