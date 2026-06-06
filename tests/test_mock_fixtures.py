@@ -56,7 +56,9 @@ def test_ghosted_cold_all_silent_replies() -> None:
 
 def test_eager_referral_resume_attachment() -> None:
     tc = fl.load_test_cases()["eager_referral"]
-    resume_reply = tc["replies"][1]
+    assert len(tc["replies"]) == 3
+    assert tc["prospect"]["end_goal"] == "resume_received"
+    resume_reply = tc["replies"][2]
     assert resume_reply is not None
     assert resume_reply["attachments"][0]["type"] == "resume"
 
