@@ -26,7 +26,14 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from web import dashboard_data, routine_scheduler, routines_config, skill_runner
+from web import (
+    dashboard_data,
+    mock_conversation,
+    regression_runner,
+    routine_scheduler,
+    routines_config,
+    skill_runner,
+)
 
 WEB_DIR = Path(__file__).resolve().parent
 REPO_ROOT = WEB_DIR.parent
@@ -73,6 +80,17 @@ async def dashboard_redirect() -> RedirectResponse:
     return RedirectResponse(url="/", status_code=302)
 
 
+@app.get("/mock")
+async def mock_index() -> FileResponse:
+    """Mock-scope dashboard view (regression runner + live mock thread).
+
+    Same SPA as ``/`` — the JS bundle reads ``location.pathname`` to decide
+    whether to call ``?scope=mock`` API endpoints and to surface the mock-only
+    Conversation + Regression tabs.
+    """
+    return _static_file("dashboard.html", "text/html; charset=utf-8")
+
+
 @app.get("/dashboard.css")
 async def dashboard_css() -> FileResponse:
     return _static_file("dashboard.css", "text/css; charset=utf-8")
@@ -83,14 +101,29 @@ async def dashboard_js() -> FileResponse:
     return _static_file("dashboard.js", "application/javascript; charset=utf-8")
 
 
+def _normalize_scope(scope: str | None) -> str | None:
+    if scope is None:
+        return None
+    s = scope.strip().lower()
+    if s in ("mock", "live"):
+        return s
+    if s in ("", "auto"):
+        return None
+    raise HTTPException(status_code=400, detail="scope must be 'mock' or 'live'")
+
+
 @app.get("/api/dashboard/health")
-async def api_dashboard_health() -> JSONResponse:
-    return JSONResponse(dashboard_data.get_health())
+async def api_dashboard_health(
+    scope: str | None = Query(None),
+) -> JSONResponse:
+    return JSONResponse(dashboard_data.get_health(_normalize_scope(scope)))
 
 
 @app.get("/api/dashboard/connections")
-async def api_dashboard_connections() -> JSONResponse:
-    return JSONResponse(dashboard_data.get_connections())
+async def api_dashboard_connections(
+    scope: str | None = Query(None),
+) -> JSONResponse:
+    return JSONResponse(dashboard_data.get_connections(_normalize_scope(scope)))
 
 
 class ConnectionRequest(BaseModel):
@@ -109,8 +142,10 @@ async def api_dashboard_add_connection(body: ConnectionRequest) -> JSONResponse:
 
 
 @app.get("/api/dashboard/routines")
-async def api_dashboard_routines() -> JSONResponse:
-    return JSONResponse(dashboard_data.get_routines())
+async def api_dashboard_routines(
+    scope: str | None = Query(None),
+) -> JSONResponse:
+    return JSONResponse(dashboard_data.get_routines(_normalize_scope(scope)))
 
 
 @app.get("/api/dashboard/routines/config")
@@ -164,23 +199,75 @@ async def api_dashboard_routine_run_now(routine_id: str) -> JSONResponse:
 async def api_dashboard_execution_history(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    scope: str | None = Query(None),
 ) -> JSONResponse:
-    return JSONResponse(dashboard_data.get_execution_history(limit=limit, offset=offset))
+    return JSONResponse(
+        dashboard_data.get_execution_history(
+            limit=limit, offset=offset, scope=_normalize_scope(scope)
+        )
+    )
 
 
 @app.get("/api/dashboard/meetings")
-async def api_dashboard_meetings() -> JSONResponse:
-    return JSONResponse(dashboard_data.get_meetings())
+async def api_dashboard_meetings(
+    scope: str | None = Query(None),
+) -> JSONResponse:
+    return JSONResponse(dashboard_data.get_meetings(_normalize_scope(scope)))
 
 
 @app.get("/api/dashboard/summary")
-async def api_dashboard_summary() -> JSONResponse:
-    return JSONResponse(dashboard_data.get_summary())
+async def api_dashboard_summary(
+    scope: str | None = Query(None),
+) -> JSONResponse:
+    return JSONResponse(dashboard_data.get_summary(_normalize_scope(scope)))
 
 
 @app.get("/api/dashboard/skills")
 async def api_dashboard_skills() -> JSONResponse:
     return JSONResponse({"skills": sorted(skill_runner.ALLOWED_SKILLS)})
+
+
+# ── Mock-only endpoints ──────────────────────────────────────────────────────
+#
+# Backing the dashboard's mock view: live conversation thread + regression
+# subprocess control. These never read ``outreach/`` so they're safe even when
+# the operator is running live outreach in the same dashboard session.
+
+
+@app.get("/api/mock/conversation")
+async def api_mock_conversation() -> JSONResponse:
+    return JSONResponse(mock_conversation.get_mock_conversations())
+
+
+@app.get("/api/mock/regression/cases")
+async def api_mock_regression_cases() -> JSONResponse:
+    return JSONResponse(mock_conversation.list_test_cases())
+
+
+class RegressionRunBody(BaseModel):
+    case_id: str | None = Field(default=None)
+
+
+@app.get("/api/mock/regression/status")
+async def api_mock_regression_status() -> JSONResponse:
+    return JSONResponse(regression_runner.runner.status())
+
+
+@app.post("/api/mock/regression/run")
+async def api_mock_regression_run(body: RegressionRunBody) -> JSONResponse:
+    try:
+        state = await asyncio.to_thread(
+            regression_runner.runner.start, body.case_id
+        )
+    except regression_runner.RegressionBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse(state)
+
+
+@app.post("/api/mock/regression/stop")
+async def api_mock_regression_stop() -> JSONResponse:
+    state = await asyncio.to_thread(regression_runner.runner.stop)
+    return JSONResponse(state)
 
 
 def main() -> None:

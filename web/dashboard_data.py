@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -18,6 +19,11 @@ from typing import Any
 
 WEB_DIR = Path(__file__).resolve().parent
 REPO_ROOT = WEB_DIR.parent
+_TOOLS = REPO_ROOT / "tools"
+if str(_TOOLS) not in sys.path:
+    sys.path.insert(0, str(_TOOLS))
+
+import server as _mcp_server  # noqa: E402  # tools/server.py
 
 CDP_URL = os.environ.get("CDP_URL", "http://localhost:9222")
 QUEUE_DIR = "queue"
@@ -27,22 +33,40 @@ MEETING_END_REASONS = frozenset({"call_scheduled"})
 MEETING_NEXT_ACTIONS = frozenset({"confirm_meeting"})
 
 def mock_mcp_enabled() -> bool:
-    """Match tools.server._mock_mcp_enabled() (defaults to live)."""
-    env = os.environ.get("OUTREACH_MOCK", "").strip().lower()
-    if env in ("1", "true", "yes"):
-        return True
-    if env in ("0", "false", "no"):
-        return False
-    return False
+    """Delegate to ``tools.server._mock_mcp_enabled()`` (single source of truth)."""
+    return _mcp_server._mock_mcp_enabled()
 
+def outreach_base(scope: str | None = None) -> Path:
+    """Outreach data root.
 
-def outreach_base() -> Path:
+    Precedence:
+
+    1. Explicit ``scope="mock"`` / ``scope="live"`` (used by dashboard endpoints
+       so the per-request scope cleanly forces a tree without touching env).
+    2. ``OUTREACH_DATA_ROOT`` env override (regression harness, tests).
+    3. ``OUTREACH_MOCK=1`` env (mock tree at ``outreach/mock``).
+    4. Default — ``outreach/`` (live operator data).
+    """
+    if scope == "mock":
+        return REPO_ROOT / "outreach" / "mock"
+    if scope == "live":
+        return REPO_ROOT / "outreach"
     override = os.environ.get("OUTREACH_DATA_ROOT", "").strip()
     if override:
         return Path(override).expanduser().resolve()
     if mock_mcp_enabled():
         return REPO_ROOT / "outreach" / "mock"
     return REPO_ROOT / "outreach"
+
+
+def mock_base() -> Path:
+    """Mock tree under ``outreach/mock`` (regression / dashboard mock view)."""
+    return outreach_base(scope="mock")
+
+
+def live_base() -> Path:
+    """Live tree under ``outreach`` (operator data)."""
+    return outreach_base(scope="live")
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -113,8 +137,10 @@ def _claude_cli_status() -> dict[str, Any]:
     return {"status": "online", "path": path, "detail": version}
 
 
-def _linkedin_session_status(base: Path, cdp_online: bool) -> dict[str, Any]:
-    if mock_mcp_enabled():
+def _linkedin_session_status(
+    base: Path, cdp_online: bool, *, force_mock: bool = False
+) -> dict[str, Any]:
+    if force_mock or mock_mcp_enabled():
         sessions_path = base / "mock_linkedin_sessions.json"
         data = _read_json(sessions_path, {"sessions": {}})
         sessions = data.get("sessions") or {}
@@ -148,14 +174,24 @@ def _queue_counts(base: Path) -> dict[str, int]:
     }
 
 
-def get_health() -> dict[str, Any]:
+def _resolved_mcp_mode(scope: str | None) -> str:
+    if scope == "mock":
+        return "mock"
+    if scope == "live":
+        return "live"
+    return "mock" if mock_mcp_enabled() else "live"
+
+
+def get_health(scope: str | None = None) -> dict[str, Any]:
     cdp_online, cdp_info = _chrome_running()
-    base = outreach_base()
+    base = outreach_base(scope)
     queue = _queue_counts(base)
+    mode = _resolved_mcp_mode(scope)
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "data_root": str(base),
-        "mcp_mode": "mock" if mock_mcp_enabled() else "live",
+        "mcp_mode": mode,
+        "scope": scope,
         "claude_cli": _claude_cli_status(),
         "cdp_browser": {
             "status": "online" if cdp_online else "offline",
@@ -164,7 +200,9 @@ def get_health() -> dict[str, Any]:
             "detail": (cdp_info or {}).get("Browser")
             or ("Chrome DevTools reachable" if cdp_online else "Not reachable"),
         },
-        "linkedin_session": _linkedin_session_status(base, cdp_online),
+        "linkedin_session": _linkedin_session_status(
+            base, cdp_online, force_mock=mode == "mock"
+        ),
         "queue": queue,
     }
 
@@ -379,17 +417,17 @@ def _connection_display_row(base: Path, conn: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def get_connections() -> dict[str, Any]:
-    base = outreach_base()
+def get_connections(scope: str | None = None) -> dict[str, Any]:
+    base = outreach_base(scope)
     rows = [_connection_display_row(base, conn) for conn in _load_connections(base)]
     rows.sort(key=lambda r: r.get("last_action_at") or "", reverse=True)
-    return {"total": len(rows), "connections": rows}
+    return {"total": len(rows), "connections": rows, "scope": scope}
 
 
-def get_routines() -> dict[str, Any]:
+def get_routines(scope: str | None = None) -> dict[str, Any]:
     from web import routines_config
 
-    base = outreach_base()
+    base = outreach_base(scope)
     payload = routines_config.get_routines_display()
     for r in payload.get("routines") or []:
         r["last_run_relative"] = _relative_time(r.get("last_run_at"))
@@ -418,11 +456,13 @@ def _duration_label(started_at: str | None, finished_at: str | None) -> str | No
         return None
 
 
-def get_execution_history(*, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+def get_execution_history(
+    *, limit: int = 50, offset: int = 0, scope: str | None = None
+) -> dict[str, Any]:
     """Routine skill runs from ``logs/routine_runs.jsonl`` only."""
     from web import routines_config
 
-    base = outreach_base()
+    base = outreach_base(scope)
     entries: list[dict[str, Any]] = []
     names = {
         r["id"]: r.get("name")
@@ -513,8 +553,8 @@ def _meeting_channel(link: str | None) -> str | None:
     return "Video call"
 
 
-def get_meetings() -> dict[str, Any]:
-    base = outreach_base()
+def get_meetings(scope: str | None = None) -> dict[str, Any]:
+    base = outreach_base(scope)
     connections = {c.get("prospect_id"): c for c in _load_connections(base)}
     meetings: list[dict[str, Any]] = []
 
@@ -560,12 +600,11 @@ def get_meetings() -> dict[str, Any]:
     }
 
 
-def get_summary() -> dict[str, Any]:
-    base = outreach_base()
-    connections = get_connections()
-    meetings = get_meetings()
-    routines = get_routines()
-    health = get_health()
+def get_summary(scope: str | None = None) -> dict[str, Any]:
+    connections = get_connections(scope)
+    meetings = get_meetings(scope)
+    routines = get_routines(scope)
+    health = get_health(scope)
     pending_conn = sum(
         1
         for c in connections["connections"]

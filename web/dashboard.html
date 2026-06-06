@@ -44,6 +44,14 @@
       <span class="text-xl font-bold text-primary">OutreachPro</span>
       <span id="mode-badge" class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container">—</span>
     </div>
+    <div class="flex items-center gap-1 bg-surface-container-low border border-outline-variant rounded-full p-1" role="tablist" aria-label="Data view">
+      <a id="scope-link-live" href="/" class="scope-link scope-link--active px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+        <span class="material-symbols-outlined text-[14px]">public</span>Live
+      </a>
+      <a id="scope-link-mock" href="/mock" class="scope-link px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+        <span class="material-symbols-outlined text-[14px]">science</span>Mock
+      </a>
+    </div>
   </header>
 
   <div class="flex min-h-[calc(100vh-4rem)]">
@@ -65,6 +73,14 @@
           <span class="material-symbols-outlined">calendar_month</span>
           <span class="text-xs font-semibold tracking-wide">Meetings</span>
         </button>
+        <button type="button" data-tab="conversation" class="nav-item nav-item--mock text-on-surface-variant flex items-center p-3 gap-3 rounded-lg hover:bg-surface-container-high transition-all" hidden>
+          <span class="material-symbols-outlined">forum</span>
+          <span class="text-xs font-semibold tracking-wide">Conversation</span>
+        </button>
+        <button type="button" data-tab="regression" class="nav-item nav-item--mock text-on-surface-variant flex items-center p-3 gap-3 rounded-lg hover:bg-surface-container-high transition-all" hidden>
+          <span class="material-symbols-outlined">play_circle</span>
+          <span class="text-xs font-semibold tracking-wide">Regression</span>
+        </button>
       </nav>
       <p id="campaign-goal" class="text-[11px] text-on-surface-variant px-2 border-t border-outline-variant pt-4"></p>
     </aside>
@@ -84,6 +100,8 @@
       <p id="error-connections" class="text-error text-sm mb-4" hidden></p>
       <p id="error-routines" class="text-error text-sm mb-4" hidden></p>
       <p id="error-meetings" class="text-error text-sm mb-4" hidden></p>
+      <p id="error-conversation" class="text-error text-sm mb-4" hidden></p>
+      <p id="error-regression" class="text-error text-sm mb-4" hidden></p>
 
       <section class="tab-panel" data-tab="connections">
         <div class="bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
@@ -188,6 +206,112 @@
         </div>
       </section>
 
+      <section class="tab-panel" data-tab="conversation" hidden>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
+          <div class="xl:col-span-2 bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
+            <div class="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low gap-3 flex-wrap">
+              <div class="flex items-center gap-3">
+                <h2 class="text-lg font-semibold">Live mock thread</h2>
+                <span id="mock-conv-session-badge" class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container">no session</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <span id="mock-conv-meta" class="text-[11px] text-on-surface-variant">—</span>
+                <select id="mock-conv-session-select" class="text-xs border border-outline-variant rounded-md px-2 py-1 hidden"></select>
+              </div>
+            </div>
+            <div class="p-4 bg-surface-container-low border-b border-outline-variant flex flex-wrap gap-3 text-[11px] text-on-surface-variant">
+              <div><span class="font-bold text-on-surface">Stage:</span> <span id="mock-conv-stage">—</span></div>
+              <div><span class="font-bold text-on-surface">Next action:</span> <span id="mock-conv-next-action">—</span></div>
+              <div><span class="font-bold text-on-surface">Email:</span> <span id="mock-conv-email">—</span></div>
+              <div><span class="font-bold text-on-surface">Meeting:</span> <span id="mock-conv-meeting">—</span></div>
+            </div>
+            <div id="mock-conv-thread" class="px-4 py-5 space-y-3 max-h-[60vh] overflow-y-auto">
+              <p class="text-sm text-on-surface-variant">Waiting for a mock session…</p>
+            </div>
+          </div>
+
+          <aside class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 space-y-4">
+            <div>
+              <h3 class="text-base font-semibold mb-1">Test case</h3>
+              <p id="mock-conv-case-id" class="text-xs font-bold text-primary">—</p>
+              <p id="mock-conv-case-desc" class="text-[11px] text-on-surface-variant mt-1 leading-relaxed">—</p>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[11px] text-on-surface-variant">
+              <div class="bg-surface-container-low rounded-lg p-2">
+                <div class="uppercase font-bold text-[10px] tracking-wider">Operator turns</div>
+                <div id="mock-conv-stat-op" class="text-base font-bold text-on-surface">—</div>
+              </div>
+              <div class="bg-surface-container-low rounded-lg p-2">
+                <div class="uppercase font-bold text-[10px] tracking-wider">Prospect replies</div>
+                <div id="mock-conv-stat-prospect" class="text-base font-bold text-on-surface">—</div>
+              </div>
+              <div class="bg-surface-container-low rounded-lg p-2">
+                <div class="uppercase font-bold text-[10px] tracking-wider">Reply slots</div>
+                <div id="mock-conv-stat-slots" class="text-base font-bold text-on-surface">—</div>
+              </div>
+              <div class="bg-surface-container-low rounded-lg p-2">
+                <div class="uppercase font-bold text-[10px] tracking-wider">Ended</div>
+                <div id="mock-conv-stat-ended" class="text-base font-bold text-on-surface">—</div>
+              </div>
+            </div>
+            <div>
+              <h3 class="text-base font-semibold mb-1">Stage history</h3>
+              <ol id="mock-conv-stage-history" class="space-y-1 text-[11px] text-on-surface-variant"></ol>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-tab="regression" hidden>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-1 bg-surface-container-lowest rounded-xl border border-outline-variant p-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <h2 class="text-lg font-semibold">Regression run</h2>
+              <span id="regression-status-badge" class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container">idle</span>
+            </div>
+            <p class="text-[11px] text-on-surface-variant leading-relaxed">
+              Spawns <code>pytest tests/test_regression_workflow.py</code> with
+              <code>OUTREACH_MOCK=1</code>. Watch the Conversation tab to see the
+              mock DM thread tick forward as the harness sends each turn.
+            </p>
+            <label class="block text-xs font-semibold text-on-surface-variant mb-1" for="regression-case-select">Test case</label>
+            <select id="regression-case-select" class="w-full border border-outline-variant rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="">Loading…</option>
+            </select>
+            <p id="regression-case-detail" class="text-[11px] text-on-surface-variant"></p>
+            <div class="flex flex-col gap-2">
+              <button type="button" id="btn-regression-run" class="w-full px-4 py-2 bg-primary text-on-primary rounded-lg text-sm font-bold hover:brightness-110 flex items-center justify-center gap-2">
+                <span id="regression-run-spinner" class="material-symbols-outlined text-base animate-spin hidden">progress_activity</span>
+                <span class="material-symbols-outlined text-base">play_arrow</span>
+                Run regression
+              </button>
+              <button type="button" id="btn-regression-stop" class="w-full px-4 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-sm font-bold hover:bg-surface-container-high flex items-center justify-center gap-2" disabled>
+                <span class="material-symbols-outlined text-base">stop</span>
+                Stop run
+              </button>
+            </div>
+            <div class="border-t border-outline-variant pt-3 space-y-1 text-[11px] text-on-surface-variant">
+              <div><span class="font-bold text-on-surface">Started:</span> <span id="regression-started">—</span></div>
+              <div><span class="font-bold text-on-surface">Finished:</span> <span id="regression-finished">—</span></div>
+              <div><span class="font-bold text-on-surface">PID:</span> <span id="regression-pid">—</span></div>
+              <div><span class="font-bold text-on-surface">Exit code:</span> <span id="regression-exit-code">—</span></div>
+              <div id="regression-error" class="text-error" hidden></div>
+            </div>
+          </div>
+
+          <div class="lg:col-span-2 bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+              <div>
+                <h2 class="text-lg font-semibold">Live log</h2>
+                <p id="regression-log-path" class="text-[10px] text-on-surface-variant"></p>
+              </div>
+              <button type="button" id="btn-regression-clear" class="text-[11px] font-bold text-on-surface-variant hover:text-primary">Clear view</button>
+            </div>
+            <pre id="regression-log" class="regression-log px-4 py-4 text-[11px] leading-snug overflow-y-auto bg-[#0b1c30] text-emerald-200 font-mono whitespace-pre-wrap min-h-[60vh] max-h-[70vh]">No regression run yet — press <span class="text-amber-300">Run regression</span> to start.</pre>
+          </div>
+        </div>
+      </section>
+
       <section class="tab-panel" data-tab="meetings" hidden>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <div class="bg-white p-5 rounded-xl border border-outline-variant">
@@ -244,6 +368,12 @@
     </button>
     <button type="button" data-tab="meetings" class="nav-item flex flex-col items-center gap-0.5 text-on-surface-variant text-[10px]">
       <span class="material-symbols-outlined text-xl">calendar_month</span>Meetings
+    </button>
+    <button type="button" data-tab="conversation" class="nav-item nav-item--mock flex flex-col items-center gap-0.5 text-on-surface-variant text-[10px]" hidden>
+      <span class="material-symbols-outlined text-xl">forum</span>DMs
+    </button>
+    <button type="button" data-tab="regression" class="nav-item nav-item--mock flex flex-col items-center gap-0.5 text-on-surface-variant text-[10px]" hidden>
+      <span class="material-symbols-outlined text-xl">play_circle</span>Regress
     </button>
   </nav>
 

@@ -124,7 +124,19 @@ _browse_lock = asyncio.Lock()
 # ── Mock mode flag ────────────────────────────────────────────────────────────
 
 def _mock_mcp_enabled() -> bool:
-    """Return True to run in mock mode (no browser, scripted responses)."""
+    """Return True to run in mock mode (no browser, scripted responses).
+
+    ``OUTREACH_MOCK=1`` (also ``true``/``yes``) flips the server into mock mode
+    so the dashboard's regression panel and ``make regression`` can request
+    scripted responses without editing this source. Anything else falls back to
+    live mode — keeping live-mode the default for the operator's day-to-day MCP
+    process.
+    """
+    import os
+
+    env = os.environ.get("OUTREACH_MOCK", "").strip().lower()
+    if env in ("1", "true", "yes"):
+        return True
     return False
 
 

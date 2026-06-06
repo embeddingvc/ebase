@@ -1,14 +1,40 @@
+const SCOPE = location.pathname === "/mock" ? "mock" : "live";
+const IS_MOCK = SCOPE === "mock";
+
+function withScope(url) {
+  if (!IS_MOCK) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}scope=mock`;
+}
+
 const API = {
   health: "/api/dashboard/health",
   connections: "/api/dashboard/connections",
   routines: "/api/dashboard/routines",
   execution: "/api/dashboard/execution-history",
   meetings: "/api/dashboard/meetings",
+  mockConversation: "/api/mock/conversation",
+  regressionCases: "/api/mock/regression/cases",
+  regressionStatus: "/api/mock/regression/status",
+  regressionRun: "/api/mock/regression/run",
+  regressionStop: "/api/mock/regression/stop",
 };
 
 let currentTab = "connections";
 
 const HEALTH_POLL_MS = 15000;
+const CONVERSATION_POLL_MS = 1500;
+const REGRESSION_POLL_MS = 1000;
+
+let mockConvSessions = [];
+let mockConvSelectedKey = null;
+let mockConvLastHistoryLen = 0;
+let mockConvPollTimer = null;
+let regressionPollTimer = null;
+let regressionRunning = false;
+let regressionLogCleared = false;
+let regressionCases = [];
+let regressionStatusCache = null;
 
 async function fetchJson(url, options) {
   const res = await fetch(url, options);
@@ -87,13 +113,14 @@ function renderHealth(data) {
   el("queue-load").textContent = `${q.load_pct ?? 0}%`;
   el("queue-bar").style.width = `${q.load_pct ?? 0}%`;
   el("queue-detail").textContent = `${q.pending ?? 0} pending · ${q.completed ?? 0} done · ${q.failed ?? 0} failed`;
-  el("system-tip").textContent = `${data.mcp_mode === "mock" ? "Mock" : "Live"} · ${data.data_root || "—"}`;
-  el("mode-badge").textContent = data.mcp_mode === "mock" ? "Mock" : "Live";
+  const modeLabel = data.mcp_mode === "mock" ? "Mock" : "Live";
+  el("system-tip").textContent = `${modeLabel} · ${data.data_root || "—"}`;
+  el("mode-badge").textContent = modeLabel;
 }
 
 async function refreshHealth() {
   try {
-    renderHealth(await fetchJson(API.health));
+    renderHealth(await fetchJson(withScope(API.health)));
   } catch (err) {
     el("health-list").innerHTML = `<p class="text-[#ba1a1a] text-sm">${escapeHtml(err.message)}</p>`;
   }
@@ -160,7 +187,7 @@ function renderConnections(data) {
 
 async function refreshCampaignGoal() {
   try {
-    const data = await fetchJson(API.routines);
+    const data = await fetchJson(withScope(API.routines));
     if (data.campaign_goal) el("campaign-goal").textContent = data.campaign_goal;
   } catch {
     // The campaign-goal sidebar line is best-effort; failures are silent.
@@ -256,21 +283,418 @@ function renderMeetings(data) {
     .join("");
 }
 
+// ── Mock conversation (Conversation tab) ─────────────────────────────────────
+
+function selectedMockSession() {
+  if (!mockConvSessions.length) return null;
+  if (mockConvSelectedKey) {
+    const hit = mockConvSessions.find((s) => s.session_key === mockConvSelectedKey);
+    if (hit) return hit;
+  }
+  return mockConvSessions[0];
+}
+
+function renderChatBubble(msg, isNew) {
+  const sender = msg.sender === "operator" ? "operator" : "prospect";
+  const label = sender === "operator" ? "You" : "Prospect";
+  const step = msg.sequence_step != null ? ` · step ${msg.sequence_step}` : "";
+  const attachments = (msg.attachments || [])
+    .map(
+      (a) =>
+        `<span class="chat-attachment"><span class="material-symbols-outlined text-[14px]">attach_file</span>${escapeHtml(a)}</span>`
+    )
+    .join("");
+  const newClass = isNew ? " chat-message--new" : "";
+  return [
+    `<div class="chat-message chat-message--${sender}${newClass}" data-index="${msg.index}">`,
+    '<div class="flex flex-col max-w-[78%]">',
+    `<div class="chat-meta">${escapeHtml(label)}${escapeHtml(step)}</div>`,
+    `<div class="chat-bubble">${escapeHtml(msg.text || "")}${attachments}</div>`,
+    "</div></div>",
+  ].join("");
+}
+
+function renderMockConversationThread(session, prevLen) {
+  const thread = el("mock-conv-thread");
+  const history = session?.history || [];
+  if (!history.length) {
+    thread.innerHTML = '<p class="text-sm text-on-surface-variant">No messages in this session yet.</p>';
+    mockConvLastHistoryLen = 0;
+    return;
+  }
+  const startNewAt = prevLen > 0 && history.length > prevLen ? prevLen : history.length;
+  thread.innerHTML = history
+    .map((msg, idx) => renderChatBubble(msg, idx >= startNewAt))
+    .join("");
+  mockConvLastHistoryLen = history.length;
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function renderMockConversationMeta(session) {
+  if (!session) {
+    el("mock-conv-session-badge").textContent = "no session";
+    el("mock-conv-meta").textContent = "—";
+    el("mock-conv-stage").textContent = "—";
+    el("mock-conv-next-action").textContent = "—";
+    el("mock-conv-email").textContent = "—";
+    el("mock-conv-meeting").textContent = "—";
+    el("mock-conv-case-id").textContent = "—";
+    el("mock-conv-case-desc").textContent = "—";
+    el("mock-conv-stat-op").textContent = "—";
+    el("mock-conv-stat-prospect").textContent = "—";
+    el("mock-conv-stat-slots").textContent = "—";
+    el("mock-conv-stat-ended").textContent = "—";
+    el("mock-conv-stage-history").innerHTML = "";
+    return;
+  }
+
+  const prospect = session.prospect || {};
+  const conv = session.conversation || {};
+  const tc = session.test_case || {};
+  const name = prospect.name || session.prospect_id || "session";
+  const badge = session.ended ? "ended" : session.connection_accepted ? "connected" : "active";
+  el("mock-conv-session-badge").textContent = badge;
+  el("mock-conv-meta").textContent = [
+    name,
+    session.test_case_id ? `case ${session.test_case_id}` : null,
+    `${session.history_length ?? 0} msgs`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  el("mock-conv-stage").textContent = conv.outreach_stage || prospect.outreach_stage || "—";
+  el("mock-conv-next-action").textContent = conv.next_action || "—";
+  el("mock-conv-email").textContent = conv.email || "—";
+  el("mock-conv-meeting").textContent = conv.meeting_link || "—";
+
+  el("mock-conv-case-id").textContent = session.test_case_id || "—";
+  el("mock-conv-case-desc").textContent = tc.description || "—";
+
+  const opTurns = (session.history || []).filter((m) => m.sender === "operator").length;
+  const prospectTurns = (session.history || []).filter((m) => m.sender === "prospect").length;
+  el("mock-conv-stat-op").textContent = String(opTurns);
+  el("mock-conv-stat-prospect").textContent = String(prospectTurns);
+  el("mock-conv-stat-slots").textContent =
+    tc.total_reply_slots != null
+      ? `${prospectTurns}/${tc.non_null_replies ?? tc.total_reply_slots}`
+      : String(prospectTurns);
+  el("mock-conv-stat-ended").textContent = session.ended
+    ? session.ended_reason || "yes"
+    : "no";
+
+  const stages = conv.stage_history || [];
+  const histEl = el("mock-conv-stage-history");
+  if (!stages.length) {
+    histEl.innerHTML = '<li class="text-on-surface-variant">—</li>';
+  } else {
+    histEl.innerHTML = stages
+      .map(
+        (s) =>
+          `<li><span class="font-bold text-on-surface">${escapeHtml(s.stage || "—")}</span> · ${escapeHtml(s.entered_at || s.at || "")}</li>`
+      )
+      .join("");
+  }
+
+  const select = el("mock-conv-session-select");
+  if (mockConvSessions.length > 1) {
+    select.hidden = false;
+    select.innerHTML = mockConvSessions
+      .map((s) => {
+        const label = s.prospect?.name || s.prospect_id || s.session_key;
+        const selected = s.session_key === session.session_key ? " selected" : "";
+        return `<option value="${escapeHtml(s.session_key)}"${selected}>${escapeHtml(label)}</option>`;
+      })
+      .join("");
+  } else {
+    select.hidden = true;
+    select.innerHTML = "";
+  }
+}
+
+function renderMockConversation(data) {
+  mockConvSessions = data.sessions || [];
+  if (!mockConvSelectedKey && mockConvSessions.length) {
+    mockConvSelectedKey = mockConvSessions[0].session_key;
+  }
+  const session = selectedMockSession();
+  const prevLen = mockConvLastHistoryLen;
+  renderMockConversationMeta(session);
+  if (session) {
+    renderMockConversationThread(session, prevLen);
+  } else {
+    el("mock-conv-thread").innerHTML =
+      '<p class="text-sm text-on-surface-variant">Waiting for a mock session…</p>';
+    mockConvLastHistoryLen = 0;
+  }
+}
+
+async function refreshMockConversation() {
+  const errEl = el("error-conversation");
+  if (errEl) errEl.hidden = true;
+  try {
+    renderMockConversation(await fetchJson(API.mockConversation));
+  } catch (err) {
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = `Failed to load mock conversation: ${err.message}`;
+    }
+  }
+}
+
+function shouldPollConversation() {
+  return IS_MOCK && (currentTab === "conversation" || regressionRunning);
+}
+
+function updateConversationPolling() {
+  if (shouldPollConversation()) {
+    if (!mockConvPollTimer) {
+      mockConvPollTimer = setInterval(() => {
+        refreshMockConversation();
+      }, CONVERSATION_POLL_MS);
+    }
+  } else if (mockConvPollTimer) {
+    clearInterval(mockConvPollTimer);
+    mockConvPollTimer = null;
+  }
+}
+
+// ── Regression runner (Regression tab) ───────────────────────────────────────
+
+function regressionIsActive(status) {
+  return status === "starting" || status === "running";
+}
+
+function formatIsoLocal(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+function renderRegressionStatus(data) {
+  regressionStatusCache = data;
+  const status = data.status || "idle";
+  regressionRunning = regressionIsActive(status);
+
+  const badge = el("regression-status-badge");
+  badge.textContent = status;
+  badge.className = `text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded regression-status-badge--${status}`;
+
+  el("regression-started").textContent = formatIsoLocal(data.started_at);
+  el("regression-finished").textContent = formatIsoLocal(data.finished_at);
+  el("regression-pid").textContent = data.pid != null ? String(data.pid) : "—";
+  el("regression-exit-code").textContent = data.exit_code != null ? String(data.exit_code) : "—";
+
+  const errBox = el("regression-error");
+  if (data.error) {
+    errBox.hidden = false;
+    errBox.textContent = data.error;
+  } else {
+    errBox.hidden = true;
+    errBox.textContent = "";
+  }
+
+  el("regression-log-path").textContent = data.log_path ? `Log: ${data.log_path}` : "";
+
+  const runBtn = el("btn-regression-run");
+  const stopBtn = el("btn-regression-stop");
+  const spinner = el("regression-run-spinner");
+  const active = regressionRunning;
+  runBtn.disabled = active;
+  stopBtn.disabled = !active;
+  spinner.classList.toggle("hidden", !active);
+
+  if (!regressionLogCleared || regressionRunning) {
+    const logEl = el("regression-log");
+    const lines = data.log_tail || [];
+    logEl.textContent = lines.length
+      ? lines.join("\n")
+      : 'No regression run yet — press "Run regression" to start.';
+    logEl.scrollTop = logEl.scrollHeight;
+    if (regressionRunning) regressionLogCleared = false;
+  }
+
+  updateConversationPolling();
+  updateRegressionPolling();
+}
+
+async function refreshRegressionStatus() {
+  const errEl = el("error-regression");
+  if (errEl) errEl.hidden = true;
+  try {
+    renderRegressionStatus(await fetchJson(API.regressionStatus));
+  } catch (err) {
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = `Failed to load regression status: ${err.message}`;
+    }
+  }
+}
+
+function shouldPollRegression() {
+  return IS_MOCK && (currentTab === "regression" || regressionRunning);
+}
+
+function updateRegressionPolling() {
+  if (shouldPollRegression()) {
+    if (!regressionPollTimer) {
+      regressionPollTimer = setInterval(() => {
+        refreshRegressionStatus();
+      }, REGRESSION_POLL_MS);
+    }
+  } else if (regressionPollTimer) {
+    clearInterval(regressionPollTimer);
+    regressionPollTimer = null;
+  }
+}
+
+function renderRegressionCasePicker() {
+  const select = el("regression-case-select");
+  if (!regressionCases.length) {
+    select.innerHTML = '<option value="happy_path">happy_path (default)</option>';
+    return;
+  }
+  select.innerHTML = regressionCases
+    .map((c) => {
+      const label = `${c.case_id}${c.prospect_name ? ` — ${c.prospect_name}` : ""}`;
+      return `<option value="${escapeHtml(c.case_id)}">${escapeHtml(label)}</option>`;
+    })
+    .join("");
+  updateRegressionCaseDetail();
+}
+
+function updateRegressionCaseDetail() {
+  const select = el("regression-case-select");
+  const detail = el("regression-case-detail");
+  const caseId = select?.value;
+  const hit = regressionCases.find((c) => c.case_id === caseId);
+  if (!hit) {
+    detail.textContent = "";
+    return;
+  }
+  const parts = [
+    hit.description,
+    hit.end_condition ? `End: ${hit.end_condition}` : null,
+    hit.total_reply_slots != null ? `${hit.non_null_replies}/${hit.total_reply_slots} reply slots` : null,
+  ].filter(Boolean);
+  detail.textContent = parts.join(" · ");
+}
+
+async function loadRegressionCases() {
+  try {
+    const data = await fetchJson(API.regressionCases);
+    regressionCases = data.cases || [];
+    renderRegressionCasePicker();
+  } catch {
+    regressionCases = [];
+    renderRegressionCasePicker();
+  }
+}
+
+async function startRegressionRun() {
+  const caseId = el("regression-case-select")?.value || "happy_path";
+  const errEl = el("error-regression");
+  if (errEl) errEl.hidden = true;
+  regressionLogCleared = false;
+  mockConvLastHistoryLen = 0;
+  try {
+    renderRegressionStatus(
+      await fetchJson(API.regressionRun, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ case_id: caseId }),
+      })
+    );
+    updateConversationPolling();
+    updateRegressionPolling();
+    refreshMockConversation();
+  } catch (err) {
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = err.message;
+    }
+  }
+}
+
+async function stopRegressionRun() {
+  const errEl = el("error-regression");
+  if (errEl) errEl.hidden = true;
+  try {
+    renderRegressionStatus(
+      await fetchJson(API.regressionStop, { method: "POST" })
+    );
+  } catch (err) {
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = err.message;
+    }
+  }
+}
+
+function initRegressionControls() {
+  el("btn-regression-run")?.addEventListener("click", startRegressionRun);
+  el("btn-regression-stop")?.addEventListener("click", stopRegressionRun);
+  el("regression-case-select")?.addEventListener("change", updateRegressionCaseDetail);
+  el("btn-regression-clear")?.addEventListener("click", () => {
+    regressionLogCleared = true;
+    el("regression-log").textContent = "(log view cleared — polling will resume on next update)";
+  });
+}
+
+function initMockConversationControls() {
+  el("mock-conv-session-select")?.addEventListener("change", (e) => {
+    mockConvSelectedKey = e.target.value;
+    mockConvLastHistoryLen = 0;
+    refreshMockConversation();
+  });
+}
+
+// ── Scope UI (Live vs Mock) ──────────────────────────────────────────────────
+
+function initScopeUI() {
+  const liveLink = el("scope-link-live");
+  const mockLink = el("scope-link-mock");
+  const hash = location.hash || "#connections";
+
+  if (liveLink) {
+    liveLink.href = `/${hash}`;
+    liveLink.classList.toggle("scope-link--active", !IS_MOCK);
+  }
+  if (mockLink) {
+    mockLink.href = `/mock${hash}`;
+    mockLink.classList.toggle("scope-link--active", IS_MOCK);
+  }
+
+  document.querySelectorAll(".nav-item--mock").forEach((node) => {
+    node.hidden = !IS_MOCK;
+  });
+}
+
 function stampLastSynced() {
-  const el = document.getElementById("last-synced");
-  if (!el) return;
+  const syncEl = document.getElementById("last-synced");
+  if (!syncEl) return;
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, "0");
   const mm = String(now.getMinutes()).padStart(2, "0");
   const ss = String(now.getSeconds()).padStart(2, "0");
-  el.textContent = `Last synced at ${hh}:${mm}:${ss}`;
-  el.classList.remove("hidden");
+  syncEl.textContent = `Last synced at ${hh}:${mm}:${ss}`;
+  syncEl.classList.remove("hidden");
 }
 
 function refreshCurrentTab() {
   refreshHealth();
   loadTab(currentTab).then(stampLastSynced);
 }
+
+const TAB_TITLES = {
+  connections: ["Prospect Performance", "Active connections and outreach stages."],
+  routines: ["Routine Run History", "Recent runs of the per-prospect scheduler sweeps."],
+  meetings: ["Scheduled Meetings", "Prospects who showed meeting interest."],
+  conversation: ["Mock conversation", "Live DM thread synced from mock_linkedin_sessions.json."],
+  regression: ["Regression test", "Run pytest against the mock outreach workflow."],
+};
 
 function setTab(tabId) {
   currentTab = tabId;
@@ -284,14 +708,11 @@ function setTab(tabId) {
     btn.classList.toggle("text-[#404850]", !active);
     btn.classList.toggle("font-bold", active);
   });
-  const titles = {
-    connections: ["Prospect Performance", "Active connections and outreach stages."],
-    routines: ["Routine Run History", "Recent runs of the per-prospect scheduler sweeps."],
-    meetings: ["Scheduled Meetings", "Prospects who showed meeting interest."],
-  };
-  const [title, sub] = titles[tabId] || titles.connections;
+  const [title, sub] = TAB_TITLES[tabId] || TAB_TITLES.connections;
   el("page-title").textContent = title;
   el("page-subtitle").textContent = sub;
+  updateConversationPolling();
+  updateRegressionPolling();
 }
 
 async function loadTab(tabId) {
@@ -299,11 +720,15 @@ async function loadTab(tabId) {
   if (errEl) errEl.hidden = true;
   try {
     if (tabId === "connections") {
-      renderConnections(await fetchJson(API.connections));
+      renderConnections(await fetchJson(withScope(API.connections)));
     } else if (tabId === "routines") {
-      renderExecution(await fetchJson(`${API.execution}?limit=50&offset=0`));
+      renderExecution(await fetchJson(`${withScope(API.execution)}?limit=50&offset=0`));
     } else if (tabId === "meetings") {
-      renderMeetings(await fetchJson(API.meetings));
+      renderMeetings(await fetchJson(withScope(API.meetings)));
+    } else if (tabId === "conversation") {
+      await refreshMockConversation();
+    } else if (tabId === "regression") {
+      await refreshRegressionStatus();
     }
   } catch (err) {
     if (errEl) {
@@ -367,7 +792,18 @@ function initModals() {
   });
 }
 
+function validTabs() {
+  const tabs = new Set(["connections", "routines", "meetings"]);
+  if (IS_MOCK) {
+    tabs.add("conversation");
+    tabs.add("regression");
+  }
+  return tabs;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  initScopeUI();
+
   document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -376,8 +812,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
   initModals();
-  const validTabs = new Set(["connections", "routines", "meetings"]);
-  const initialTab = validTabs.has(location.hash.slice(1)) ? location.hash.slice(1) : "connections";
+
+  if (IS_MOCK) {
+    initRegressionControls();
+    initMockConversationControls();
+    loadRegressionCases();
+    refreshRegressionStatus();
+  }
+
+  const tabs = validTabs();
+  const hashTab = location.hash.slice(1);
+  const initialTab = tabs.has(hashTab) ? hashTab : "connections";
   setTab(initialTab);
   Promise.all([refreshHealth(), refreshCampaignGoal(), loadTab(initialTab)]).then(stampLastSynced);
   setInterval(refreshHealth, HEALTH_POLL_MS);

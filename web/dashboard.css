@@ -143,3 +143,148 @@ body {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* ── Live/Mock scope toggle in the header ───────────────────────────────── */
+
+.scope-link {
+  color: #404850;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.scope-link:hover {
+  background: #e6e8ea;
+}
+
+.scope-link--active {
+  background: #005d8f;
+  color: #ffffff;
+}
+
+.scope-link--active:hover {
+  background: #00496e;
+}
+
+/* ── Mock conversation thread (Conversation tab) ────────────────────────── */
+
+.chat-message {
+  display: flex;
+  width: 100%;
+}
+
+.chat-message + .chat-message {
+  margin-top: 0.5rem;
+}
+
+.chat-bubble {
+  max-width: 78%;
+  padding: 0.65rem 0.85rem;
+  border-radius: 1rem;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.chat-message--operator {
+  justify-content: flex-end;
+}
+
+.chat-message--operator .chat-bubble {
+  background: #005d8f;
+  color: #ffffff;
+  border-color: #00476e;
+  border-top-right-radius: 0.25rem;
+}
+
+.chat-message--prospect {
+  justify-content: flex-start;
+}
+
+.chat-message--prospect .chat-bubble {
+  background: #f2f4f6;
+  color: #191c1e;
+  border-color: #bfc7d1;
+  border-top-left-radius: 0.25rem;
+}
+
+.chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+  opacity: 0.85;
+}
+
+.chat-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.chat-message--operator .chat-attachment {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+@keyframes chat-arrive {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.chat-message--new .chat-bubble {
+  animation: chat-arrive 0.45s ease-out;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35);
+}
+
+/* ── Regression panel ───────────────────────────────────────────────────── */
+
+.regression-log {
+  scrollbar-color: #2c3e50 transparent;
+}
+
+.regression-status-badge--idle {
+  background: #d5e0f8;
+  color: #586377;
+}
+
+.regression-status-badge--starting,
+.regression-status-badge--running {
+  background: #fef3c7;
+  color: #92400e;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.regression-status-badge--passed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.regression-status-badge--failed,
+.regression-status-badge--error {
+  background: #ffdad6;
+  color: #93000a;
+}
+
+.regression-status-badge--cancelled {
+  background: #e5e7eb;
+  color: #374151;
+}
