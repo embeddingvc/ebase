@@ -26,11 +26,13 @@ outreach/logs/actions.jsonl
 # Mock LinkedIn session store (persisted across MCP subprocesses; scenario-local only)
 outreach/mock/mock_linkedin_sessions.json
 
-# Local generated/user-specific outreach data
+# Local generated/user-specific outreach data (keep committed fixtures)
 outreach/connections.json
 outreach/generated/
 outreach/mock/connections.json
-outreach/mock/*/*.json
+outreach/mock/conversations/*.json
+outreach/mock/prospects/*.json
+outreach/mock/logs/
 outreach/mock/storage/
 outreach/logs/planned_messages.jsonl
 outreach/conversations/*.json
@@ -43,3 +45,4 @@ CLAUDE.md
 .mcp.json
 outreach/config/dashboard_routines.json
 outreach/storage/web.pid
+outreach/mock/config/dashboard_routines.json

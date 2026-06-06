@@ -7,9 +7,10 @@ MCP.  :func:`handle_parse_profile` imports small slot-formatting helpers from
 other handlers stay free of Playwright.
 
 LinkedIn tool mocks (``scrape_profile``, ``is_first_degree_connection``, ``send_connection_request``,
-``send_message``, ``fetch_chat_history``) always centre on the ``_ALEX_CHEN`` fixture: if
-``handle_load_test_case`` was not used first (tests only), a session is auto-created from ``happy_path``,
-which uses that prospect and its scripted replies. Other scenarios require ``handle_load_test_case`` first.
+``send_message``, ``fetch_chat_history``) centre on the default fixture (``happy_path``): if
+``handle_load_test_case`` was not used first (tests only), a session is auto-created from
+``outreach/mock/fixtures/happy_path.json``, which defines the prospect and scripted replies.
+Other scenarios require ``handle_load_test_case`` first.
 
 Mock DM session state (history and counters) is saved under ``outreach/mock/mock_linkedin_sessions.json``
 whenever mock ``send_*`` or ``handle_load_test_case`` mutates a session, so each new MCP host process
@@ -50,12 +51,19 @@ import json
 import logging
 import os
 import re
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from outreach.mock.fixtures_loader import load_test_cases  # noqa: E402
 
 logger = logging.getLogger("linkedin.mock")
 
@@ -107,65 +115,10 @@ def _read_encoded_sessions_disk() -> dict[str, dict[str, Any]]:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PROSPECT FIXTURES
+# TEST CASE REGISTRY (loaded from outreach/mock/fixtures/*.json)
 # ═════════════════════════════════════════════════════════════════════════════
 
-# Default prospect used by all built-in test cases.
-_ALEX_CHEN: dict[str, Any] = {
-    "linkedin_url": "https://www.linkedin.com/in/alex-chen-softeng/",
-    "name": "Alex Chen",
-    "title": "Senior Software Engineer",
-    "company": "Stripe",
-    "location": "San Francisco, CA",
-    "connection_degree": 2,
-    "mutual_connections": ["Jordan Park", "Sam Liu"],
-    "about": (
-        "Distributed systems engineer with 6 years at Google and Stripe. "
-        "Passionate about high-scale infrastructure, event-driven architectures, "
-        "and developer tooling."
-    ),
-    "recent_posts": [
-        {
-            "text": (
-                "Just wrapped up migrating our payment service to a new event-driven "
-                "architecture. The latency improvements were worth every painful debugging "
-                "session. Distributed systems are hard but beautiful."
-            ),
-            "likes": 142,
-            "timestamp": "2026-03-20",
-        },
-        {
-            "text": (
-                "Hot take: the best engineers I've worked with all have a habit of "
-                "writing things down. Docs, ADRs, post-mortems — it compounds over time."
-            ),
-            "likes": 89,
-            "timestamp": "2026-03-15",
-        },
-    ],
-    "connection_status": "none",
-    "outreach_stage": "cold",
-    "end_goal": "schedule_meeting",
-    "outreach_topic": "Series A ML infra roles in the portfolio",
-    "target_action": None,
-    "notes": (
-        "Strong distributed systems background. "
-        "Mentioned open to new roles in a comment 3 weeks ago."
-    ),
-    "scraped_at": "2026-03-24T00:00:00Z",
-}
-
-# Default mock persona for all LinkedIn tools when ``handle_load_test_case`` was not called first.
-# ``happy_path`` uses ``_ALEX_CHEN`` as its prospect and scripted replies.
-_DEFAULT_MOCK_TEST_CASE_ID = "happy_path"
-
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TEST CASE REGISTRY
-# ═════════════════════════════════════════════════════════════════════════════
-
-# Schema for each test case:
+# Schema for each test case (see ``outreach/mock/fixtures/happy_path.json``):
 #
 #   description         str   — human-readable summary
 #   prospect            dict  — returned verbatim by scrape_profile
@@ -175,57 +128,13 @@ _DEFAULT_MOCK_TEST_CASE_ID = "happy_path"
 #                               message number (0-based):
 #                                 index 0 = reply to the connection note
 #                                 index 1 = reply to the 1st send_message call
-#                                 index 2 = reply to the 2nd send_message call
 #                                 …
 #                               Each non-None entry: {"text": str, "attachments": list}
 #                               None means the prospect stays silent at that turn.
 
-TEST_CASES: dict[str, dict[str, Any]] = {
+_DEFAULT_MOCK_TEST_CASE_ID = "happy_path"
 
-    # ── 1. Full happy path ────────────────────────────────────────────────────
-    "happy_path": {
-        "description": (
-            "Full 4-turn conversation. Prospect is curious about career options, "
-            "discusses early-stage ML infra ambitions, and ultimately shares resume."
-        ),
-        "prospect": _ALEX_CHEN,
-        "connection_accepted": True,
-        "end_condition": "meeting_scheduled",
-        "replies": [
-            # [0] reply to connection note
-            {
-                "text": (
-                    "Thanks Nova! Yeah I'm always curious what's out there. "
-                    "What kind of companies are you working with?"
-                ),
-            },
-            # [1] reply to first DM (career question)
-            {
-                "text": (
-                    "Honestly I love the scale problems at Stripe but I've been itching "
-                    "to work on something earlier stage. The architecture migration was fun "
-                    "but I miss the 0-to-1 feeling. Been looking at some ML infra teams."
-                ),
-            },
-            # [2] reply to second DM (join vs build)
-            {
-                "text": (
-                    "Joining for now — I want to learn the ML side more before starting "
-                    "something. Ideally a Series A company where I can own a big chunk of "
-                    "the infra. Definitely open to hearing about what's in your network."
-                ),
-            },
-            # [3] reply to third DM (schedule call)
-            {
-                "text": "Hey I would love to meet sometime for a more thorough conversation. I'm available anytime next week.",
-            },
-            # [4] reply to fourth DM (email)
-            {
-                "text": "Sure my email is alexchen336@gmail.com. Let's schedule a call next week.",
-            },
-        ],
-    },
-}
+TEST_CASES: dict[str, dict[str, Any]] = load_test_cases()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -456,7 +365,7 @@ def get_session(profile_url: str) -> MockSession | None:
 def ensure_default_mock_session(profile_url: str) -> MockSession:
     """
     Return the session for profile_url, creating one from ``_DEFAULT_MOCK_TEST_CASE_ID``
-    (``happy_path`` → _ALEX_CHEN) if ``handle_load_test_case`` was never called.
+    (``happy_path`` default fixture) if ``handle_load_test_case`` was never called.
     """
     key = normalise_url(profile_url)
     _hydrate_from_disk(key)
@@ -629,7 +538,7 @@ async def handle_get_mock_state(profile_url: str) -> str:
 async def handle_scrape_profile(profile_url: str) -> str:
     """
     Return the prospect dict for the active or auto-created mock session
-    (always the ``_ALEX_CHEN``-based prospect from the session's test case).
+    (prospect from the session's test-case fixture).
     """
     session = ensure_default_mock_session(profile_url)
     tc = TEST_CASES[session.test_case_id]

@@ -14,17 +14,12 @@ to the raw thread.
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from outreach.mock.fixtures_loader import get_fixture, list_case_summaries
 from web.dashboard_data import _read_json, mock_base
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-_TOOLS = REPO_ROOT / "tools"
-if str(_TOOLS) not in sys.path:
-    sys.path.insert(0, str(_TOOLS))
 
 SESSION_FILE = "mock_linkedin_sessions.json"
 
@@ -45,58 +40,30 @@ def _derive_prospect_id(profile_url: str | None) -> str | None:
     return slug or None
 
 
-def _import_mock_module() -> Any | None:
-    """Lazily load ``tools/mock.py`` (matches ``outreach/regression_harness``)."""
-    try:
-        import mock as _mock  # type: ignore[import-not-found]
-
-        return _mock
-    except (ImportError, ModuleNotFoundError):
-        return None
-
-
 def _load_test_case_meta(case_id: str | None) -> dict[str, Any] | None:
-    """Pull description / end_condition / total replies from ``tools/mock.py``."""
+    """Pull description / end_condition / total replies from fixture JSON."""
     if not case_id:
         return None
-    mod = _import_mock_module()
-    if mod is None or not hasattr(mod, "TEST_CASES"):
+    blob = get_fixture(case_id)
+    if not blob:
         return None
-    tc = mod.TEST_CASES.get(case_id)
-    if not isinstance(tc, dict):
-        return None
-    replies = tc.get("replies") or []
+    replies = blob.get("replies") or []
+    prospect = blob.get("prospect") or {}
     return {
-        "description": tc.get("description"),
-        "end_condition": tc.get("end_condition"),
-        "connection_accepted": tc.get("connection_accepted"),
+        "description": blob.get("description"),
+        "end_condition": blob.get("end_condition"),
+        "connection_accepted": blob.get("connection_accepted"),
         "total_reply_slots": len(replies),
-        "non_null_replies": sum(1 for r in replies if r is not None),
-        "prospect_name": (tc.get("prospect") or {}).get("name"),
+        "non_null_replies": sum(
+            1 for r in replies if isinstance(r, dict) and r.get("text")
+        ),
+        "prospect_name": prospect.get("name"),
     }
 
 
 def list_test_cases() -> dict[str, Any]:
-    """Surface ``TEST_CASES`` for the regression panel's case picker."""
-    mod = _import_mock_module()
-    if mod is None or not hasattr(mod, "TEST_CASES"):
-        return {"cases": []}
-    out: list[dict[str, Any]] = []
-    for cid, tc in mod.TEST_CASES.items():
-        replies = tc.get("replies") or []
-        out.append(
-            {
-                "case_id": cid,
-                "description": tc.get("description"),
-                "end_condition": tc.get("end_condition"),
-                "connection_accepted": tc.get("connection_accepted"),
-                "total_reply_slots": len(replies),
-                "non_null_replies": sum(1 for r in replies if r is not None),
-                "prospect_name": (tc.get("prospect") or {}).get("name"),
-            }
-        )
-    out.sort(key=lambda r: str(r.get("case_id")))
-    return {"cases": out}
+    """Surface mock fixtures for the regression panel's case picker."""
+    return {"cases": list_case_summaries()}
 
 
 def _shape_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
