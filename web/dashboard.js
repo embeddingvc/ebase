@@ -27,7 +27,8 @@ const CONVERSATION_POLL_MS = 1500;
 const REGRESSION_POLL_MS = 1000;
 
 let mockConvSessions = [];
-let mockConvSelectedKey = null;
+let mockConvCases = [];
+let mockConvSelectedCaseId = null;
 let mockConvLastHistoryLen = 0;
 let mockConvPollTimer = null;
 let regressionPollTimer = null;
@@ -287,26 +288,77 @@ function renderMeetings(data) {
 
 function selectedMockSession() {
   if (!mockConvSessions.length) return null;
-  if (mockConvSelectedKey) {
-    const hit = mockConvSessions.find((s) => s.session_key === mockConvSelectedKey);
+  if (mockConvSelectedCaseId) {
+    const hit = mockConvSessions.find((s) => s.test_case_id === mockConvSelectedCaseId);
     if (hit) return hit;
   }
   return mockConvSessions[0];
 }
 
-function renderChatBubble(msg, isNew) {
+function mockCaseLabel(c) {
+  return `${c.case_id}${c.prospect_name ? ` — ${c.prospect_name}` : ""}`;
+}
+
+function syncMockCaseSelects(caseId) {
+  if (!caseId) return;
+  mockConvSelectedCaseId = caseId;
+  const convSelect = el("mock-conv-case-select");
+  const regSelect = el("regression-case-select");
+  if (convSelect && convSelect.value !== caseId) convSelect.value = caseId;
+  if (regSelect && regSelect.value !== caseId) regSelect.value = caseId;
+  updateRegressionCaseDetail();
+}
+
+function renderMockCaseSelects() {
+  const cases = mockConvCases.length ? mockConvCases : regressionCases;
+  const options = cases.length
+    ? cases
+    : [{ case_id: "happy_path", prospect_name: "Alex Chen" }];
+
+  if (!mockConvSelectedCaseId && options.length) {
+    mockConvSelectedCaseId = options[0].case_id;
+  }
+
+  const convSelect = el("mock-conv-case-select");
+  if (convSelect) {
+    convSelect.innerHTML = options
+      .map((c) => {
+        const selected = c.case_id === mockConvSelectedCaseId ? " selected" : "";
+        return `<option value="${escapeHtml(c.case_id)}"${selected}>${escapeHtml(mockCaseLabel(c))}</option>`;
+      })
+      .join("");
+  }
+
+  const regSelect = el("regression-case-select");
+  if (regSelect) {
+    regSelect.innerHTML = options
+      .map((c) => {
+        const selected = c.case_id === mockConvSelectedCaseId ? " selected" : "";
+        return `<option value="${escapeHtml(c.case_id)}"${selected}>${escapeHtml(mockCaseLabel(c))}</option>`;
+      })
+      .join("");
+  }
+  updateRegressionCaseDetail();
+}
+
+function renderChatBubble(msg, isNew, scripted) {
   const sender = msg.sender === "operator" ? "operator" : "prospect";
-  const label = sender === "operator" ? "You" : "Prospect";
-  const step = msg.sequence_step != null ? ` · step ${msg.sequence_step}` : "";
+  const label = scripted
+    ? `Scripted slot ${msg.scripted_slot ?? msg.index ?? "—"}`
+    : sender === "operator"
+      ? "You"
+      : "Prospect";
+  const step = !scripted && msg.sequence_step != null ? ` · step ${msg.sequence_step}` : "";
   const attachments = (msg.attachments || [])
-    .map(
-      (a) =>
-        `<span class="chat-attachment"><span class="material-symbols-outlined text-[14px]">attach_file</span>${escapeHtml(a)}</span>`
-    )
+    .map((a) => {
+      const name = typeof a === "string" ? a : a.filename || a.type || "attachment";
+      return `<span class="chat-attachment"><span class="material-symbols-outlined text-[14px]">attach_file</span>${escapeHtml(name)}</span>`;
+    })
     .join("");
   const newClass = isNew ? " chat-message--new" : "";
+  const scriptedClass = scripted ? " chat-message--scripted" : "";
   return [
-    `<div class="chat-message chat-message--${sender}${newClass}" data-index="${msg.index}">`,
+    `<div class="chat-message chat-message--${sender}${newClass}${scriptedClass}" data-index="${msg.index}">`,
     '<div class="flex flex-col max-w-[78%]">',
     `<div class="chat-meta">${escapeHtml(label)}${escapeHtml(step)}</div>`,
     `<div class="chat-bubble">${escapeHtml(msg.text || "")}${attachments}</div>`,
@@ -317,17 +369,30 @@ function renderChatBubble(msg, isNew) {
 function renderMockConversationThread(session, prevLen) {
   const thread = el("mock-conv-thread");
   const history = session?.history || [];
-  if (!history.length) {
-    thread.innerHTML = '<p class="text-sm text-on-surface-variant">No messages in this session yet.</p>';
+  const scripted = session?.scripted_replies || [];
+  const isLive = Boolean(session?.live);
+
+  if (history.length) {
+    const startNewAt = prevLen > 0 && history.length > prevLen ? prevLen : history.length;
+    thread.innerHTML = history
+      .map((msg, idx) => renderChatBubble(msg, idx >= startNewAt, false))
+      .join("");
+    mockConvLastHistoryLen = history.length;
+    thread.scrollTop = thread.scrollHeight;
+    return;
+  }
+
+  if (!isLive && scripted.length) {
+    thread.innerHTML = [
+      '<p class="text-[11px] text-on-surface-variant mb-3">Scripted prospect replies for this case — run regression to see the live thread.</p>',
+      scripted.map((msg) => renderChatBubble(msg, false, true)).join(""),
+    ].join("");
     mockConvLastHistoryLen = 0;
     return;
   }
-  const startNewAt = prevLen > 0 && history.length > prevLen ? prevLen : history.length;
-  thread.innerHTML = history
-    .map((msg, idx) => renderChatBubble(msg, idx >= startNewAt))
-    .join("");
-  mockConvLastHistoryLen = history.length;
-  thread.scrollTop = thread.scrollHeight;
+
+  thread.innerHTML = '<p class="text-sm text-on-surface-variant">No messages in this session yet — run regression to start.</p>';
+  mockConvLastHistoryLen = 0;
 }
 
 function renderMockConversationMeta(session) {
@@ -352,12 +417,18 @@ function renderMockConversationMeta(session) {
   const conv = session.conversation || {};
   const tc = session.test_case || {};
   const name = prospect.name || session.prospect_id || "session";
-  const badge = session.ended ? "ended" : session.connection_accepted ? "connected" : "active";
+  const badge = session.live
+    ? session.ended
+      ? "ended"
+      : session.connection_accepted
+        ? "connected"
+        : "live"
+    : "fixture";
   el("mock-conv-session-badge").textContent = badge;
   el("mock-conv-meta").textContent = [
     name,
     session.test_case_id ? `case ${session.test_case_id}` : null,
-    `${session.history_length ?? 0} msgs`,
+    session.live ? `${session.history_length ?? 0} msgs` : `${(session.scripted_replies || []).length} scripted replies`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -380,7 +451,9 @@ function renderMockConversationMeta(session) {
       : String(prospectTurns);
   el("mock-conv-stat-ended").textContent = session.ended
     ? session.ended_reason || "yes"
-    : "no";
+    : session.live
+      ? "no"
+      : "—";
 
   const stages = conv.stage_history || [];
   const histEl = el("mock-conv-stage-history");
@@ -395,27 +468,25 @@ function renderMockConversationMeta(session) {
       .join("");
   }
 
-  const select = el("mock-conv-session-select");
-  if (mockConvSessions.length > 1) {
-    select.hidden = false;
-    select.innerHTML = mockConvSessions
-      .map((s) => {
-        const label = s.prospect?.name || s.prospect_id || s.session_key;
-        const selected = s.session_key === session.session_key ? " selected" : "";
-        return `<option value="${escapeHtml(s.session_key)}"${selected}>${escapeHtml(label)}</option>`;
-      })
-      .join("");
-  } else {
-    select.hidden = true;
-    select.innerHTML = "";
-  }
+  renderMockCaseSelects();
 }
 
 function renderMockConversation(data) {
   mockConvSessions = data.sessions || [];
-  if (!mockConvSelectedKey && mockConvSessions.length) {
-    mockConvSelectedKey = mockConvSessions[0].session_key;
+  mockConvCases = data.cases || mockConvCases;
+  if (data.cases?.length) {
+    regressionCases = data.cases;
   }
+  if (!mockConvSelectedCaseId) {
+    if (regressionStatusCache?.case_id) {
+      mockConvSelectedCaseId = regressionStatusCache.case_id;
+    } else if (mockConvCases.length) {
+      mockConvSelectedCaseId = mockConvCases[0].case_id;
+    } else if (mockConvSessions.length) {
+      mockConvSelectedCaseId = mockConvSessions[0].test_case_id;
+    }
+  }
+  renderMockCaseSelects();
   const session = selectedMockSession();
   const prevLen = mockConvLastHistoryLen;
   renderMockConversationMeta(session);
@@ -423,7 +494,7 @@ function renderMockConversation(data) {
     renderMockConversationThread(session, prevLen);
   } else {
     el("mock-conv-thread").innerHTML =
-      '<p class="text-sm text-on-surface-variant">Waiting for a mock session…</p>';
+      '<p class="text-sm text-on-surface-variant">No test cases found under outreach/mock/fixtures/.</p>';
     mockConvLastHistoryLen = 0;
   }
 }
@@ -477,6 +548,10 @@ function renderRegressionStatus(data) {
   regressionStatusCache = data;
   const status = data.status || "idle";
   regressionRunning = regressionIsActive(status);
+
+  if (data.case_id) {
+    syncMockCaseSelects(data.case_id);
+  }
 
   const badge = el("regression-status-badge");
   badge.textContent = status;
@@ -551,18 +626,7 @@ function updateRegressionPolling() {
 }
 
 function renderRegressionCasePicker() {
-  const select = el("regression-case-select");
-  if (!regressionCases.length) {
-    select.innerHTML = '<option value="happy_path">happy_path (default)</option>';
-    return;
-  }
-  select.innerHTML = regressionCases
-    .map((c) => {
-      const label = `${c.case_id}${c.prospect_name ? ` — ${c.prospect_name}` : ""}`;
-      return `<option value="${escapeHtml(c.case_id)}">${escapeHtml(label)}</option>`;
-    })
-    .join("");
-  updateRegressionCaseDetail();
+  renderMockCaseSelects();
 }
 
 function updateRegressionCaseDetail() {
@@ -586,15 +650,20 @@ async function loadRegressionCases() {
   try {
     const data = await fetchJson(API.regressionCases);
     regressionCases = data.cases || [];
-    renderRegressionCasePicker();
-  } catch {
-    regressionCases = [];
-    renderRegressionCasePicker();
+    mockConvCases = regressionCases;
+    renderMockCaseSelects();
+  } catch (err) {
+    console.warn("loadRegressionCases failed", err);
+    if (!regressionCases.length) {
+      regressionCases = [];
+      renderMockCaseSelects();
+    }
   }
 }
 
 async function startRegressionRun() {
-  const caseId = el("regression-case-select")?.value || "happy_path";
+  const caseId = el("regression-case-select")?.value || mockConvSelectedCaseId || "happy_path";
+  syncMockCaseSelects(caseId);
   const errEl = el("error-regression");
   if (errEl) errEl.hidden = true;
   regressionLogCleared = false;
@@ -636,7 +705,11 @@ async function stopRegressionRun() {
 function initRegressionControls() {
   el("btn-regression-run")?.addEventListener("click", startRegressionRun);
   el("btn-regression-stop")?.addEventListener("click", stopRegressionRun);
-  el("regression-case-select")?.addEventListener("change", updateRegressionCaseDetail);
+  el("regression-case-select")?.addEventListener("change", (e) => {
+    syncMockCaseSelects(e.target.value);
+    mockConvLastHistoryLen = 0;
+    refreshMockConversation();
+  });
   el("btn-regression-clear")?.addEventListener("click", () => {
     regressionLogCleared = true;
     el("regression-log").textContent = "(log view cleared — polling will resume on next update)";
@@ -644,8 +717,8 @@ function initRegressionControls() {
 }
 
 function initMockConversationControls() {
-  el("mock-conv-session-select")?.addEventListener("change", (e) => {
-    mockConvSelectedKey = e.target.value;
+  el("mock-conv-case-select")?.addEventListener("change", (e) => {
+    syncMockCaseSelects(e.target.value);
     mockConvLastHistoryLen = 0;
     refreshMockConversation();
   });
@@ -726,8 +799,10 @@ async function loadTab(tabId) {
     } else if (tabId === "meetings") {
       renderMeetings(await fetchJson(withScope(API.meetings)));
     } else if (tabId === "conversation") {
+      await loadRegressionCases();
       await refreshMockConversation();
     } else if (tabId === "regression") {
+      await loadRegressionCases();
       await refreshRegressionStatus();
     }
   } catch (err) {

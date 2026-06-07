@@ -6,25 +6,19 @@ The mock backend in ``tools/mock.py`` persists every send/reply turn to
 mock view polls this module so the UI can animate new messages as they land
 during a regression run.
 
-Pairs each session with the matching ``conversations/<id>.json`` so the panel
-shows planner-side state (next_action, planned_message, outreach_stage) next
-to the raw thread.
+Every fixture under ``outreach/mock/fixtures/*.json`` is always listed — even
+before a regression run creates a live session — so the operator can browse
+scripted replies and expected stages for all test cases.
 """
 
 from __future__ import annotations
 
 import re
-import sys
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from outreach.mock.fixtures_loader import get_fixture, list_case_summaries
 from web.dashboard_data import _read_json, mock_base
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-_TOOLS = REPO_ROOT / "tools"
-if str(_TOOLS) not in sys.path:
-    sys.path.insert(0, str(_TOOLS))
 
 SESSION_FILE = "mock_linkedin_sessions.json"
 
@@ -45,58 +39,55 @@ def _derive_prospect_id(profile_url: str | None) -> str | None:
     return slug or None
 
 
-def _import_mock_module() -> Any | None:
-    """Lazily load ``tools/mock.py`` (matches ``outreach/regression_harness``)."""
-    try:
-        import mock as _mock  # type: ignore[import-not-found]
-
-        return _mock
-    except (ImportError, ModuleNotFoundError):
-        return None
+def _normalise_url(url: str | None) -> str:
+    return (url or "").strip().rstrip("/").lower()
 
 
 def _load_test_case_meta(case_id: str | None) -> dict[str, Any] | None:
-    """Pull description / end_condition / total replies from ``tools/mock.py``."""
+    """Pull description / end_condition / total replies from fixture JSON."""
     if not case_id:
         return None
-    mod = _import_mock_module()
-    if mod is None or not hasattr(mod, "TEST_CASES"):
+    blob = get_fixture(case_id)
+    if not blob:
         return None
-    tc = mod.TEST_CASES.get(case_id)
-    if not isinstance(tc, dict):
-        return None
-    replies = tc.get("replies") or []
+    replies = blob.get("replies") or []
+    prospect = blob.get("prospect") or {}
+    rounds = blob.get("rounds") or []
     return {
-        "description": tc.get("description"),
-        "end_condition": tc.get("end_condition"),
-        "connection_accepted": tc.get("connection_accepted"),
+        "description": blob.get("description"),
+        "end_condition": blob.get("end_condition"),
+        "connection_accepted": blob.get("connection_accepted"),
         "total_reply_slots": len(replies),
-        "non_null_replies": sum(1 for r in replies if r is not None),
-        "prospect_name": (tc.get("prospect") or {}).get("name"),
+        "non_null_replies": sum(
+            1 for r in replies if isinstance(r, dict) and r.get("text")
+        ),
+        "prospect_name": prospect.get("name"),
+        "rounds_count": len(rounds),
     }
 
 
 def list_test_cases() -> dict[str, Any]:
-    """Surface ``TEST_CASES`` for the regression panel's case picker."""
-    mod = _import_mock_module()
-    if mod is None or not hasattr(mod, "TEST_CASES"):
-        return {"cases": []}
+    """Surface mock fixtures for the regression panel's case picker."""
+    return {"cases": list_case_summaries()}
+
+
+def _shape_scripted_replies(replies: list[Any]) -> list[dict[str, Any]]:
+    """Prospect reply slots from the fixture (preview before a live run)."""
     out: list[dict[str, Any]] = []
-    for cid, tc in mod.TEST_CASES.items():
-        replies = tc.get("replies") or []
+    for idx, reply in enumerate(replies or []):
+        if not isinstance(reply, dict) or not reply.get("text"):
+            continue
         out.append(
             {
-                "case_id": cid,
-                "description": tc.get("description"),
-                "end_condition": tc.get("end_condition"),
-                "connection_accepted": tc.get("connection_accepted"),
-                "total_reply_slots": len(replies),
-                "non_null_replies": sum(1 for r in replies if r is not None),
-                "prospect_name": (tc.get("prospect") or {}).get("name"),
+                "index": idx,
+                "sender": "prospect",
+                "text": str(reply.get("text") or ""),
+                "attachments": list(reply.get("attachments") or []),
+                "sequence_step": None,
+                "scripted_slot": idx,
             }
         )
-    out.sort(key=lambda r: str(r.get("case_id")))
-    return {"cases": out}
+    return out
 
 
 def _shape_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -122,7 +113,7 @@ def _shape_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _shape_session(blob: dict[str, Any]) -> dict[str, Any]:
+def _shape_session(blob: dict[str, Any], *, live: bool = True) -> dict[str, Any]:
     """Build one session payload; pulls planner state from the conv JSON."""
     profile_url = blob.get("profile_url") or ""
     case_id = blob.get("test_case_id")
@@ -160,9 +151,18 @@ def _shape_session(blob: dict[str, Any]) -> dict[str, Any]:
                 "outreach_stage": prospect_blob.get("outreach_stage"),
             }
 
+    fixture = get_fixture(case_id) if case_id else None
+    if prospect is None and isinstance(fixture, dict):
+        fp = fixture.get("prospect") or {}
+        prospect = {
+            "name": fp.get("name"),
+            "title": fp.get("title"),
+            "company": fp.get("company"),
+        }
+
     return {
         "profile_url": profile_url,
-        "prospect_id": pid,
+        "prospect_id": pid or (fixture or {}).get("prospect_id"),
         "prospect": prospect,
         "test_case_id": case_id,
         "test_case": _load_test_case_meta(case_id),
@@ -173,28 +173,94 @@ def _shape_session(blob: dict[str, Any]) -> dict[str, Any]:
         "messages_sent": int(blob.get("messages_sent") or 0),
         "history": history,
         "history_length": len(history),
+        "scripted_replies": _shape_scripted_replies(
+            (fixture or {}).get("replies") or []
+        ),
+        "live": live,
         "conversation": conversation,
     }
 
 
+def _fixture_placeholder(blob: dict[str, Any]) -> dict[str, Any]:
+    """Dashboard row for a fixture with no persisted mock session yet."""
+    case_id = str(blob.get("case_id") or "")
+    profile_url = str(blob.get("profile_url") or "")
+    prospect = blob.get("prospect") or {}
+    return {
+        "session_key": f"fixture:{case_id}",
+        "profile_url": profile_url,
+        "prospect_id": blob.get("prospect_id") or _derive_prospect_id(profile_url),
+        "prospect": {
+            "name": prospect.get("name"),
+            "title": prospect.get("title"),
+            "company": prospect.get("company"),
+        },
+        "test_case_id": case_id,
+        "test_case": _load_test_case_meta(case_id),
+        "connection_accepted": bool(blob.get("connection_accepted", False)),
+        "ended": False,
+        "ended_reason": None,
+        "loaded_at": None,
+        "messages_sent": 0,
+        "history": [],
+        "history_length": 0,
+        "scripted_replies": _shape_scripted_replies(blob.get("replies") or []),
+        "live": False,
+        "conversation": None,
+    }
+
+
 def get_mock_conversations() -> dict[str, Any]:
-    """Return every persisted mock session along with its conversation snapshot."""
+    """Return all fixture cases merged with any live mock LinkedIn sessions."""
     base = mock_base()
     raw = _read_json(base / SESSION_FILE, {"sessions": {}})
     sessions = raw.get("sessions") if isinstance(raw, dict) else {}
     if not isinstance(sessions, dict):
         sessions = {}
-    items: list[dict[str, Any]] = []
+
+    live_items: list[dict[str, Any]] = []
+    live_by_case: dict[str, dict[str, Any]] = {}
     for key, blob in sessions.items():
         if not isinstance(blob, dict):
             continue
-        shaped = _shape_session(blob)
+        shaped = _shape_session(blob, live=True)
         shaped["session_key"] = key
-        items.append(shaped)
-    items.sort(key=lambda s: s.get("loaded_at") or "", reverse=True)
+        live_items.append(shaped)
+        cid = shaped.get("test_case_id")
+        if cid:
+            live_by_case[str(cid)] = shaped
+
+    merged: list[dict[str, Any]] = []
+    seen_cases: set[str] = set()
+    for summary in list_case_summaries():
+        case_id = str(summary["case_id"])
+        seen_cases.add(case_id)
+        if case_id in live_by_case:
+            merged.append(live_by_case[case_id])
+            continue
+        fixture = get_fixture(case_id)
+        if fixture:
+            merged.append(_fixture_placeholder(fixture))
+
+    for item in live_items:
+        cid = item.get("test_case_id")
+        if cid and str(cid) in seen_cases:
+            continue
+        merged.append(item)
+
+    merged.sort(
+        key=lambda s: (
+            0 if s.get("live") else 1,
+            s.get("test_case_id") or "",
+        )
+    )
+
+    cases = list_case_summaries()
     return {
         "data_root": str(base),
         "store_path": str(base / SESSION_FILE),
-        "total": len(items),
-        "sessions": items,
+        "cases": cases,
+        "total": len(merged),
+        "live_total": sum(1 for s in merged if s.get("live")),
+        "sessions": merged,
     }
