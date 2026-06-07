@@ -35,7 +35,7 @@ If Chrome is not running with remote debugging, live tools will fail until `make
 
 ## Example usage
 
-0. Sync my LinkedIn conversation planner persona.
+0. Run the **setup-outreach** skill to configure your operator profile (or sync planner persona from LinkedIn).
 1. Connect to `<linkedin-url>`.
 2. Is `<linkedin-url>` my connection?
 3. Add `Run conversation planner skill` as a scheduled task.
