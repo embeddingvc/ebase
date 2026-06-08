@@ -33,9 +33,20 @@ Then log into LinkedIn in the Chrome window (first time per profile) and use eit
 
 If Chrome is not running with remote debugging, live tools will fail until `make browser` (or an equivalent launch) is used.
 
+## First-run profile setup
+
+Before sending outreach, configure who the planner speaks as:
+
+1. In Claude Code, run **`/setup-outreach`** (or ask to “run setup-outreach”).
+2. The skill checks your browser session, **`scrape_profile`**s your signed-in LinkedIn profile, and drafts `persona` + `organization`.
+3. Review the draft, request edits, then approve — the skill persists via **`merge_conversation_planner_identity`** to `outreach/config/persona.json`.
+4. Optionally tune campaign goal/topic in the same wizard.
+
+See [Claude skills — setup-outreach](./skills.md#setup-outreach-first-run-wizard) and [Conversation planner config](./conversation-planner.md).
+
 ## Example usage
 
-0. Sync my LinkedIn conversation planner persona.
+0. **`/setup-outreach`** — configure operator profile (recommended first step).
 1. Connect to `<linkedin-url>`.
 2. Is `<linkedin-url>` my connection?
 3. Add `Run conversation planner skill` as a scheduled task.

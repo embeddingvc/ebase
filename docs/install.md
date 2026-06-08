@@ -50,6 +50,19 @@ Recommended for most users:
 - `make claude-install` — default: `--scope user` MCP + sync skills to `~/.claude/skills`
 - `make claude-install LOCAL=1` — `--scope local` MCP only; skills stay under `outreach/skills/` in the repo
 
+Skills copied by the installer include **`setup-outreach`**, **`conversation-planner`**, **`send-connection-request`**, **`reply-to-post`**, and **`sync-planner-persona-from-linkedin`**. See [Claude skills](./skills.md).
+
+## Configure your operator profile
+
+After MCP registration and LinkedIn sign-in:
+
+1. Open Claude Code in the repo (or any project if you used `--scope user`).
+2. Run **`/setup-outreach`**.
+
+The wizard **`scrape_profile`**s your LinkedIn profile, presents a draft persona, lets you refine it interactively, then saves **`outreach/config/persona.json`** via MCP. This replaces manual editing or the optional `sync-planner-persona-from-linkedin` flow for first-time setup.
+
+Details: [setup-outreach in Claude skills](./skills.md#setup-outreach-first-run-wizard).
+
 ## Register the MCP server with Claude Desktop
 
 1. `Settings` → `Developer` → `Edit Config`

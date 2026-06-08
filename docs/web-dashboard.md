@@ -4,7 +4,7 @@ Local FastAPI app for monitoring connections, scheduling skill routines, and tri
 
 ## Quick start
 
-After [install](../README.md#install-one-command):
+After [install](../README.md#install-one-command), run **`/setup-outreach`** in Claude Code once to configure your operator profile ([details](./skills.md#setup-outreach-first-run-wizard)).
 
 ```text
 http://127.0.0.1:3847/
