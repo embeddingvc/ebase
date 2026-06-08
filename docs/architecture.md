@@ -7,9 +7,12 @@ This repo wires Claude (via the MCP protocol) to a real LinkedIn session and a s
 - A **LinkedIn MCP server** (`tools/server.py`) that exposes LinkedIn actions as tools. Playwright attaches to a real Chrome session via CDP.
 - A **queue-draining worker** (`outreach/worker.py`) for "run jobs from JSON queue files" automation.
 - A **message planner** (`outreach/planner.py`) that can generate copy in **API mode** (Anthropic) or **stub mode** (offline).
-- Claude **skills** under `outreach/skills/` that orchestrate end-to-end outreach using MCP tools.
+- Claude **skills** under `outreach/skills/` that orchestrate end-to-end outreach using MCP tools (including **`setup-outreach`** for first-run profile configuration).
 
 ## What you can do
+
+- **First-run setup**
+  - Skill: **`setup-outreach`** — interactive wizard: **`scrape_profile`** → present draft persona → refine with operator → **`merge_conversation_planner_identity`**
 
 - **Profile data**
   - `scrape_profile`: quick structured scrape (includes `recent_posts` and also captures `raw_text`)

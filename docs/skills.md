@@ -4,13 +4,30 @@ Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is i
 
 ## Core skills (this repo)
 
-- `setup-outreach` — interactive first-run wizard (browser, persona, campaign, smoke test)
+- `setup-outreach` — interactive first-run wizard (see below)
 - `conversation-planner` (single-prospect only; dispatched per row by the dashboard's per-prospect plan sweep)
 - `sync-planner-persona-from-linkedin`
 - `send-connection-request`
 - `reply-to-post`
 
 The former `sync-pending-connections` skill has been retired — the dashboard now runs that workload as a deterministic Python sweep (`web/connection_sync_sweep.py`) with no LLM in the loop. See [`docs/designs/per-connection-routines-with-backoff-design.md`](./designs/per-connection-routines-with-backoff-design.md).
+
+## `setup-outreach` (first-run wizard)
+
+Run **`/setup-outreach`** in Claude Code (or ask to “run setup-outreach”) after install. The skill walks through setup **one step at a time** and waits for your input before continuing.
+
+**Profile setup loop** (the core of the wizard):
+
+1. **`scrape_profile`** on `https://www.linkedin.com/in/me/` — draft `persona` + `organization` from name, headline, about, and recent posts
+2. **Present** the draft in plain language and as JSON
+3. **Refine** — you request corrections; the agent revises until you approve
+4. **Sync** — **`merge_conversation_planner_identity`** writes `outreach/config/persona.json`
+
+Optional later steps: campaign/tone tweaks via **`upsert_conversation_planner_config`**, then a readiness summary.
+
+**Prerequisites:** Chrome with CDP (`make browser`), signed into LinkedIn in the installer Chrome profile, LinkedIn MCP registered. See [Quickstart](./quickstart.md) and [Conversation planner config](./conversation-planner.md).
+
+For a deep LinkedIn-only identity refresh (experience, education, skills) without the wizard, use **`sync-planner-persona-from-linkedin`** instead (`parse_profile`-first).
 
 ## Install skills in Claude
 

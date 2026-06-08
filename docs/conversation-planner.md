@@ -20,15 +20,20 @@ The `conversation-planner` skill supports live runtime configuration from two fi
 
 You can change planner behavior (for example profile identity, end-state intent, or outreach topic) **without** restarting the MCP server and **without** reloading the skill.
 
+## First-time setup
+
+Run the **`setup-outreach`** skill in Claude Code (`/setup-outreach`). It **`scrape_profile`**s your signed-in LinkedIn profile, presents a draft **`persona`** + **`organization`**, walks you through corrections, then calls **`merge_conversation_planner_identity`** to write **`persona.json`**. See [Claude skills — setup-outreach](./skills.md#setup-outreach-first-run-wizard).
+
 ## Update methods
 
 You can update config in either way:
 
 1. Edit `outreach/config/conversation_planner.json` and/or `outreach/config/persona.json` directly (create `persona.json` from `persona.json.example` if you do not have one).
-2. Use MCP tools:
+2. Use MCP tools (often via a skill):
    - `get_conversation_planner_config` — merged view of both files
    - `upsert_conversation_planner_config` — replace **`conversation_planner.json` only** (payload must not include `persona` / `organization`)
-   - `merge_conversation_planner_identity` — shallow-merge LLM-authored `persona` / `organization` into **`persona.json`** after **`parse_profile`** (see Skill `sync-planner-persona-from-linkedin`; the server does not summarize LinkedIn for you).
+   - `merge_conversation_planner_identity` — shallow-merge LLM-authored `persona` / `organization` into **`persona.json`**
+3. Re-run **`setup-outreach`** to refresh persona from LinkedIn with review, or use **`sync-planner-persona-from-linkedin`** for a **`parse_profile`**-first deep refresh (experience, education, skills) without the wizard.
 
 Reads/writes are runtime-safe. Config is read from disk fresh on each MCP call.
 
