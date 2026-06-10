@@ -12,7 +12,7 @@ description: >-
 
 Guide the operator **one step at a time**. Do **not** run the full wizard in a single turn — finish the current sub-step, then **stop and wait** for the user.
 
-**Filesystem rule:** Never read or write `outreach/config/` via raw paths or shell. Use MCP **`get_conversation_planner_config`**, **`merge_conversation_planner_identity`**, and **`upsert_conversation_planner_config`** only.
+**Filesystem rule:** Never read or write `outreach/config/` via raw paths or shell. Use MCP **`get_conversation_planner_config`**, **`get_style_example_prompts`**, **`merge_conversation_planner_identity`**, and **`upsert_conversation_planner_config`** only.
 
 **Profile rule:** Step 2 always follows **scrape → present → refine → sync**. Do not call **`merge_conversation_planner_identity`** until the operator approves the final draft.
 
@@ -144,55 +144,85 @@ Read **`get_conversation_planner_config`**. Show `campaign`,
 
 Use **`AskQuestion`**: **Keep defaults** | **Customize** | **Skip**.
 
-If customizing, run **3a → 3b → 3c** in order. Each sub-step echoes a draft,
-collects approval, then persists with **`upsert_conversation_planner_config`**
-(full planner JSON minus `persona` / `organization`). Verify with
-**`get_conversation_planner_config`** after every write.
+If customizing, run **3a** first. **Stop and wait** before any questionnaire.
+
+After 3a (or if the operator skips campaign edits), use **`AskQuestion`**:
+
+| Option | Action |
+|--------|--------|
+| **Yes — run questionnaires** | Continue to **3b → 3c** |
+| **No — skip questionnaires** | Persist campaign changes only (if any), then jump to step 4 |
+
+Do **not** call **`get_style_example_prompts`** or start tone/style questions
+until the operator explicitly chooses **Yes**.
+
+Each sub-step echoes a draft, collects approval, then persists with
+**`upsert_conversation_planner_config`** (full planner JSON minus
+`persona` / `organization`). Verify with **`get_conversation_planner_config`**
+after every write.
 
 ### 3a — Campaign (goal / topic / value proposition)
 
 Collect (one or two fields per turn): `campaign.goal`, `campaign.topic`,
 `campaign.value_proposition`. Echo draft → approval → write.
 
-### 3b — Tone
+**Stop and wait.** Ask yes/no before questionnaires (see gate above).
 
-Two fields:
+### 3b — Tone questionnaire
 
-- **`message_rules.tone`** — short comma-separated adjectives
-  (e.g. `"warm, casual, direct, no jargon"`). Keep ≤ ~80 chars.
-- **`message_rules.tone_guidelines`** — optional longer prose with do/don't,
-  sentence length, punctuation habits, formality, emoji policy. Plain text;
-  no JSON or markdown headings inside the string.
+Only after the operator opts in. Call **`get_style_example_prompts`** and parse
+`tone_questions[]`.
 
-Ask the operator to describe how they actually write on LinkedIn. Offer
-prompts: *"Lowercase or sentence-case? Contractions? Em-dashes? Emoji? How
-formal? How long does a typical reply run?"* Echo draft → approval → write.
+Walk the operator through **each** tone question **one at a time** (stop and
+wait between questions). Show the `question` text and, when present, the
+`example` as a hint. The operator may skip any question by saying *skip*.
 
-### 3c — Style examples (sample replies)
+After all answers (or skips), synthesize:
 
-**Goal:** capture **2–4** real or representative reply samples that show how
-the operator writes. The conversation-planner uses these as canonical voice
-cues.
+| Output field | Source |
+|--------------|--------|
+| `message_rules.tone` | Answer to the question whose `maps_to` is `message_rules.tone` (typically `tone_adjectives`). Keep ≤ ~80 chars. |
+| `message_rules.tone_guidelines` | Join the other tone answers into one plain-text sentence (semicolon-separated prose). Use `""` when none were answered. |
 
-For each example, collect:
+Echo the draft `tone` + `tone_guidelines` → approval → include in the planner
+payload for **`upsert_conversation_planner_config`**.
 
-| Field | Required | Notes |
-|-------|----------|-------|
-| `reply` | yes | The example message text the operator would send. Keep ≤ 500 chars; ≤ 200 chars if it represents a connection note. |
-| `context` | no | One-line situation, e.g. *"prospect asked what we do"*, *"day-1 cold connect note"*. |
-| `incoming` | no | The prospect message being replied to. Leave blank / null for outbound openers. |
-| `label` | no | Short title like *"warm opener"*, *"resume ask"*. |
+### 3c — Style example questionnaire
 
-Suggest these scenarios when the operator is stuck:
+Only after **3b** (same opt-in). Use the same **`get_style_example_prompts`**
+response. Parse
+`style_example_prompts[]` — this is the **canonical outreach questionnaire**.
 
-1. **Cold opener / connection note** (`incoming` = null).
-2. **Reply when prospect asks "what do you do?"**
-3. **Reply when prospect shares interest in a role / asks for next steps.**
-4. **Reply when prospect is lukewarm or busy.**
+Walk through **every** prompt in array order, **one scenario per turn** (stop
+and wait after each). For prompt index *i* of *N*, show:
 
-Walk through one example at a time. Echo the array after each addition. When
-the operator is done, write the full updated planner config (including
-`message_rules.style_examples`) via **`upsert_conversation_planner_config`**.
+1. Scenario label (`label` or `id`).
+2. The `question` verbatim.
+3. `incoming` when non-null — quote it as *"Prospect said: …"*.
+4. `hint` when present.
+
+Ask the operator to write **`reply`** — exactly how they would send it. They
+may **skip** a scenario (leave `reply` empty for that entry).
+
+Build each collected example from the prompt object:
+
+| Field | Source |
+|-------|--------|
+| `reply` | Operator's answer (required to keep the example) |
+| `label` | From prompt `label` |
+| `context` | From prompt `context` |
+| `incoming` | From prompt `incoming` when non-null |
+
+Do **not** invent scenario text — copy `label`, `context`, and `incoming` from
+the questionnaire entry.
+
+After each reply (or explicit skip), echo the running `style_examples[]`
+array. When all prompts are done, merge into the full planner config and call
+**`upsert_conversation_planner_config`**.
+
+Target **at least 2** non-skipped examples before finishing 3c; if the
+operator skipped most scenarios, offer to revisit skipped ones or add a custom
+example.
 
 Validation rules to mirror in your draft (server-enforced):
 
@@ -240,6 +270,7 @@ Mark all checklist items done.
 | **`parse_profile`** | Optional deep refresh when scrape is too thin |
 | **`merge_conversation_planner_identity`** | Persist approved persona.json |
 | **`get_conversation_planner_config`** | Read merged config (persona + planner) |
+| **`get_style_example_prompts`** | Tone + style-example questionnaire (steps 3b–3c) |
 | **`upsert_conversation_planner_config`** | Campaign + tone + style examples (step 3); writes the full planner JSON minus persona/organization |
 
 For a standalone LinkedIn-only identity refresh (no wizard), use **`sync-planner-persona-from-linkedin`** (`parse_profile`-first).
