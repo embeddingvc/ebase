@@ -854,6 +854,8 @@ def _default_conversation_planner_config() -> dict:
                 "bandwidth",
             ],
             "tone": "warm, specific, curious, low-pressure",
+            "tone_guidelines": "",
+            "style_examples": [],
         },
         "router": {
             "default_plan_mode": "full_sequence",
@@ -912,6 +914,35 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
         )
         if value is not None and (not isinstance(value, int) or value <= 0):
             return f"message_rules.{key} must be a positive integer"
+
+    rules = config.get("message_rules")
+    if isinstance(rules, dict):
+        guidelines = rules.get("tone_guidelines")
+        if guidelines is not None and not isinstance(guidelines, str):
+            return "message_rules.tone_guidelines must be a string"
+
+        examples = rules.get("style_examples")
+        if examples is not None:
+            if not isinstance(examples, list):
+                return "message_rules.style_examples must be an array"
+            for idx, item in enumerate(examples):
+                if not isinstance(item, dict):
+                    return (
+                        f"message_rules.style_examples[{idx}] must be an object"
+                    )
+                reply = item.get("reply")
+                if not isinstance(reply, str) or not reply.strip():
+                    return (
+                        f"message_rules.style_examples[{idx}].reply must be a "
+                        "non-empty string"
+                    )
+                for opt_key in ("label", "context", "incoming"):
+                    val = item.get(opt_key)
+                    if val is not None and not isinstance(val, str):
+                        return (
+                            f"message_rules.style_examples[{idx}].{opt_key} "
+                            "must be a string when set"
+                        )
 
     end_goals = config.get("conversation_end_goals")
     if isinstance(end_goals, dict):

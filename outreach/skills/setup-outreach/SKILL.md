@@ -28,7 +28,7 @@ Setup progress:
 - [ ] 2b. Present draft to operator
 - [ ] 2c. Corrections & adjustments (repeat until done)
 - [ ] 2d. Finalize & sync
-- [ ] 3. Campaign & tone (optional)
+- [ ] 3. Campaign, tone & style examples (optional)
 - [ ] 4. Ready
 ```
 
@@ -46,7 +46,7 @@ Use **`AskQuestion`** (or ask in chat):
 |--------|------|
 | **Full setup** | First time; steps 1 → 4 |
 | **Profile only** | Browser works; start at 2a |
-| **Campaign only** | Persona saved; jump to step 3 |
+| **Campaign / tone only** | Persona saved; jump to step 3 |
 | **Re-sync profile** | Re-run 2a → 2d from scratch |
 
 Stop after the user picks a path.
@@ -136,13 +136,70 @@ Stop and wait before step 3 (or step 4 if profile-only).
 
 ---
 
-## Step 3 — Campaign & tone (optional)
+## Step 3 — Campaign, tone & style examples (optional)
 
-Read **`get_conversation_planner_config`**. Show `campaign` and `message_rules.tone`.
+Read **`get_conversation_planner_config`**. Show `campaign`,
+`message_rules.tone`, `message_rules.tone_guidelines`, and
+`message_rules.style_examples` (count + first reply preview).
 
-Use **`AskQuestion`**: **Keep defaults** | **Customize** | **Skip**
+Use **`AskQuestion`**: **Keep defaults** | **Customize** | **Skip**.
 
-If customizing, collect goal, topic, value proposition, and tone (one or two fields per turn). Echo draft → approval → **`upsert_conversation_planner_config`** (full planner JSON minus persona/organization) → verify.
+If customizing, run **3a → 3b → 3c** in order. Each sub-step echoes a draft,
+collects approval, then persists with **`upsert_conversation_planner_config`**
+(full planner JSON minus `persona` / `organization`). Verify with
+**`get_conversation_planner_config`** after every write.
+
+### 3a — Campaign (goal / topic / value proposition)
+
+Collect (one or two fields per turn): `campaign.goal`, `campaign.topic`,
+`campaign.value_proposition`. Echo draft → approval → write.
+
+### 3b — Tone
+
+Two fields:
+
+- **`message_rules.tone`** — short comma-separated adjectives
+  (e.g. `"warm, casual, direct, no jargon"`). Keep ≤ ~80 chars.
+- **`message_rules.tone_guidelines`** — optional longer prose with do/don't,
+  sentence length, punctuation habits, formality, emoji policy. Plain text;
+  no JSON or markdown headings inside the string.
+
+Ask the operator to describe how they actually write on LinkedIn. Offer
+prompts: *"Lowercase or sentence-case? Contractions? Em-dashes? Emoji? How
+formal? How long does a typical reply run?"* Echo draft → approval → write.
+
+### 3c — Style examples (sample replies)
+
+**Goal:** capture **2–4** real or representative reply samples that show how
+the operator writes. The conversation-planner uses these as canonical voice
+cues.
+
+For each example, collect:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `reply` | yes | The example message text the operator would send. Keep ≤ 500 chars; ≤ 200 chars if it represents a connection note. |
+| `context` | no | One-line situation, e.g. *"prospect asked what we do"*, *"day-1 cold connect note"*. |
+| `incoming` | no | The prospect message being replied to. Leave blank / null for outbound openers. |
+| `label` | no | Short title like *"warm opener"*, *"resume ask"*. |
+
+Suggest these scenarios when the operator is stuck:
+
+1. **Cold opener / connection note** (`incoming` = null).
+2. **Reply when prospect asks "what do you do?"**
+3. **Reply when prospect shares interest in a role / asks for next steps.**
+4. **Reply when prospect is lukewarm or busy.**
+
+Walk through one example at a time. Echo the array after each addition. When
+the operator is done, write the full updated planner config (including
+`message_rules.style_examples`) via **`upsert_conversation_planner_config`**.
+
+Validation rules to mirror in your draft (server-enforced):
+
+- `message_rules.style_examples` must be a JSON array of objects.
+- Each object must have a non-empty string `reply`.
+- `label`, `context`, `incoming` are optional strings (or omitted entirely).
+- `tone_guidelines` must be a string (use `""` for blank).
 
 Stop and wait before step 4.
 
@@ -150,7 +207,11 @@ Stop and wait before step 4.
 
 ## Step 4 — Ready
 
-1. **`get_conversation_planner_config`** — summary table (name, role/org, campaign topic, tone).
+1. **`get_conversation_planner_config`** — summary table:
+   - Identity: `persona.name`, `persona.role`, `persona.organization`.
+   - Campaign: `campaign.topic`, `campaign.goal`.
+   - Voice: `message_rules.tone`, count of `message_rules.style_examples` (and
+     a one-line preview of the first example's `reply`).
 2. Close with **"You're ready!"** and next steps:
    - `connect to <linkedin-url>` (**`send-connection-request`**)
    - **`conversation-planner`** for a prospect
@@ -178,8 +239,8 @@ Mark all checklist items done.
 | **`scrape_profile`** | Initial draft + session check |
 | **`parse_profile`** | Optional deep refresh when scrape is too thin |
 | **`merge_conversation_planner_identity`** | Persist approved persona.json |
-| **`get_conversation_planner_config`** | Read merged config |
-| **`upsert_conversation_planner_config`** | Campaign / rules (step 3) |
+| **`get_conversation_planner_config`** | Read merged config (persona + planner) |
+| **`upsert_conversation_planner_config`** | Campaign + tone + style examples (step 3); writes the full planner JSON minus persona/organization |
 
 For a standalone LinkedIn-only identity refresh (no wizard), use **`sync-planner-persona-from-linkedin`** (`parse_profile`-first).
 

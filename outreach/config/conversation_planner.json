@@ -42,7 +42,9 @@
       "circle back",
       "bandwidth"
     ],
-    "tone": "warm, specific, curious, low-pressure"
+    "tone": "warm, specific, curious, low-pressure",
+    "tone_guidelines": "",
+    "style_examples": []
   },
   "router": {
     "default_plan_mode": "full_sequence",

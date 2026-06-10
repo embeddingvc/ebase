@@ -29,11 +29,12 @@ LINKEDIN_LOGIN_URL="${LINKEDIN_LOGIN_URL:-https://www.linkedin.com}"
 SKIP_EMAIL_SETUP="${LINKEDIN_OUTREACH_SKIP_EMAIL_SETUP:-0}"
 GMAIL_APP_PASSWORD_URL="${GMAIL_APP_PASSWORD_URL:-https://myaccount.google.com/apppasswords}"
 SKIP_PERSONA_SYNC="${LINKEDIN_OUTREACH_SKIP_PERSONA_SYNC:-0}"
+SKIP_TONE_SETUP="${LINKEDIN_OUTREACH_SKIP_TONE_SETUP:-0}"
 SKIP_WEB="${LINKEDIN_OUTREACH_SKIP_WEB:-0}"
 PERSONA_PROFILE_URL="${PERSONA_PROFILE_URL:-https://www.linkedin.com/in/me/}"
 
 REPO_ROOT=""
-STEP_TOTAL=8
+STEP_TOTAL=9
 STEP_NUM=0
 STEP_CURRENT=""
 INSTALL_NOTES=()
@@ -95,6 +96,12 @@ Usage: install.sh [options]
     (same as LINKEDIN_OUTREACH_SKIP_PERSONA_SYNC=1). Auto-skipped when the
     claude CLI is missing or Chrome CDP is unreachable.
 
+  --skip-tone-setup
+    Do not prompt for tone description / sample replies that seed
+    message_rules.tone_guidelines and message_rules.style_examples
+    (same as LINKEDIN_OUTREACH_SKIP_TONE_SETUP=1). Always skipped when stdin
+    is not a TTY (e.g. curl | bash).
+
   Other:
     LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
     LINKEDIN_OUTREACH_SKIP_WEB=1           Skip dashboard (same as --no-web).
@@ -126,6 +133,10 @@ parse_args() {
         ;;
       --skip-persona-sync)
         SKIP_PERSONA_SYNC=1
+        shift
+        ;;
+      --skip-tone-setup)
+        SKIP_TONE_SETUP=1
         shift
         ;;
       --no-web)
@@ -686,6 +697,201 @@ run_sync_planner_persona_skill() {
   fi
 }
 
+setup_planner_tone_and_examples() {
+  step_begin "Configuring planner tone and style examples"
+
+  local cfg_path="${REPO_ROOT}/outreach/config/conversation_planner.json"
+
+  if [[ "${SKIP_TONE_SETUP}" == "1" ]]; then
+    info "Skipping tone / style examples setup (--skip-tone-setup)."
+    note "skip: planner tone / examples (--skip-tone-setup)"
+    step_done "Planner tone / examples (skipped)"
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    info "Non-interactive install — skipping tone / style examples prompts."
+    info "Run later via Claude Code: /setup-outreach (Step 3 — Tone & style examples)."
+    note "skip: planner tone / examples (non-interactive stdin)"
+    step_done "Planner tone / examples (skipped)"
+    return 0
+  fi
+  if [[ ! -f "${cfg_path}" ]]; then
+    info "Planner config not found at ${cfg_path} — skipping tone setup."
+    info "It will be created with defaults the first time the MCP runs."
+    note "skip: planner tone / examples (config missing)"
+    step_done "Planner tone / examples (skipped)"
+    return 0
+  fi
+
+  printf '\n'
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  info "Tone & style examples (optional but recommended)"
+  printf '%s\n' ""
+  printf '%s\n' "  The conversation-planner reads message_rules.tone,"
+  printf '%s\n' "  message_rules.tone_guidelines, and message_rules.style_examples"
+  printf '%s\n' "  to mirror how you actually write on LinkedIn."
+  printf '%s\n' ""
+  printf '%s\n' "  You can describe your tone (one line) and add 1–4 sample replies."
+  printf '%s\n' "  Skip anything by pressing Enter — defaults stay in place."
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  printf '\n'
+
+  local reply=""
+  read -r -p "[install] Configure tone and sample replies now? [Y/n] " reply || reply=""
+  case "${reply}" in
+    n|N|no|NO)
+      info "Skipped — run later via Claude Code: /setup-outreach (Step 3)."
+      note "skip: planner tone / examples (declined)"
+      step_done "Planner tone / examples (skipped)"
+      return 0
+      ;;
+  esac
+
+  local tone_short=""
+  local tone_guidelines=""
+  printf '\n'
+  info "Tone (short adjective list, e.g. 'warm, casual, direct, no jargon')."
+  info "Press Enter to keep the current tone in ${cfg_path}."
+  read -r -p "[install] Tone: " tone_short || tone_short=""
+
+  printf '\n'
+  info "Tone guidelines (optional, longer prose). Single line."
+  info "Examples: 'lowercase, occasional em-dashes, no emoji, ≤2 sentences'."
+  info "Press Enter to skip."
+  read -r -p "[install] Tone guidelines: " tone_guidelines || tone_guidelines=""
+
+  local examples_payload=""
+  printf '\n'
+  info "Sample replies (recommended: 2–4). Press Enter on the reply prompt to stop."
+  printf '\n'
+
+  local idx=0
+  while :; do
+    idx=$((idx + 1))
+    if [[ "${idx}" -gt 6 ]]; then
+      info "Captured ${idx} example slots — that's plenty. Stopping."
+      break
+    fi
+
+    local label="" context="" incoming="" example_reply=""
+    info "Example ${idx}:"
+    read -r -p "  Reply text (leave blank to finish): " example_reply || example_reply=""
+    if [[ -z "${example_reply}" ]]; then
+      idx=$((idx - 1))
+      break
+    fi
+    read -r -p "  Label (optional, e.g. 'cold opener'): " label || label=""
+    read -r -p "  Context (optional, e.g. 'they asked what we do'): " context || context=""
+    read -r -p "  Incoming prospect message (optional; blank for outbound): " incoming || incoming=""
+
+    if [[ -n "${examples_payload}" ]]; then
+      examples_payload+=$'\x1f'
+    fi
+    examples_payload+="${label}"$'\x1e'"${context}"$'\x1e'"${incoming}"$'\x1e'"${example_reply}"
+    printf '\n'
+  done
+
+  if [[ -z "${tone_short}" ]] && [[ -z "${tone_guidelines}" ]] && [[ -z "${examples_payload}" ]]; then
+    info "No tone or examples provided — leaving config untouched."
+    note "skip: planner tone / examples (no inputs)"
+    step_done "Planner tone / examples (no changes)"
+    return 0
+  fi
+
+  if ! TONE_CFG_PATH="${cfg_path}" \
+       TONE_SHORT="${tone_short}" \
+       TONE_GUIDELINES="${tone_guidelines}" \
+       TONE_EXAMPLES="${examples_payload}" \
+       uv run --project "${REPO_ROOT}" python - <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+path = os.environ["TONE_CFG_PATH"]
+tone_short = os.environ.get("TONE_SHORT", "")
+tone_guidelines = os.environ.get("TONE_GUIDELINES", "")
+examples_raw = os.environ.get("TONE_EXAMPLES", "")
+
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        cfg = json.load(fh)
+except (OSError, ValueError) as exc:
+    print(f"[install] Could not read planner config: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+if not isinstance(cfg, dict):
+    print("[install] Planner config is not a JSON object; aborting tone update.", file=sys.stderr)
+    sys.exit(1)
+
+rules = cfg.setdefault("message_rules", {})
+if not isinstance(rules, dict):
+    print("[install] message_rules is not an object; aborting tone update.", file=sys.stderr)
+    sys.exit(1)
+
+if tone_short.strip():
+    rules["tone"] = tone_short.strip()
+if tone_guidelines.strip():
+    rules["tone_guidelines"] = tone_guidelines.strip()
+elif "tone_guidelines" not in rules:
+    rules["tone_guidelines"] = ""
+
+new_examples = []
+if examples_raw:
+    for chunk in examples_raw.split("\x1f"):
+        if not chunk:
+            continue
+        parts = chunk.split("\x1e")
+        while len(parts) < 4:
+            parts.append("")
+        label, context, incoming, reply = (p.strip() for p in parts[:4])
+        if not reply:
+            continue
+        item = {"reply": reply}
+        if label:
+            item["label"] = label
+        if context:
+            item["context"] = context
+        if incoming:
+            item["incoming"] = incoming
+        new_examples.append(item)
+
+if new_examples:
+    existing = rules.get("style_examples")
+    if not isinstance(existing, list):
+        existing = []
+    rules["style_examples"] = existing + new_examples
+elif "style_examples" not in rules:
+    rules["style_examples"] = []
+
+fd, tmp = tempfile.mkstemp(prefix=".tone-", dir=os.path.dirname(path))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    os.replace(tmp, path)
+except Exception:
+    if os.path.exists(tmp):
+        os.unlink(tmp)
+    raise
+
+print(f"[install] Updated {path}")
+print(f"[install]   tone:             {rules.get('tone', '')}")
+print(f"[install]   tone_guidelines:  {rules.get('tone_guidelines', '') or '(blank)'}")
+print(f"[install]   style_examples:   {len(rules.get('style_examples', []))} entry(ies)")
+PY
+  then
+    warn "Could not update tone settings in ${cfg_path}."
+    warn "Edit it manually or run: /setup-outreach in Claude Code."
+    note "warn: planner tone / examples update failed"
+    step_done "Planner tone / examples (failed)"
+    return 0
+  fi
+
+  note "ok: planner tone / examples saved to outreach/config/conversation_planner.json"
+  step_done "Planner tone / examples"
+}
+
 start_web_dashboard() {
   if [[ "${SKIP_WEB}" == "1" ]]; then
     step_begin "Starting outreach dashboard"
@@ -964,7 +1170,7 @@ print_final_summary() {
   if ! command -v claude >/dev/null 2>&1; then
     printf '  • Install Claude Code, then re-run: cd "%s" && ./install.sh\n' "${REPO_ROOT}"
   else
-    printf '  • In Claude Code (this repo): /setup-outreach — configure persona from LinkedIn\n'
+    printf '  • In Claude Code (this repo): /setup-outreach — persona, tone, and style examples\n'
     printf '  • Outreach: connect to <linkedin-url>\n'
   fi
   if [[ "${SKIP_WEB}" != "1" ]]; then
@@ -997,6 +1203,7 @@ main() {
   launch_chrome_cdp
   prompt_linkedin_login
   run_sync_planner_persona_skill
+  setup_planner_tone_and_examples
   setup_email_notifications
   start_web_dashboard
 
