@@ -193,49 +193,30 @@ remove_mcp() {
   note "ok: MCP '${CLAUDE_MCP_SERVER_NAME}' removed"
 }
 
-remove_mcp_permission() {
-  local rule="mcp__${CLAUDE_MCP_SERVER_NAME}"
+remove_outreach_permissions() {
   local repo="$1"
-  local files=(
-    "${HOME}/.claude/settings.json"
-    "${repo}/.claude/settings.local.json"
-  )
-  local changed=0
-  local f
-  for f in "${files[@]}"; do
-    [[ -f "$f" ]] || continue
-    if uv run --project "${repo}" python - "$f" "$rule" <<'PY' 2>/dev/null | grep -q .; then
-import json
-import sys
-
-path, rule = sys.argv[1], sys.argv[2]
-try:
-    with open(path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-except (OSError, ValueError):
-    sys.exit(1)
-if not isinstance(data, dict):
-    sys.exit(1)
-perms = data.get("permissions")
-if not isinstance(perms, dict):
-    sys.exit(1)
-allow = perms.get("allow")
-if not isinstance(allow, list) or rule not in allow:
-    sys.exit(1)
-allow[:] = [item for item in allow if item != rule]
-with open(path, "w", encoding="utf-8") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-print(path)
-PY
+  local allow_script="${SCRIPT_DIR}/outreach-allow-settings"
+  if [[ ! -x "${allow_script}" ]]; then
+    note "skip: outreach permissions (allow-settings script missing)"
+    return 0
+  fi
+  local output="" changed=0
+  for scope in "" "--local"; do
+    local local_flag=0
+    [[ "$scope" == "--local" ]] && local_flag=1
+    if ! output="$(OUTREACH_REPO_ROOT="${repo}" INSTALL_LOCAL="${local_flag}" \
+        "${allow_script}" remove ${scope} 2>&1)"; then
+      continue
+    fi
+    if [[ "$output" == *"removed"* ]]; then
       changed=1
-      info "Removed '${rule}' from ${f}"
+      info "${output}"
     fi
   done
   if [[ "$changed" -eq 1 ]]; then
-    note "ok: MCP permissions cleaned"
+    note "ok: outreach MCP/skill/bash permissions removed"
   else
-    note "skip: MCP permissions (none found)"
+    note "skip: outreach permissions (none found)"
   fi
 }
 
@@ -413,7 +394,7 @@ main() {
   if confirm "Remove LinkedIn MCP from Claude Code (all scopes)?"; then
     remove_mcp "$repo"
     if [[ "$REMOVE_PERMISSIONS" -eq 1 ]]; then
-      remove_mcp_permission "$repo"
+      remove_outreach_permissions "$repo"
       remove_project_mcp_json "$repo"
     fi
   else

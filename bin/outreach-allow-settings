@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# outreach-allow-settings — add or remove Claude Code permission rules for outreach.
+#
+# Usage:
+#   outreach-allow-settings add [--local]
+#   outreach-allow-settings remove [--local]
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
+SKILL_SRC="${SKILL_SRC:-outreach/skills}"
+INSTALL_LOCAL="${INSTALL_LOCAL:-0}"
+
+usage() {
+  cat <<'EOF'
+Usage: outreach-allow-settings add [--local]
+       outreach-allow-settings remove [--local]
+
+  add     Pre-approve LinkedIn-Outreach MCP tools, skills, and maintenance bash.
+  remove  Remove those rules (used by outreach-uninstall).
+
+  --local   Write <repo>/.claude/settings.local.json (default: ~/.claude/settings.json)
+EOF
+}
+
+resolve_repo_root() {
+  if [[ -n "${OUTREACH_REPO_ROOT:-}" ]]; then
+    printf '%s' "$OUTREACH_REPO_ROOT"
+    return 0
+  fi
+  local root
+  root="$(git -C "${DEFAULT_REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$root" ]] && [[ -f "${root}/pyproject.toml" ]] \
+      && grep -q 'name = "linkedin-outreach"' "${root}/pyproject.toml" 2>/dev/null; then
+    printf '%s' "$root"
+    return 0
+  fi
+  if [[ -f "${DEFAULT_REPO_ROOT}/pyproject.toml" ]] \
+      && grep -q 'name = "linkedin-outreach"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
+    printf '%s' "$DEFAULT_REPO_ROOT"
+    return 0
+  fi
+  return 1
+}
+
+settings_target() {
+  local repo="$1"
+  if [[ "$INSTALL_LOCAL" == "1" ]]; then
+    mkdir -p "${repo}/.claude"
+    printf '%s' "${repo}/.claude/settings.local.json"
+  else
+    mkdir -p "${HOME}/.claude"
+    printf '%s' "${HOME}/.claude/settings.json"
+  fi
+}
+
+run_python() {
+  local repo="$1" target="$2" action="$3"
+  uv run --project "${repo}" python - "${target}" "${action}" "${repo}" \
+    "${CLAUDE_MCP_SERVER_NAME}" "${SKILL_SRC}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+target, action, repo_root, mcp_server, skill_src = sys.argv[1:6]
+
+
+def build_rules(root: Path) -> list[str]:
+    rules = [f"mcp__{mcp_server}"]
+    skills_dir = root / skill_src
+    if skills_dir.is_dir():
+        for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
+            rules.append(f"Skill({skill_md.parent.name})")
+    rules.extend(
+        [
+            "Bash(bin/outreach-*)",
+            "Bash(./install.sh*)",
+            "Bash(./uninstall.sh*)",
+            "Bash(make upgrade*)",
+            "Bash(make uninstall*)",
+            "Bash(make claude-install*)",
+        ]
+    )
+    # Stable order, no duplicates
+    seen: set[str] = set()
+    out: list[str] = []
+    for rule in rules:
+        if rule not in seen:
+            seen.add(rule)
+            out.append(rule)
+    return out
+
+
+def load_settings(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+path = Path(target)
+root = Path(repo_root)
+rules = build_rules(root)
+data = load_settings(path)
+
+perms = data.setdefault("permissions", {})
+if not isinstance(perms, dict):
+    perms = {}
+    data["permissions"] = perms
+allow = perms.setdefault("allow", [])
+if not isinstance(allow, list):
+    allow = []
+    perms["allow"] = allow
+
+added = 0
+removed = 0
+
+if action == "add":
+    for rule in rules:
+        if rule not in allow:
+            allow.append(rule)
+            added += 1
+elif action == "remove":
+    keep = [item for item in allow if item not in rules]
+    removed = len(allow) - len(keep)
+    perms["allow"] = keep
+else:
+    print(f"ERROR: unknown action {action!r}", file=sys.stderr)
+    sys.exit(1)
+
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+if action == "add":
+    print(f"ok: added {added} rule(s), total_allow={len(perms['allow'])} path={path}")
+elif removed:
+    print(f"ok: removed {removed} rule(s) path={path}")
+else:
+    print(f"ok: no outreach rules to remove path={path}")
+PY
+}
+
+main() {
+  local action="${1:-}"
+  shift || true
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --local)
+        INSTALL_LOCAL=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "Unknown option: $1" >&2
+        usage >&2
+        exit 1
+        ;;
+    esac
+  done
+
+  case "$action" in
+    add|remove) ;;
+    *)
+      usage >&2
+      exit 1
+      ;;
+  esac
+
+  local repo=""
+  if ! repo="$(resolve_repo_root)"; then
+    echo "ERROR: LinkedIn-Outreach repo not found" >&2
+    exit 1
+  fi
+  repo="$(cd "$repo" && pwd)"
+
+  local target
+  target="$(settings_target "$repo")"
+  run_python "$repo" "$target" "$action"
+}
+
+main "$@"

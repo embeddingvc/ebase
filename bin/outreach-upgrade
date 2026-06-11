@@ -132,6 +132,14 @@ else
   register_mcp "$REPO_ROOT" user
 fi
 
+ALLOW_SCRIPT="${SCRIPT_DIR}/outreach-allow-settings"
+if [[ -x "$ALLOW_SCRIPT" ]]; then
+  local_allow=()
+  [[ "$INSTALL_LOCAL" == "true" ]] && local_allow=(--local)
+  OUTREACH_REPO_ROOT="$REPO_ROOT" INSTALL_LOCAL="$([[ "$INSTALL_LOCAL" == "true" ]] && echo 1 || echo 0)" \
+    "$ALLOW_SCRIPT" add "${local_allow[@]}" 2>/dev/null || true
+fi
+
 NEW_VERSION="$(read_local_version "$REPO_ROOT")"
 mkdir -p "$STATE_DIR"
 echo "$OLD_VERSION" >"$MARKER_FILE"
