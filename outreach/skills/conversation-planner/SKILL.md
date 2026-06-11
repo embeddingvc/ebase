@@ -57,6 +57,10 @@ Use config fields when composing:
 - `campaign.goal`, `campaign.topic`, `campaign.value_proposition`
 - `conversation_end_goals.preferred[]` / `fallback[]` (their `id` values can be custom)
 - `message_rules` limits and phrasing constraints
+- `message_rules.tone` (short adjective list) and `message_rules.tone_guidelines`
+  (longer free-form voice description)
+- `message_rules.style_examples[]` — operator-authored example replies (see
+  **Tone & style examples** below). Treat them as the canonical voice cue.
 - `router` for route selection (`default_plan_mode`, `step_timeout_hours`,
   `step4_path_priority`, `signal_routes`)
 
@@ -319,6 +323,32 @@ goal selection rules above.
 
 ---
 
+## Tone & style examples (operator voice)
+
+`message_rules.tone`, `message_rules.tone_guidelines`, and
+`message_rules.style_examples[]` together describe how the **operator**
+actually writes. They override the generic tone defaults below whenever they
+are present.
+
+- `tone` — short comma-separated adjectives (e.g. `"warm, casual, direct"`).
+- `tone_guidelines` — optional longer prose: do/don't, sentence length,
+  punctuation habits, formality, emoji policy, etc.
+- `style_examples[]` — array of objects, each `{ label?, context?, incoming?, reply }`:
+  - `reply` (**required**) — a real or representative example of how the
+    operator would write a message. Mirror its rhythm, vocabulary, sentence
+    length, and punctuation.
+  - `incoming` (optional) — the prospect message the example is replying to.
+    `null` / empty means it is an outbound opener (Step 1, Step 2 cold ask).
+  - `context` / `label` (optional) — situational hints (e.g.
+    `"They asked what we do"`, `"Day-1 connect note"`).
+
+Treat `style_examples[]` as **canonical voice samples**: pattern-match against
+their cadence, contractions, capitalization, and phrasing instead of inventing
+your own. Do not copy them verbatim — adapt to the current prospect and signal.
+
+If `style_examples` is empty and `tone_guidelines` is blank, fall back to the
+short `tone` string and the generic guidance in *Composing the Message*.
+
 ## Composing the Message
 
 Apply these rules to **every message**:
@@ -328,8 +358,11 @@ Apply these rules to **every message**:
 - Do not use: "synergy", "I'd love to pick your brain", "circle back", "bandwidth".
 - Include the prospect's first name somewhere in the message.
 - Sound like a real person wrote it for this one person — not a template.
-- Tone: warm, professionally curious, low-pressure.
+- Tone: warm, professionally curious, low-pressure (override with
+  `message_rules.tone` / `tone_guidelines` / `style_examples[]` when present).
 - Before finalising: ask yourself *would a real person actually send this?* If it reads like a template, rewrite it.
+- Sanity check against `style_examples[]`: does this message read like
+  something the operator would actually have written?
 
 Character limits:
 - Connection request note (Step 1, `connection_status == "none"`): **≤ 300 characters** (LinkedIn hard limit — count exactly).

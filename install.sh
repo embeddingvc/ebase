@@ -29,11 +29,12 @@ LINKEDIN_LOGIN_URL="${LINKEDIN_LOGIN_URL:-https://www.linkedin.com}"
 SKIP_EMAIL_SETUP="${LINKEDIN_OUTREACH_SKIP_EMAIL_SETUP:-0}"
 GMAIL_APP_PASSWORD_URL="${GMAIL_APP_PASSWORD_URL:-https://myaccount.google.com/apppasswords}"
 SKIP_PERSONA_SYNC="${LINKEDIN_OUTREACH_SKIP_PERSONA_SYNC:-0}"
+SKIP_TONE_SETUP="${LINKEDIN_OUTREACH_SKIP_TONE_SETUP:-0}"
 SKIP_WEB="${LINKEDIN_OUTREACH_SKIP_WEB:-0}"
 PERSONA_PROFILE_URL="${PERSONA_PROFILE_URL:-https://www.linkedin.com/in/me/}"
 
 REPO_ROOT=""
-STEP_TOTAL=8
+STEP_TOTAL=9
 STEP_NUM=0
 STEP_CURRENT=""
 INSTALL_NOTES=()
@@ -95,6 +96,12 @@ Usage: install.sh [options]
     (same as LINKEDIN_OUTREACH_SKIP_PERSONA_SYNC=1). Auto-skipped when the
     claude CLI is missing or Chrome CDP is unreachable.
 
+  --skip-tone-setup
+    Do not prompt for tone description / sample replies that seed
+    message_rules.tone_guidelines and message_rules.style_examples
+    (same as LINKEDIN_OUTREACH_SKIP_TONE_SETUP=1). Always skipped when stdin
+    is not a TTY (e.g. curl | bash).
+
   Other:
     LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
     LINKEDIN_OUTREACH_SKIP_WEB=1           Skip dashboard (same as --no-web).
@@ -126,6 +133,10 @@ parse_args() {
         ;;
       --skip-persona-sync)
         SKIP_PERSONA_SYNC=1
+        shift
+        ;;
+      --skip-tone-setup)
+        SKIP_TONE_SETUP=1
         shift
         ;;
       --no-web)
@@ -686,6 +697,72 @@ run_sync_planner_persona_skill() {
   fi
 }
 
+setup_planner_tone_and_examples() {
+  step_begin "Planner tone & style examples (optional)"
+
+  local cfg_path="${REPO_ROOT}/outreach/config/conversation_planner.json"
+  local prompts_path="${REPO_ROOT}/outreach/config/style_example_prompts.json"
+  local setup_script="${REPO_ROOT}/tools/setup_tone_examples.py"
+
+  if [[ "${SKIP_TONE_SETUP}" == "1" ]]; then
+    info "Skipping tone / style examples setup (--skip-tone-setup)."
+    note "skip: planner tone / examples (--skip-tone-setup)"
+    step_done "Planner tone / examples (skipped)"
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    info "Non-interactive install — skipping tone / style examples prompts."
+    info "Run later via Claude Code: /setup-outreach (Step 3 — Tone & style examples)."
+    note "skip: planner tone / examples (non-interactive stdin)"
+    step_done "Planner tone / examples (skipped)"
+    return 0
+  fi
+  if [[ ! -f "${cfg_path}" ]]; then
+    info "Planner config not found at ${cfg_path} — skipping tone setup."
+    info "It will be created with defaults the first time the MCP runs."
+    note "skip: planner tone / examples (config missing)"
+    step_done "Planner tone / examples (skipped)"
+    return 0
+  fi
+  if [[ ! -f "${prompts_path}" ]]; then
+    warn "Questionnaire missing: ${prompts_path}"
+    warn "Re-run from a complete checkout or configure via /setup-outreach."
+    note "warn: style_example_prompts.json missing"
+    step_done "Planner tone / examples (skipped)"
+    return 0
+  fi
+
+  info "Optional step — you'll be asked [y/N] before any questionnaire starts."
+
+  local rc=0
+  if ! uv run --project "${REPO_ROOT}" python "${setup_script}" \
+      --config "${cfg_path}" \
+      --prompts "${prompts_path}"; then
+    rc=$?
+  fi
+
+  case "${rc}" in
+    0)
+      note "ok: planner tone / examples saved to outreach/config/conversation_planner.json"
+      step_done "Planner tone / examples"
+      ;;
+    3)
+      note "skip: planner tone / examples (declined)"
+      step_done "Planner tone / examples (skipped)"
+      ;;
+    4)
+      note "skip: planner tone / examples (no inputs)"
+      step_done "Planner tone / examples (no changes)"
+      ;;
+    *)
+      warn "Could not update tone settings in ${cfg_path}."
+      warn "Edit it manually or run: /setup-outreach in Claude Code."
+      note "warn: planner tone / examples update failed"
+      step_done "Planner tone / examples (failed)"
+      ;;
+  esac
+}
+
 start_web_dashboard() {
   if [[ "${SKIP_WEB}" == "1" ]]; then
     step_begin "Starting outreach dashboard"
@@ -964,7 +1041,7 @@ print_final_summary() {
   if ! command -v claude >/dev/null 2>&1; then
     printf '  • Install Claude Code, then re-run: cd "%s" && ./install.sh\n' "${REPO_ROOT}"
   else
-    printf '  • In Claude Code (this repo): /setup-outreach — configure persona from LinkedIn\n'
+    printf '  • In Claude Code (this repo): /setup-outreach — persona, tone, and style examples\n'
     printf '  • Outreach: connect to <linkedin-url>\n'
   fi
   if [[ "${SKIP_WEB}" != "1" ]]; then
@@ -997,6 +1074,7 @@ main() {
   launch_chrome_cdp
   prompt_linkedin_login
   run_sync_planner_persona_skill
+  setup_planner_tone_and_examples
   setup_email_notifications
   start_web_dashboard
 

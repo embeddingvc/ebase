@@ -47,6 +47,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
 
     get_connections           Return .../connections.json as JSON text.
     get_conversation_planner_config Return runtime planner config JSON.
+    get_style_example_prompts Return tone + style-example questionnaire for setup-outreach.
     merge_conversation_planner_identity Merge persona / organization into .../config/persona.json (filesystem only; host LLM summarizes first).
     get_prospect              Return .../prospects/<id>.json as text.
     get_conversation          Return .../conversations/<id>.json as text.
@@ -739,6 +740,30 @@ def _planner_config_path() -> Path:
 def _persona_path() -> Path:
     return _outreach_base() / "config" / "persona.json"
 
+
+def _style_example_prompts_path() -> Path:
+    return _outreach_base() / "config" / "style_example_prompts.json"
+
+
+def _bundled_style_example_prompts_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "outreach" / "config" / "style_example_prompts.json"
+
+
+def _load_style_example_prompts() -> dict:
+    """Load tone + style-example questionnaire for setup flows."""
+    for path in (_style_example_prompts_path(), _bundled_style_example_prompts_path()):
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.exception("_load_style_example_prompts: invalid %s", path)
+            continue
+        if isinstance(data, dict):
+            return data
+    return {"version": 1, "tone_questions": [], "style_example_prompts": []}
+
+
 _ALLOWED_PLANNER_PERSONA_KEYS = frozenset({"name", "role", "organization", "specialization"})
 _ALLOWED_PLANNER_ORGANIZATION_KEYS = frozenset({"description"})
 
@@ -854,6 +879,8 @@ def _default_conversation_planner_config() -> dict:
                 "bandwidth",
             ],
             "tone": "warm, specific, curious, low-pressure",
+            "tone_guidelines": "",
+            "style_examples": [],
         },
         "router": {
             "default_plan_mode": "full_sequence",
@@ -912,6 +939,35 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
         )
         if value is not None and (not isinstance(value, int) or value <= 0):
             return f"message_rules.{key} must be a positive integer"
+
+    rules = config.get("message_rules")
+    if isinstance(rules, dict):
+        guidelines = rules.get("tone_guidelines")
+        if guidelines is not None and not isinstance(guidelines, str):
+            return "message_rules.tone_guidelines must be a string"
+
+        examples = rules.get("style_examples")
+        if examples is not None:
+            if not isinstance(examples, list):
+                return "message_rules.style_examples must be an array"
+            for idx, item in enumerate(examples):
+                if not isinstance(item, dict):
+                    return (
+                        f"message_rules.style_examples[{idx}] must be an object"
+                    )
+                reply = item.get("reply")
+                if not isinstance(reply, str) or not reply.strip():
+                    return (
+                        f"message_rules.style_examples[{idx}].reply must be a "
+                        "non-empty string"
+                    )
+                for opt_key in ("label", "context", "incoming"):
+                    val = item.get(opt_key)
+                    if val is not None and not isinstance(val, str):
+                        return (
+                            f"message_rules.style_examples[{idx}].{opt_key} "
+                            "must be a string when set"
+                        )
 
     end_goals = config.get("conversation_end_goals")
     if isinstance(end_goals, dict):
@@ -1711,6 +1767,29 @@ async def get_conversation_planner_config() -> str:
         return json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
     except Exception as exc:
         logger.exception("get_conversation_planner_config failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def get_style_example_prompts() -> str:
+    """
+    Return the tone + style-example questionnaire used during setup-outreach.
+
+    JSON shape:
+    - ``tone_questions[]`` — short prompts that compile into ``message_rules.tone``
+      and ``message_rules.tone_guidelines``.
+    - ``style_example_prompts[]`` — outreach scenarios; each has ``question``,
+      ``label``, ``context``, optional ``incoming``, and ``hint``. Collect only
+      the operator's ``reply`` and merge the rest from the prompt object.
+
+    Reads ``config/style_example_prompts.json`` under the active outreach data
+    root, falling back to the repo template when absent.
+    """
+    try:
+        data = _load_style_example_prompts()
+        return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    except Exception as exc:
+        logger.exception("get_style_example_prompts failed")
         return f"error: {exc}"
 
 
