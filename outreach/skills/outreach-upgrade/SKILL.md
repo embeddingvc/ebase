@@ -27,38 +27,27 @@ Parse the **one-line** output:
 
 | Output | Action |
 |--------|--------|
-| `UPGRADE_AVAILABLE <old> <new>` | Follow **Step 1** below (ask user or auto-upgrade) |
+| `UPGRADE_AVAILABLE <old> <new>` | Follow **Step 1** below (always ask the user) |
 | `UPGRADED <old> <new>` | Log success, continue with the invoking skill |
 | `JUST_UPGRADED <old> <new>` | Log success, continue with the invoking skill |
 | `UP_TO_DATE <ver>` or empty | Continue silently |
 
 Network or git failures produce no output — **do not block** the invoking skill.
 
-### Step 1: Ask the user (or auto-upgrade)
+### Step 1: Ask the user
 
-```bash
-_AUTO=""
-[ "${OUTREACH_AUTO_UPGRADE:-}" = "1" ] && _AUTO="true"
-[ -z "$_AUTO" ] && _AUTO=$(bin/outreach-config get auto_upgrade 2>/dev/null || true)
-echo "AUTO_UPGRADE=$_AUTO"
-```
-
-**If `AUTO_UPGRADE=true` or `AUTO_UPGRADE=1`:** Skip AskQuestion. Log
-"Auto-upgrading LinkedIn-Outreach v{old} → v{new}…" and run **Step 2**.
-
-**Otherwise**, use **`AskQuestion`**:
+**Always** use **`AskQuestion`** when `UPGRADE_AVAILABLE` is detected — never
+skip the prompt based on config or environment.
 
 - Question: "LinkedIn-Outreach **v{new}** is available (you're on v{old}). Upgrade now?"
 - Options:
   - **Yes, upgrade now**
-  - **Always keep me up to date**
   - **Not now**
   - **Never ask again**
 
 | Choice | Action |
 |--------|--------|
 | Yes, upgrade now | **Step 2** |
-| Always keep me up to date | `bin/outreach-config set auto_upgrade true` → tell user auto-upgrade is on → **Step 2** |
 | Not now | Write snooze (see below) → continue invoking skill |
 | Never ask again | `bin/outreach-config set update_check false` → continue invoking skill |
 
@@ -81,7 +70,6 @@ echo "$_REMOTE_VER $_NEW_LEVEL $(date +%s)" > "$_SNOOZE_FILE"
 ```
 
 Tell the user: next reminder in 24h (level 1), 48h (level 2), or 1 week (level 3+).
-Tip: `bin/outreach-config set auto_upgrade true` for silent upgrades.
 
 ### Step 2: Run upgrade
 
@@ -120,12 +108,10 @@ Resume the skill the user originally invoked (setup-outreach, send-connection-re
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `auto_upgrade` | `false` | Skip prompts; upgrade when an update is detected |
 | `update_check` | `true` | Run version check at skill start |
 | `install_local` | `false` | On upgrade, sync skills to `~/.claude/skills` (set `true` for local-only MCP) |
 
 ```bash
-bin/outreach-config set auto_upgrade true
 bin/outreach-config set update_check false
 bin/outreach-config set install_local true
 ```

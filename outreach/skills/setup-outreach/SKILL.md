@@ -21,7 +21,7 @@ bin/outreach-update-check 2>/dev/null || true
 ```
 
 If output is `UPGRADE_AVAILABLE <old> <new>`, follow the inline flow in skill
-**`outreach-upgrade`** (ask to upgrade, or auto-upgrade when configured). On
+**`outreach-upgrade`** (ask to upgrade). On
 `UPGRADED`, `JUST_UPGRADED`, `UP_TO_DATE`, or empty output, continue below.
 Do not block on network failures.
 
