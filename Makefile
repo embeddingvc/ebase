@@ -56,7 +56,7 @@ ifneq ($(LOCAL),)
 override CLAUDE_INSTALL_LOCAL := $(LOCAL)
 endif
 
-.PHONY: run browser server stop stop-web test test_conversation regression smoke install logs queue status help web \
+.PHONY: run browser server stop stop-web test test_conversation regression smoke install upgrade logs queue status help web \
 	claude-install claude-cleanup
 
 # ── Default target ────────────────────────────────────────────────────────────
@@ -146,6 +146,10 @@ browse: ## Run the human-behaviour session forever (Ctrl-C to stop)
 install: ## Install Python deps + Playwright Chromium browser
 	uv sync
 	uv run playwright install chromium
+
+upgrade: ## Pull latest from origin/main, uv sync, refresh skills + MCP
+	@bin/outreach-update-check --force 2>/dev/null || true
+	@bin/outreach-upgrade
 
 claude-install: ## Default: sync $(SKILL_SRC) → $(USER_CLAUDE_SKILLS) + MCP --scope user | LOCAL=1: local MCP only, no home sync
 	@command -v claude >/dev/null 2>&1 || { printf '%s\n' 'Claude Code CLI not found in PATH. Install: https://docs.anthropic.com/en/docs/claude-code' >&2; exit 1; }

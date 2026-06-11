@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# outreach-upgrade — pull latest LinkedIn-Outreach and refresh deps + skills.
+#
+# Usage: outreach-upgrade [old_version] [new_version]
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+STATE_DIR="${OUTREACH_STATE_DIR:-$HOME/.linkedin-outreach}"
+MARKER_FILE="$STATE_DIR/just-upgraded-from"
+CACHE_FILE="$STATE_DIR/last-update-check"
+SNOOZE_FILE="$STATE_DIR/update-snoozed"
+CONFIG_BIN="${OUTREACH_CONFIG_BIN:-$SCRIPT_DIR/outreach-config}"
+REMOTE_BRANCH="${OUTREACH_REMOTE_BRANCH:-main}"
+SKILL_SRC="${SKILL_SRC:-outreach/skills}"
+USER_CLAUDE_SKILLS="${USER_CLAUDE_SKILLS:-$HOME/.claude/skills}"
+CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
+
+OLD_VERSION="${1:-}"
+NEW_VERSION="${2:-}"
+
+resolve_repo_root() {
+  if [[ -n "${OUTREACH_REPO_ROOT:-}" ]]; then
+    printf '%s' "$OUTREACH_REPO_ROOT"
+    return 0
+  fi
+  local root
+  root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$root" ]] && [[ -f "${root}/pyproject.toml" ]] \
+      && grep -q 'name = "linkedin-outreach"' "${root}/pyproject.toml" 2>/dev/null; then
+    printf '%s' "$root"
+    return 0
+  fi
+  if [[ -f "${DEFAULT_REPO_ROOT}/pyproject.toml" ]] \
+      && grep -q 'name = "linkedin-outreach"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
+    printf '%s' "$DEFAULT_REPO_ROOT"
+    return 0
+  fi
+  return 1
+}
+
+read_local_version() {
+  local repo="$1"
+  if [[ -f "${repo}/VERSION" ]]; then
+    tr -d '[:space:]' <"${repo}/VERSION"
+  else
+    echo "unknown"
+  fi
+}
+
+sync_skills_home() {
+  local repo="$1"
+  local src="${repo}/${SKILL_SRC}"
+  [[ -d "$src" ]] || return 0
+  mkdir -p "$USER_CLAUDE_SKILLS"
+  local d n synced=0
+  shopt -s nullglob
+  for d in "${src}"/*/; do
+    [[ -d "$d" ]] || continue
+    [[ -f "${d}/SKILL.md" ]] || continue
+    n="$(basename "$d")"
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a --delete "${d}" "${USER_CLAUDE_SKILLS}/${n}/"
+    else
+      rm -rf "${USER_CLAUDE_SKILLS}/${n}"
+      mkdir -p "${USER_CLAUDE_SKILLS}/${n}"
+      cp -a "${d}/." "${USER_CLAUDE_SKILLS}/${n}/"
+    fi
+    synced=$((synced + 1))
+  done
+  shopt -u nullglob
+  echo "[outreach-upgrade] Synced ${synced} skill(s) → ${USER_CLAUDE_SKILLS}/"
+}
+
+register_mcp() {
+  local repo="$1" scope="$2"
+  command -v claude >/dev/null 2>&1 || return 0
+  claude mcp remove --scope user "$CLAUDE_MCP_SERVER_NAME" 2>/dev/null || true
+  claude mcp remove --scope local "$CLAUDE_MCP_SERVER_NAME" 2>/dev/null || true
+  claude mcp remove --scope project "$CLAUDE_MCP_SERVER_NAME" 2>/dev/null || true
+  if [[ "$scope" == "local" ]]; then
+    (cd "$repo" && claude mcp add --transport stdio --scope local "$CLAUDE_MCP_SERVER_NAME" -- \
+      uv run --project "$repo" "${repo}/tools/server.py") || true
+  else
+    (cd "$repo" && claude mcp add --transport stdio --scope user "$CLAUDE_MCP_SERVER_NAME" -- \
+      uv run --project "$repo" "${repo}/tools/server.py") || true
+  fi
+}
+
+REPO_ROOT=""
+if ! REPO_ROOT="$(resolve_repo_root)"; then
+  echo "ERROR: LinkedIn-Outreach repo not found" >&2
+  exit 1
+fi
+
+if [[ -z "$OLD_VERSION" ]]; then
+  OLD_VERSION="$(read_local_version "$REPO_ROOT")"
+fi
+
+if [[ ! -d "${REPO_ROOT}/.git" ]]; then
+  echo "ERROR: ${REPO_ROOT} is not a git checkout — run ./install.sh to reinstall" >&2
+  exit 1
+fi
+
+INSTALL_LOCAL="false"
+if [[ -x "$CONFIG_BIN" ]]; then
+  INSTALL_LOCAL="$("$CONFIG_BIN" get install_local 2>/dev/null || echo false)"
+fi
+[[ "${LINKEDIN_OUTREACH_INSTALL_LOCAL:-0}" == "1" ]] && INSTALL_LOCAL="true"
+
+STASH_OUTPUT=""
+cd "$REPO_ROOT"
+if [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
+  STASH_OUTPUT="$(git stash push -m "outreach-upgrade-$(date +%s)" 2>&1 || true)"
+fi
+
+if ! git pull --ff-only origin "$REMOTE_BRANCH"; then
+  echo "ERROR: git pull --ff-only failed — resolve manually in ${REPO_ROOT}" >&2
+  exit 1
+fi
+
+if command -v uv >/dev/null 2>&1; then
+  uv sync
+else
+  echo "[outreach-upgrade] uv not on PATH — skipped dependency sync" >&2
+fi
+
+if [[ "$INSTALL_LOCAL" == "true" ]]; then
+  register_mcp "$REPO_ROOT" local
+else
+  sync_skills_home "$REPO_ROOT"
+  register_mcp "$REPO_ROOT" user
+fi
+
+NEW_VERSION="$(read_local_version "$REPO_ROOT")"
+mkdir -p "$STATE_DIR"
+echo "$OLD_VERSION" >"$MARKER_FILE"
+rm -f "$CACHE_FILE" "$SNOOZE_FILE"
+
+if [[ "$STASH_OUTPUT" == *"Saved working directory"* ]]; then
+  echo "[outreach-upgrade] Note: local changes were stashed. Run 'git stash pop' in ${REPO_ROOT} to restore."
+fi
+
+echo "UPGRADED $OLD_VERSION $NEW_VERSION"

@@ -763,6 +763,16 @@ setup_planner_tone_and_examples() {
   esac
 }
 
+persist_outreach_upgrade_config() {
+  local cfg_bin="${REPO_ROOT}/bin/outreach-config"
+  [[ -x "${cfg_bin}" ]] || return 0
+  if [[ "${INSTALL_LOCAL}" == "1" ]]; then
+    "${cfg_bin}" set install_local true >/dev/null 2>&1 || true
+  else
+    "${cfg_bin}" set install_local false >/dev/null 2>&1 || true
+  fi
+}
+
 start_web_dashboard() {
   if [[ "${SKIP_WEB}" == "1" ]]; then
     step_begin "Starting outreach dashboard"
@@ -1042,6 +1052,7 @@ print_final_summary() {
     printf '  • Install Claude Code, then re-run: cd "%s" && ./install.sh\n' "${REPO_ROOT}"
   else
     printf '  • In Claude Code (this repo): /setup-outreach — persona, tone, and style examples\n'
+    printf '  • Upgrade later: make upgrade   or   /outreach-upgrade in Claude Code\n'
     printf '  • Outreach: connect to <linkedin-url>\n'
   fi
   if [[ "${SKIP_WEB}" != "1" ]]; then
@@ -1070,6 +1081,7 @@ main() {
   install_project_deps
   sync_claude_skills_to_home
   register_claude_mcp
+  persist_outreach_upgrade_config
   allow_linkedin_mcp_in_claude_settings
   launch_chrome_cdp
   prompt_linkedin_login
