@@ -424,66 +424,31 @@ register_claude_mcp() {
   step_done "Claude MCP"
 }
 
-allow_linkedin_mcp_in_claude_settings() {
-  # Pre-approve every LinkedIn MCP tool so Claude Code does not prompt on first use.
-  # Rule "mcp__<server>" matches all tools from that MCP server.
-  # Scope matches the MCP registration:
-  #   default (--scope user) → ~/.claude/settings.json
-  #   --local (--scope local) → <repo>/.claude/settings.local.json (gitignored)
-  local rule="mcp__${CLAUDE_MCP_SERVER_NAME}"
-  local target_file scope_label
+allow_outreach_claude_settings() {
+  # Pre-approve MCP (mcp__linkedin), outreach skills (Skill(...)), and
+  # maintenance bash (bin/outreach-*, install/uninstall, make targets).
+  local allow_script="${REPO_ROOT}/bin/outreach-allow-settings"
+  local scope_label args=()
   if [[ "${INSTALL_LOCAL}" == "1" ]]; then
-    mkdir -p "${REPO_ROOT}/.claude"
-    target_file="${REPO_ROOT}/.claude/settings.local.json"
     scope_label="project-local"
+    args+=(--local)
   else
-    mkdir -p "${HOME}/.claude"
-    target_file="${HOME}/.claude/settings.json"
     scope_label="user"
   fi
-
-  if ! uv run --project "${REPO_ROOT}" python - "${target_file}" "${rule}" <<'PY'
-import json
-import os
-import sys
-
-path, rule = sys.argv[1], sys.argv[2]
-
-data: object = {}
-if os.path.exists(path):
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        data = {}
-if not isinstance(data, dict):
-    data = {}
-
-perms = data.get("permissions")
-if not isinstance(perms, dict):
-    perms = {}
-    data["permissions"] = perms
-
-allow = perms.get("allow")
-if not isinstance(allow, list):
-    allow = []
-    perms["allow"] = allow
-
-if rule not in allow:
-    allow.append(rule)
-
-with open(path, "w", encoding="utf-8") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PY
-  then
-    warn "Could not update ${target_file} to allow ${rule}. Add it manually under permissions.allow."
-    note "warn: could not pre-allow MCP tools in ${target_file}"
+  if [[ ! -x "${allow_script}" ]]; then
+    warn "Missing ${allow_script} — skipped Claude permission pre-allow."
+    note "warn: outreach-allow-settings script missing"
     return 0
   fi
-
-  info "Claude permissions (${scope_label}): pre-allowed '${rule}' in ${target_file}"
-  note "ok: MCP tools pre-allowed (${scope_label})"
+  local output=""
+  if ! output="$(OUTREACH_REPO_ROOT="${REPO_ROOT}" INSTALL_LOCAL="${INSTALL_LOCAL}" \
+      "${allow_script}" add "${args[@]}" 2>&1)"; then
+    warn "Could not update Claude permissions: ${output}"
+    note "warn: could not pre-allow outreach tools/skills"
+    return 0
+  fi
+  info "Claude permissions (${scope_label}): ${output}"
+  note "ok: MCP, skills, and bash pre-allowed (${scope_label})"
 }
 
 chrome_binary() {
@@ -1083,7 +1048,7 @@ main() {
   sync_claude_skills_to_home
   register_claude_mcp
   persist_outreach_upgrade_config
-  allow_linkedin_mcp_in_claude_settings
+  allow_outreach_claude_settings
   launch_chrome_cdp
   prompt_linkedin_login
   run_sync_planner_persona_skill

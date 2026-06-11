@@ -188,6 +188,13 @@ claude-install: ## Default: sync $(SKILL_SRC) → $(USER_CLAUDE_SKILLS) + MCP --
 	    uv run --project "$(CURDIR)" "$(CURDIR)/tools/server.py"; \
 	  printf '%s\n' "Claude Code: synced skills → $(USER_CLAUDE_SKILLS)/; MCP '$(CLAUDE_MCP_SERVER_NAME)' (--scope user). Check: claude mcp list"; \
 	fi
+	@if [ -x "$(CURDIR)/bin/outreach-allow-settings" ]; then \
+	  if [ "$(CLAUDE_INSTALL_LOCAL)" = "1" ]; then \
+	    OUTREACH_REPO_ROOT="$(CURDIR)" INSTALL_LOCAL=1 "$(CURDIR)/bin/outreach-allow-settings" add --local; \
+	  else \
+	    OUTREACH_REPO_ROOT="$(CURDIR)" INSTALL_LOCAL=0 "$(CURDIR)/bin/outreach-allow-settings" add; \
+	  fi; \
+	fi
 
 claude-cleanup: ## Remove linkedin MCP from user/local/project scopes; does not delete $(SKILL_SRC) or $(USER_CLAUDE_SKILLS)
 	@claude mcp remove --scope user $(CLAUDE_MCP_SERVER_NAME) 2>/dev/null || true
