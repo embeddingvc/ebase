@@ -12,6 +12,19 @@ description: >-
 
 Guide the operator **one step at a time**. Do **not** run the full wizard in a single turn — finish the current sub-step, then **stop and wait** for the user.
 
+## Update check (run first)
+
+Before setup work, check for a newer LinkedIn-Outreach version:
+
+```bash
+bin/outreach-update-check 2>/dev/null || true
+```
+
+If output is `UPGRADE_AVAILABLE <old> <new>`, follow the inline flow in skill
+**`outreach-upgrade`** (ask to upgrade, or auto-upgrade when configured). On
+`UPGRADED`, `JUST_UPGRADED`, `UP_TO_DATE`, or empty output, continue below.
+Do not block on network failures.
+
 **Filesystem rule:** Never read or write `outreach/config/` via raw paths or shell. Use MCP **`get_conversation_planner_config`**, **`get_style_example_prompts`**, **`merge_conversation_planner_identity`**, and **`upsert_conversation_planner_config`** only.
 
 **Profile rule:** Step 2 always follows **scrape → present → refine → sync**. Do not call **`merge_conversation_planner_identity`** until the operator approves the final draft.
@@ -272,6 +285,7 @@ Mark all checklist items done.
 | **`get_conversation_planner_config`** | Read merged config (persona + planner) |
 | **`get_style_example_prompts`** | Tone + style-example questionnaire (steps 3b–3c) |
 | **`upsert_conversation_planner_config`** | Campaign + tone + style examples (step 3); writes the full planner JSON minus persona/organization |
+| **`outreach-upgrade`** (skill) | Version check + optional git pull when `UPGRADE_AVAILABLE` (run at skill start) |
 
 For a standalone LinkedIn-only identity refresh (no wizard), use **`sync-planner-persona-from-linkedin`** (`parse_profile`-first).
 

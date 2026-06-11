@@ -1,0 +1,457 @@
+#!/usr/bin/env bash
+# outreach-uninstall — remove LinkedIn-Outreach Claude/MCP integration and optional data.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+CDP_PORT="${CDP_PORT:-9222}"
+WEB_PORT="${WEB_PORT:-3847}"
+WEB_PID_FILE="${WEB_PID_FILE:-outreach/storage/web.pid}"
+WORKER_PID_FILE="${WORKER_PID_FILE:-outreach/storage/worker.pid}"
+CHROME_PROFILE="${CHROME_PROFILE:-${HOME}/.linkedin-chrome-profile}"
+CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
+SKILL_SRC="${SKILL_SRC:-outreach/skills}"
+USER_CLAUDE_SKILLS="${USER_CLAUDE_SKILLS:-${HOME}/.claude/skills}"
+OUTREACH_STATE_DIR="${OUTREACH_STATE_DIR:-${HOME}/.linkedin-outreach}"
+
+YES=0
+MCP_ONLY=0
+KEEP_DATA=1
+REMOVE_DATA=0
+REMOVE_STATE=0
+REMOVE_CHROME=0
+REMOVE_SKILLS=1
+REMOVE_PERMISSIONS=1
+
+UNINSTALL_NOTES=()
+
+info() { printf '%s\n' "[uninstall] $*"; }
+warn() { printf '%s\n' "[uninstall] $*" >&2; }
+note() { UNINSTALL_NOTES+=("$1"); }
+
+usage() {
+  cat <<'EOF'
+Usage: outreach-uninstall [options]
+
+  Default (interactive): confirm each category before removing anything.
+
+  Core (recommended):
+    - Stop web dashboard + worker
+    - Remove LinkedIn MCP (user / local / project scopes)
+    - Remove mcp__linkedin from Claude permissions
+    - Remove outreach skills from ~/.claude/skills/
+
+  Options:
+    -y, --yes              Non-interactive; apply core removal without prompts
+    --mcp-only             Only MCP + permissions (skip skills, services, data)
+    --no-skills            Keep ~/.claude/skills/<outreach-skill>/ copies
+    --remove-data          Delete outreach runtime data in the repo checkout
+                           (connections, conversations, persona, logs, queue, reports)
+    --remove-state         Delete ~/.linkedin-outreach/ (upgrade config, rate limits)
+    --remove-chrome-profile
+                           Delete the dedicated LinkedIn Chrome profile directory
+    --keep-data            Do not delete repo outreach data (default)
+
+  Examples:
+    ./uninstall.sh
+    bin/outreach-uninstall -y
+    bin/outreach-uninstall -y --remove-data --remove-state
+
+  Re-install later: ./install.sh   or   make claude-install
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -y|--yes)
+        YES=1
+        shift
+        ;;
+      --mcp-only)
+        MCP_ONLY=1
+        shift
+        ;;
+      --no-skills)
+        REMOVE_SKILLS=0
+        shift
+        ;;
+      --remove-data)
+        REMOVE_DATA=1
+        KEEP_DATA=0
+        shift
+        ;;
+      --remove-state)
+        REMOVE_STATE=1
+        shift
+        ;;
+      --remove-chrome-profile)
+        REMOVE_CHROME=1
+        shift
+        ;;
+      --keep-data)
+        KEEP_DATA=1
+        REMOVE_DATA=0
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        warn "Unknown option: $1"
+        usage >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
+resolve_repo_root() {
+  if [[ -n "${OUTREACH_REPO_ROOT:-}" ]]; then
+    printf '%s' "$OUTREACH_REPO_ROOT"
+    return 0
+  fi
+  local root
+  root="$(git -C "${DEFAULT_REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$root" ]] && [[ -f "${root}/pyproject.toml" ]] \
+      && grep -q 'name = "linkedin-outreach"' "${root}/pyproject.toml" 2>/dev/null; then
+    printf '%s' "$root"
+    return 0
+  fi
+  if [[ -f "${DEFAULT_REPO_ROOT}/pyproject.toml" ]] \
+      && grep -q 'name = "linkedin-outreach"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
+    printf '%s' "$DEFAULT_REPO_ROOT"
+    return 0
+  fi
+  return 1
+}
+
+confirm() {
+  local prompt="$1"
+  if [[ "$YES" -eq 1 ]]; then
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    warn "Non-interactive stdin — re-run with -y or run from a TTY."
+    return 1
+  fi
+  local reply=""
+  read -r -p "[uninstall] ${prompt} [y/N] " reply || reply=""
+  case "${reply}" in
+    y|Y|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+stop_processes() {
+  local repo="$1"
+  local web_pid="${repo}/${WEB_PID_FILE}"
+  local worker_pid="${repo}/${WORKER_PID_FILE}"
+
+  if [[ -f "$web_pid" ]]; then
+    local pid
+    pid="$(cat "$web_pid" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      info "Stopped web dashboard (pid=${pid})"
+      note "ok: web dashboard stopped"
+    fi
+    rm -f "$web_pid"
+  elif command -v lsof >/dev/null 2>&1; then
+    if lsof -ti ":${WEB_PORT}" >/dev/null 2>&1; then
+      lsof -ti ":${WEB_PORT}" | xargs kill 2>/dev/null || true
+      info "Stopped process on port ${WEB_PORT}"
+      note "ok: web port ${WEB_PORT} cleared"
+    fi
+  fi
+
+  if [[ -f "$worker_pid" ]]; then
+    local pid
+    pid="$(cat "$worker_pid" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      info "Stopped worker (pid=${pid})"
+      note "ok: worker stopped"
+    fi
+    rm -f "$worker_pid"
+  fi
+}
+
+remove_mcp() {
+  local repo="$1"
+  if ! command -v claude >/dev/null 2>&1; then
+    info "claude CLI not found — skipped MCP removal"
+    note "skip: MCP removal (claude CLI missing)"
+    return 0
+  fi
+  claude mcp remove --scope user "${CLAUDE_MCP_SERVER_NAME}" 2>/dev/null || true
+  claude mcp remove --scope local "${CLAUDE_MCP_SERVER_NAME}" 2>/dev/null || true
+  (cd "$repo" && claude mcp remove --scope project "${CLAUDE_MCP_SERVER_NAME}" 2>/dev/null) || true
+  info "Removed MCP '${CLAUDE_MCP_SERVER_NAME}' (user / local / project)"
+  note "ok: MCP '${CLAUDE_MCP_SERVER_NAME}' removed"
+}
+
+remove_mcp_permission() {
+  local rule="mcp__${CLAUDE_MCP_SERVER_NAME}"
+  local repo="$1"
+  local files=(
+    "${HOME}/.claude/settings.json"
+    "${repo}/.claude/settings.local.json"
+  )
+  local changed=0
+  local f
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] || continue
+    if uv run --project "${repo}" python - "$f" "$rule" <<'PY' 2>/dev/null | grep -q .; then
+import json
+import sys
+
+path, rule = sys.argv[1], sys.argv[2]
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+except (OSError, ValueError):
+    sys.exit(1)
+if not isinstance(data, dict):
+    sys.exit(1)
+perms = data.get("permissions")
+if not isinstance(perms, dict):
+    sys.exit(1)
+allow = perms.get("allow")
+if not isinstance(allow, list) or rule not in allow:
+    sys.exit(1)
+allow[:] = [item for item in allow if item != rule]
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+print(path)
+PY
+      changed=1
+      info "Removed '${rule}' from ${f}"
+    fi
+  done
+  if [[ "$changed" -eq 1 ]]; then
+    note "ok: MCP permissions cleaned"
+  else
+    note "skip: MCP permissions (none found)"
+  fi
+}
+
+remove_project_mcp_json() {
+  local repo="$1"
+  local mcp_json="${repo}/.mcp.json"
+  [[ -f "$mcp_json" ]] || return 0
+  if uv run --project "${repo}" python - "$mcp_json" "${CLAUDE_MCP_SERVER_NAME}" <<'PY' 2>/dev/null
+import json
+import sys
+
+path, server = sys.argv[1], sys.argv[2]
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+except (OSError, ValueError):
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+servers = data.get("mcpServers")
+if not isinstance(servers, dict) or server not in servers:
+    sys.exit(0)
+del servers[server]
+if not servers:
+    import os
+    os.unlink(path)
+else:
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+print("ok")
+PY
+  then
+    info "Cleaned ${mcp_json}"
+    note "ok: project .mcp.json cleaned"
+  fi
+}
+
+remove_home_skills() {
+  local repo="$1"
+  local src="${repo}/${SKILL_SRC}"
+  [[ -d "$src" ]] || return 0
+  local removed=0
+  local d n
+  shopt -s nullglob
+  for d in "${src}"/*/; do
+    [[ -d "$d" ]] || continue
+    [[ -f "${d}/SKILL.md" ]] || continue
+    n="$(basename "$d")"
+    if [[ -d "${USER_CLAUDE_SKILLS}/${n}" ]]; then
+      rm -rf "${USER_CLAUDE_SKILLS}/${n}"
+      info "Removed skill ${USER_CLAUDE_SKILLS}/${n}/"
+      removed=$((removed + 1))
+    fi
+  done
+  shopt -u nullglob
+  if [[ "$removed" -gt 0 ]]; then
+    note "ok: ${removed} skill(s) removed from ${USER_CLAUDE_SKILLS}/"
+  else
+    note "skip: no outreach skills in ${USER_CLAUDE_SKILLS}/"
+  fi
+}
+
+remove_repo_data() {
+  local repo="$1"
+  local paths=(
+    "outreach/connections.json"
+    "outreach/config/persona.json"
+    "outreach/config/dashboard_routines.json"
+    "outreach/logs/actions.jsonl"
+    "outreach/logs/planned_messages.jsonl"
+    "outreach/queue/pending.json"
+    "outreach/queue/completed.json"
+    "outreach/queue/failed.json"
+    "outreach/storage/web.pid"
+    "outreach/storage/worker.pid"
+  )
+  local p removed=0
+  for p in "${paths[@]}"; do
+    if [[ -e "${repo}/${p}" ]]; then
+      rm -f "${repo}/${p}"
+      removed=$((removed + 1))
+    fi
+  done
+  for p in "${repo}/outreach/conversations"/*.json "${repo}/outreach/prospects"/*.json \
+           "${repo}/outreach/storage/reports"/*.md; do
+    [[ -e "$p" ]] || continue
+    rm -f "$p"
+    removed=$((removed + 1))
+  done
+  info "Removed ${removed} outreach data file(s) under ${repo}/outreach/"
+  note "ok: repo outreach data removed"
+}
+
+remove_state_dir() {
+  if [[ -d "$OUTREACH_STATE_DIR" ]]; then
+    rm -rf "$OUTREACH_STATE_DIR"
+    info "Removed ${OUTREACH_STATE_DIR}/"
+    note "ok: state dir ${OUTREACH_STATE_DIR}/ removed"
+  else
+    note "skip: ${OUTREACH_STATE_DIR}/ not present"
+  fi
+}
+
+remove_chrome_profile() {
+  if [[ -d "$CHROME_PROFILE" ]]; then
+    rm -rf "$CHROME_PROFILE"
+    info "Removed Chrome profile ${CHROME_PROFILE}/"
+    note "ok: Chrome profile removed"
+  else
+    note "skip: Chrome profile not found"
+  fi
+}
+
+print_summary() {
+  printf '\n'
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  info "Uninstall finished"
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  if ((${#UNINSTALL_NOTES[@]} > 0)); then
+    local n
+    for n in "${UNINSTALL_NOTES[@]}"; do
+      case "${n}" in
+        ok:*) printf '  ✓ %s\n' "${n#ok: }" ;;
+        skip:*) printf '  ○ %s\n' "${n#skip: }" ;;
+        warn:*) printf '  ! %s\n' "${n#warn: }" >&2 ;;
+        *) printf '  · %s\n' "${n}" ;;
+      esac
+    done
+  fi
+  printf '\n'
+  info "The repo checkout was kept. Re-install: ./install.sh   or   make claude-install"
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+main() {
+  parse_args "$@"
+
+  local repo=""
+  if ! repo="$(resolve_repo_root)"; then
+    warn "Could not find LinkedIn-Outreach repo root."
+    warn "Set OUTREACH_REPO_ROOT or run from the repository."
+    exit 1
+  fi
+  repo="$(cd "$repo" && pwd)"
+
+  printf '\n'
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  info "LinkedIn-Outreach uninstall"
+  printf '%s\n' ""
+  printf '%s\n' "  Repo: ${repo}"
+  printf '%s\n' ""
+  if [[ "$MCP_ONLY" -eq 1 ]]; then
+    printf '%s\n' "  Mode: MCP + permissions only"
+  else
+    printf '%s\n' "  Core: stop services, remove MCP, permissions, home skills"
+    printf '%s\n' "  Optional: outreach data, ~/.linkedin-outreach, Chrome profile"
+  fi
+  printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  printf '\n'
+
+  if [[ "$YES" -eq 0 ]] && [[ ! -t 0 ]]; then
+    warn "Non-interactive stdin. Use -y to confirm, or run interactively."
+    exit 1
+  fi
+
+  if [[ "$MCP_ONLY" -eq 0 ]]; then
+    if confirm "Stop web dashboard and worker?"; then
+      stop_processes "$repo"
+    else
+      note "skip: services left running"
+    fi
+  fi
+
+  if confirm "Remove LinkedIn MCP from Claude Code (all scopes)?"; then
+    remove_mcp "$repo"
+    if [[ "$REMOVE_PERMISSIONS" -eq 1 ]]; then
+      remove_mcp_permission "$repo"
+      remove_project_mcp_json "$repo"
+    fi
+  else
+    note "skip: MCP removal declined"
+  fi
+
+  if [[ "$MCP_ONLY" -eq 1 ]]; then
+    print_summary
+    return 0
+  fi
+
+  if [[ "$REMOVE_SKILLS" -eq 1 ]]; then
+    if confirm "Remove outreach skills from ${USER_CLAUDE_SKILLS}/?"; then
+      remove_home_skills "$repo"
+    else
+      note "skip: home skills kept"
+    fi
+  fi
+
+  if [[ "$REMOVE_DATA" -eq 1 ]] || { [[ "$KEEP_DATA" -eq 1 ]] && [[ "$YES" -eq 0 ]] && confirm "Delete outreach runtime data in the repo (connections, conversations, persona, logs)?"; }; then
+    remove_repo_data "$repo"
+  elif [[ "$REMOVE_DATA" -eq 0 ]]; then
+    note "skip: repo outreach data kept"
+  fi
+
+  if [[ "$REMOVE_STATE" -eq 1 ]] || { [[ "$YES" -eq 0 ]] && confirm "Delete ${OUTREACH_STATE_DIR}/ (upgrade config, rate limits)?"; }; then
+    remove_state_dir
+  else
+    note "skip: ${OUTREACH_STATE_DIR}/ kept"
+  fi
+
+  if [[ "$REMOVE_CHROME" -eq 1 ]] || { [[ "$YES" -eq 0 ]] && confirm "Delete LinkedIn Chrome profile at ${CHROME_PROFILE}/?"; }; then
+    remove_chrome_profile
+  else
+    note "skip: Chrome profile kept"
+  fi
+
+  print_summary
+}
+
+main "$@"
