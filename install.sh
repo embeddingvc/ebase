@@ -1053,6 +1053,7 @@ print_final_summary() {
   else
     printf '  • In Claude Code (this repo): /setup-outreach — persona, tone, and style examples\n'
     printf '  • Upgrade later: make upgrade   or   /outreach-upgrade in Claude Code\n'
+    printf '  • Uninstall: ./uninstall.sh   or   /outreach-uninstall in Claude Code\n'
     printf '  • Outreach: connect to <linkedin-url>\n'
   fi
   if [[ "${SKIP_WEB}" != "1" ]]; then
