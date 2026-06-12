@@ -45,4 +45,5 @@ CLAUDE.md
 .mcp.json
 outreach/config/dashboard_routines.json
 outreach/storage/web.pid
+outreach/storage/cron.pid
 outreach/mock/config/dashboard_routines.json
