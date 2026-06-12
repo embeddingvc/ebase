@@ -7,6 +7,32 @@ description: Leave a comment (reply) on a LinkedIn post via the MCP reply_to_pos
 
 Leave a comment on a LinkedIn post by calling the `reply_to_post` MCP tool.
 
+## Browser tool policy (strict — read first)
+
+Every browser action in this skill goes through the **LinkedIn MCP server** (tools prefixed
+`mcp__linkedin__*`) and **only** that server. The LinkedIn MCP attaches to the operator's
+logged-in Chrome over CDP on port `9222` with this project's rate-limits, human-like typing
+jitter, and bot-detection safeguards — substituting any other browser surface defeats those
+guarantees and can get the operator's LinkedIn account flagged.
+
+Even if other browser tools are registered in the current Claude CLI session, do **not** use
+them for this workflow:
+
+- **No other browser MCPs.** Do not use `chrome-devtools`, `playwright`, `puppeteer`,
+  `browser-use`, `browserbase`, `gstack` browser, or any other Chrome-attached MCP to open,
+  click, type, or read on `linkedin.com`.
+- **No "Claude in Chrome" extension / Chrome side-panel** to drive the browser on `linkedin.com`.
+- **No `WebFetch`, `WebSearch`, `curl`, `wget`, `fetch`, `requests`, or `Bash`** against
+  `linkedin.com` / `licdn.com`. The LinkedIn MCP is the only sanctioned surface.
+- **No manual operator hand-off** as a substitute. Call the LinkedIn MCP tool; on error, report
+  the error verbatim and stop.
+
+Allowed browser-side tool in this skill (LinkedIn MCP only): `mcp__linkedin__reply_to_post`.
+
+If `mcp__linkedin__*` tools are not registered in the current session, **stop and tell the
+operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
+`make claude-install`). Do **not** pick up a different browser tool as a fallback.
+
 ## Test and fixture data (do not corrupt)
 
 - Do **not** edit or write under `tests/` or `tests/fixtures/` when logging or updating pipeline state.

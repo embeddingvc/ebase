@@ -7,6 +7,33 @@ description: Refresh planner identity in outreach/config/persona.json from Linke
 
 Align **`outreach/config/persona.json`** (**`persona`** and **`organization`**) with a LinkedIn member profile using **`parse_profile`** for data and **`merge_conversation_planner_identity`** for persistence. Summarization is done **by you** (the Skill / model), not inside the MCP server.
 
+## Browser tool policy (strict — read first)
+
+Every browser action in this skill goes through the **LinkedIn MCP server** (tools prefixed
+`mcp__linkedin__*`) and **only** that server. The LinkedIn MCP attaches to the operator's
+logged-in Chrome over CDP on port `9222` with this project's rate-limits, human-like jitter,
+and bot-detection safeguards — substituting any other browser surface defeats those guarantees
+and can get the operator's LinkedIn account flagged.
+
+Even if other browser tools are registered in the current Claude CLI session, do **not** use
+them for this workflow:
+
+- **No other browser MCPs.** Do not use `chrome-devtools`, `playwright`, `puppeteer`,
+  `browser-use`, `browserbase`, `gstack` browser, or any other Chrome-attached MCP to open,
+  click, type, or read on `linkedin.com`.
+- **No "Claude in Chrome" extension / Chrome side-panel** to drive the browser on `linkedin.com`.
+- **No `WebFetch`, `WebSearch`, `curl`, `wget`, `fetch`, `requests`, or `Bash`** against
+  `linkedin.com` / `licdn.com`. The structured experience / education / activity crawl must come
+  from `mcp__linkedin__parse_profile` only.
+- **No manual operator hand-off** as a substitute for the parse. Call the LinkedIn MCP tool; on
+  error, report the error verbatim and stop.
+
+Allowed browser-side tool in this skill (LinkedIn MCP only): `mcp__linkedin__parse_profile`.
+
+If `mcp__linkedin__*` tools are not registered in the current session, **stop and tell the
+operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
+`make claude-install`). Do **not** pick up a different browser tool as a fallback.
+
 **Filesystem rule:** Never read or write `outreach/config/` via raw paths or shell. Use **`get_conversation_planner_config`** (merged read), **`merge_conversation_planner_identity`** (identity write), or **`upsert_conversation_planner_config`** for the **non-identity** planner file only through MCP.
 
 ---
