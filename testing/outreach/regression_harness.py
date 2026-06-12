@@ -5,7 +5,7 @@ Local regression harness: models the real operator pipeline order:
    ``upsert_prospect`` / ``save_connection`` with ``pending`` after ``handle_load_test_case``
    (same as prod / operator pipeline).
 2. **Connection sync** — direct in-process call to the deterministic Python sweep
-   (``web.connection_sync_sweep.run_sync_sweep``) using a mock-backed probe. This
+   (``cron.connection_sync_sweep.run_sync_sweep``) using a mock-backed probe. This
    replaces the former ``sync-pending-connections`` ``claude -p`` invocation,
    which has been retired in favour of the LLM-free dashboard sweep.
 3. **conversation-planner rounds** — ``claude -p`` runs **conversation-planner**
@@ -15,8 +15,8 @@ Local regression harness: models the real operator pipeline order:
    snapshots ``upsert_conversation`` from the mock thread (plan-only inside
    ``claude -p`` avoids double delivery).
 
-``tools/server.py`` is used in-process so paths follow ``_outreach_base()`` (e.g.
-``outreach/mock/`` in mock mode).
+The mock-capable MCP (``testing/tools/server.py``) is used in-process so paths
+follow ``_outreach_base()`` (``testing/outreach/mock/`` in mock mode).
 
 See: ``docs/designs/outreach-workflow-regression-tests-design.md``,
 ``docs/designs/schedule-meeting-mcp-and-regression-design.md``,
@@ -40,26 +40,26 @@ from typing import Any
 
 logger = logging.getLogger("outreach.regression")
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-_TOOLS = REPO_ROOT / "tools"
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-if str(_TOOLS) not in sys.path:
-    sys.path.insert(0, str(_TOOLS))
+TESTING_ROOT = Path(__file__).resolve().parent.parent  # testing/
+CORE_ROOT = TESTING_ROOT.parent                         # core repo root
+_TOOLS = TESTING_ROOT / "tools"
+for _p in (str(CORE_ROOT), str(TESTING_ROOT), str(_TOOLS)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-import mock as _mock  # noqa: E402  — tools/mock.py
+import mock as _mock  # noqa: E402  — testing/tools/mock.py
 from outreach.mock.fixtures_loader import (  # noqa: E402
     get_fixture,
     load_regression_specs,
 )
 
-FIXTURES = REPO_ROOT / "tests" / "fixtures" / "conversation-planner"
+FIXTURES = TESTING_ROOT / "tests" / "fixtures" / "conversation-planner"
 PROSPECT_FIXTURE = FIXTURES / "prospect_alex.json"
 
 # Installed skill ids (see outreach/skills/*/SKILL.md frontmatter ``name``).
 CONVERSATION_PLANNER_SKILL = "conversation-planner"
 # ``sync-pending-connections`` skill has been retired; the deterministic sweep
-# in ``web.connection_sync_sweep`` is what the dashboard uses now.
+# in ``cron.connection_sync_sweep`` is what the scheduler uses now.
 
 # Canonical profile URL for mock sessions (matches prospect_alex.json).
 REGRESSION_PROFILE_URL = "https://www.linkedin.com/in/alex-chen-softeng/"
@@ -69,13 +69,13 @@ _SERVER_MODULE: Any = None
 
 
 def get_server_module() -> Any:
-    """Load ``tools/server.py`` once (MCP tool implementations + outreach paths)."""
+    """Load ``testing/tools/server.py`` once (mock MCP tool implementations + paths)."""
     global _SERVER_MODULE
     if _SERVER_MODULE is not None:
         return _SERVER_MODULE
     import importlib.util
 
-    path = REPO_ROOT / "tools" / "server.py"
+    path = TESTING_ROOT / "tools" / "server.py"
     spec = importlib.util.spec_from_file_location("linkedin_mcp_server_regression", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load server spec from {path}")
@@ -149,20 +149,20 @@ def _normalize_attachments(raw: Any) -> list[dict[str, Any]]:
 async def _run_regression_connection_sync(mod: Any, profile_url: str) -> None:
     """Drive the deterministic connection sync sweep against the mock target.
 
-    Mirrors what the dashboard scheduler does in production
-    (``web.routine_scheduler._run_sync_sweep_routine``) but with a probe
+    Mirrors what the cron scheduler does in production
+    (``cron.routine_scheduler._run_sync_sweep_routine``) but with a probe
     that calls the in-process mock handler so we don't need a browser.
 
-    ``web.connection_sync_sweep`` resolves its data root via
-    ``web.dashboard_data.outreach_base()``, which is independent of
-    ``tools.server._outreach_base()``. In mock mode the server writes to
-    ``outreach/mock/`` while the dashboard helper defaults to ``outreach/``
-    unless ``OUTREACH_MOCK=1`` / ``OUTREACH_DATA_ROOT`` is set, so the sweep
-    would otherwise load the wrong ``connections.json`` and never see the
-    pending row. Pin ``OUTREACH_DATA_ROOT`` to the server's base for the
-    duration of the sweep so both halves agree.
+    ``cron.connection_sync_sweep`` resolves its data root via
+    ``outreach.data_paths.outreach_base()``, which is independent of the mock
+    MCP's ``_outreach_base()``. In mock mode the server writes to
+    ``testing/outreach/mock/`` while the core helper defaults to ``outreach/``
+    unless ``OUTREACH_DATA_ROOT`` is set, so the sweep would otherwise load the
+    wrong ``connections.json`` and never see the pending row. Pin
+    ``OUTREACH_DATA_ROOT`` to the server's base for the duration of the sweep
+    so both halves agree.
     """
-    from web.connection_sync_sweep import run_sync_sweep
+    from cron.connection_sync_sweep import run_sync_sweep
 
     async def _probe(url: str) -> bool | str:
         raw = await mod.is_first_degree_connection(url)
@@ -414,7 +414,7 @@ def _load_json(path: Path) -> dict[str, Any] | None:
 
 async def _connection_row(mod: Any, profile_url: str) -> dict[str, Any] | None:
     raw = await mod.get_connections()
-    data = _load_json(REPO_ROOT / "outreach" / "mock" / "connections.json")
+    data = _load_json(TESTING_ROOT / "outreach" / "mock" / "connections.json")
     for row in data.get("connections") or []:
         if isinstance(row, dict) and row.get("profile_url") == profile_url:
             return row
@@ -537,7 +537,7 @@ def invoke_claude_cli(prompt: str) -> str:
     try:
         proc = subprocess.run(
             cmd,
-            cwd=str(REPO_ROOT),
+            cwd=str(CORE_ROOT),
             capture_output=True,
             text=True,
             timeout=timeout,

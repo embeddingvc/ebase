@@ -25,13 +25,15 @@ The script does **not** require **Make** (suitable for a fresh Mac before Xcode 
 - Pre-allows LinkedIn-Outreach in Claude Code settings: MCP (`mcp__linkedin`), all repo skills (`Skill(...)`), and maintenance bash (`bin/outreach-*`, `install.sh`, `uninstall.sh`, `make upgrade` / `uninstall` / `claude-install`). Writes to **`~/.claude/settings.json`** in default mode, or **`<repo>/.claude/settings.local.json`** with **`--local`**.
 - If **`claude`** is missing, it prints next steps. **`./install.sh --help`** lists options.
 - Launches **Google Chrome** on macOS at the default path with remote debugging (CDP) on port **9222** (same idea as **`make browser`**), opens **LinkedIn login**, and **pauses until you press Enter** after signing in. Playwright automation attaches to that live Chrome session. Skip the pause with **`./install.sh --skip-linkedin-login`**.
-- Starts the **outreach web dashboard** in the background at **http://127.0.0.1:3847/** (logs: `logs/server.log`). Skip with **`./install.sh --no-web`**.
+- Starts the **cron scheduler server** in the background (health: **http://127.0.0.1:3847/health**, logs: `logs/cron.log`). It runs the unattended routine sweeps (connection sync, conversation planning). Skip with **`./install.sh --no-cron`**.
 
-Once it finishes, run **`/setup-outreach`** in Claude Code to scrape your LinkedIn profile, review the draft persona, and save `outreach/config/persona.json`. Then open the dashboard at **http://127.0.0.1:3847/** — that's the production scheduler too.
+Once it finishes, run **`/setup-outreach`** in Claude Code to scrape your LinkedIn profile, review the draft persona, and save `outreach/config/persona.json`. The cron scheduler then runs the workflow unattended; check it with **`make status`**.
+
+For development and QA there is a full web dashboard, mock LinkedIn backend, and regression suite under [`testing/`](testing/README.md) — none of it is needed for production use.
 
 ## Documentation
 
-- **[Web dashboard](docs/web-dashboard.md)** — the local UI + scheduler that runs the workflow unattended
+- **[Testing & dev dashboard](testing/README.md)** — web dashboard UI, mock mode, regression suite
 - **[Architecture & capabilities](docs/architecture.md)** — components, MCP tool inventory, high-level + detailed workflow diagrams
 - **[Manual install & Claude Desktop MCP](docs/install.md)** — prerequisites, `make install`, `claude_desktop_config.json`
 - **[Quickstart (live + mock)](docs/quickstart.md)** — `make run`, live mode checklist, example prompts

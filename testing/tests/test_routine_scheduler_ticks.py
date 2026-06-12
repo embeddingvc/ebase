@@ -1,4 +1,4 @@
-"""Tests for ``web.routine_scheduler`` wrapper-level tick logging.
+"""Tests for ``cron.routine_scheduler`` wrapper-level tick logging.
 
 These cover the heartbeat-only branches: when the scheduler considered a
 sweep but skipped it because the routine is inactive or the active window
@@ -19,7 +19,7 @@ import pytest
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from web import routine_scheduler as rs  # noqa: E402
+from cron import routine_scheduler as rs  # noqa: E402
 
 
 @pytest.fixture

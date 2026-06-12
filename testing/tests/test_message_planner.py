@@ -15,8 +15,8 @@ import json
 import os
 import sys
 
-# Make the project root importable
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Make the core repo root importable (outreach.planner + live data dirs)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
 
 from outreach.planner import plan_message  # noqa: E402

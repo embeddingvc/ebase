@@ -13,8 +13,8 @@ import pytest
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from web import conversation_plan_sweep as cps  # noqa: E402
-from web.routine_backoff import PLAN_DEFAULT  # noqa: E402
+from cron import conversation_plan_sweep as cps  # noqa: E402
+from cron.routine_backoff import PLAN_DEFAULT  # noqa: E402
 
 
 @pytest.fixture

@@ -30,8 +30,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from web.dashboard_data import _atomic_write_json, _read_json, outreach_base
-from web.routine_backoff import (
+from outreach.data_paths import _atomic_write_json, _read_json, outreach_base
+from cron.routine_backoff import (
     BackoffPolicy,
     PLAN_DEFAULT,
     apply_result,
@@ -39,7 +39,7 @@ from web.routine_backoff import (
     reschedule_to_window,
 )
 
-logger = logging.getLogger("web.conversation_plan_sweep")
+logger = logging.getLogger("cron.conversation_plan_sweep")
 
 CONNECTIONS_FILE = "connections.json"
 ACTIONS_LOG = "logs/actions.jsonl"
@@ -161,14 +161,14 @@ def _parse_iso(ts: Any) -> datetime | None:
 
 
 def _default_runner() -> PlanRunner:
-    """Default plan runner: shells out via ``web.skill_runner.run_skill_prompt``.
+    """Default plan runner: shells out via ``cron.skill_runner.run_skill_prompt``.
 
     Imported lazily so unit tests can supply a mock without claude on PATH.
     """
 
     async def _run(prospect_id: str) -> PlanRunResult:
         # Lazy import to avoid claude CLI requirement in tests.
-        from web.skill_runner import run_skill_prompt
+        from cron.skill_runner import run_skill_prompt
 
         prompt = (
             f'Run the conversation-planner skill for prospect_id="{prospect_id}". '

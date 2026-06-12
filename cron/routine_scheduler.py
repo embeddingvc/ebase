@@ -2,7 +2,7 @@
 Background asyncio scheduler.
 
 Two execution modes selected by the ``scheduler_kind`` field of
-``dashboard_routines.json`` (see ``web.routines_config``):
+``dashboard_routines.json`` (see ``cron.routines_config``):
 
 - ``"loop"`` (default, legacy): runs each routine row's Claude skill on
   interval via ``run_named_skill`` — the skill loops over connections inside
@@ -26,11 +26,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from web import routines_config
-from web.dashboard_data import outreach_base
-from web.skill_runner import run_named_skill
+from cron import routines_config
+from outreach.data_paths import outreach_base
+from cron.skill_runner import run_named_skill
 
-logger = logging.getLogger("web.routine_scheduler")
+logger = logging.getLogger("cron.routine_scheduler")
 
 TICK_SECONDS = 30
 _running_locks: dict[str, asyncio.Lock] = {}
@@ -204,7 +204,7 @@ async def _run_sync_sweep_routine(rcfg: dict[str, Any]) -> None:
         if gate is not None:
             _append_tick(routine_id, "sync_sweep", status="skipped", reason=gate)
             return
-        from web.connection_sync_sweep import run_sync_sweep
+        from cron.connection_sync_sweep import run_sync_sweep
 
         _last_sweep_at[kind] = datetime.now(timezone.utc)
         try:
@@ -230,7 +230,7 @@ async def _run_plan_sweep_routine(rcfg: dict[str, Any]) -> None:
         if gate is not None:
             _append_tick(routine_id, "plan_sweep", status="skipped", reason=gate)
             return
-        from web.conversation_plan_sweep import run_plan_sweep
+        from cron.conversation_plan_sweep import run_plan_sweep
 
         _last_sweep_at[kind] = datetime.now(timezone.utc)
         try:

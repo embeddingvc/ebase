@@ -90,7 +90,7 @@ flowchart TB
 
   CONNECT --> WAIT
 
-  WAIT["③ Wait for acceptance<br/>• Dashboard sweep: web/connection_sync_sweep.py (no LLM)<br/>• MCP: is_first_degree_connection<br/>• Playwright verifies connection state / badge"]:::step
+  WAIT["③ Wait for acceptance<br/>• Cron sweep: cron/connection_sync_sweep.py (no LLM)<br/>• MCP: is_first_degree_connection<br/>• Playwright verifies connection state / badge"]:::step
 
   WAIT --> ACC{"Accepted?"}:::decision
   ACC -->|No · &gt; 48h| DEAD

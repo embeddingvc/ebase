@@ -9,12 +9,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "tools"))
+TESTING_ROOT = Path(__file__).resolve().parent.parent
+CORE_ROOT = TESTING_ROOT.parent
+for _p in (
+    str(CORE_ROOT),
+    str(TESTING_ROOT),
+    str(CORE_ROOT / "tools"),
+    str(TESTING_ROOT / "tools"),
+):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-import mock as _mock  # noqa: E402
-import notify as _notify  # noqa: E402
+import mock as _mock  # noqa: E402  — testing/tools/mock.py
+import notify as _notify  # noqa: E402  — core tools/notify.py
 from outreach.regression_harness import get_server_module  # noqa: E402
 
 PROSPECT_ID = "alex_chen_softeng"

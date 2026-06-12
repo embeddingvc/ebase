@@ -1,0 +1,31 @@
+{
+  "id": "alex_chen_softeng",
+  "linkedin_url": "https://www.linkedin.com/in/alex-chen-softeng/",
+  "name": "Alex Chen",
+  "title": "Senior Software Engineer",
+  "company": "Stripe",
+  "location": "San Francisco, CA",
+  "connection_degree": 2,
+  "mutual_connections": [
+    "Jordan Park",
+    "Sam Liu"
+  ],
+  "recent_posts": [
+    {
+      "text": "Just wrapped up migrating our payment service to a new event-driven architecture. The latency improvements were worth every painful debugging session. Distributed systems are hard but beautiful.",
+      "likes": 142,
+      "timestamp": "2026-03-20"
+    },
+    {
+      "text": "Hot take: the best engineers I've worked with all have a habit of writing things down. Docs, ADRs, post-mortems — it compounds over time.",
+      "likes": 89,
+      "timestamp": "2026-03-15"
+    }
+  ],
+  "connection_status": "pending",
+  "outreach_stage": "pending_connection",
+  "end_goal": "schedule_meeting",
+  "outreach_topic": "Series A ML infra roles in the portfolio",
+  "notes": "Distributed systems engineer with 6 years at Google and Stripe. Passionate about high-scale infrastructure, event-driven architectures, and developer tooling.",
+  "profile_fetched_at": "2026-06-12T02:07:52.854601+00:00"
+}

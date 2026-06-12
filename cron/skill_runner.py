@@ -9,16 +9,16 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-WEB_DIR = Path(__file__).resolve().parent
-REPO_ROOT = WEB_DIR.parent
+CRON_DIR = Path(__file__).resolve().parent
+REPO_ROOT = CRON_DIR.parent
 
 # Only per-prospect / per-action skills are allowed via the legacy
 # ``Run {skill} skill`` dashboard path. The two former "all in one" skills
 # (sync-pending-connections, conversation-planner batch mode) are gone:
 #   - sync-pending-connections is now the deterministic Python sweep in
-#     web.connection_sync_sweep.
+#     cron.connection_sync_sweep.
 #   - conversation-planner is invoked per-prospect via run_skill_prompt by
-#     web.conversation_plan_sweep, not via run_named_skill.
+#     cron.conversation_plan_sweep, not via run_named_skill.
 ALLOWED_SKILLS = frozenset(
     {
         "send-connection-request",

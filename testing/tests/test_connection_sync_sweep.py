@@ -13,8 +13,8 @@ import pytest
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from web import connection_sync_sweep as css  # noqa: E402
-from web.routine_backoff import SYNC_DEFAULT  # noqa: E402
+from cron import connection_sync_sweep as css  # noqa: E402
+from cron.routine_backoff import SYNC_DEFAULT  # noqa: E402
 
 
 @pytest.fixture

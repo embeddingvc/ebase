@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-_TOOLS = Path(__file__).resolve().parents[1] / "tools"
+# Core tools/ (rate_limits.py stays in the production core)
+_TOOLS = Path(__file__).resolve().parents[2] / "tools"
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 

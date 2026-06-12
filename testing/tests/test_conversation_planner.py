@@ -32,8 +32,9 @@ except ImportError:
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 
-BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FIXTURES_DIR = os.path.join(BASE_DIR, "tests", "fixtures", "conversation-planner")
+TESTING_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR     = os.path.dirname(TESTING_ROOT)  # core repo root
+FIXTURES_DIR = os.path.join(TESTING_ROOT, "tests", "fixtures", "conversation-planner")
 SKILL_PATH   = os.path.join(
     BASE_DIR, "outreach", "skills", "conversation-planner", "SKILL.md"
 )

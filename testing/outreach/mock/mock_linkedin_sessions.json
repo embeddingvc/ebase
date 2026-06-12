@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "sessions": {
+    "https://linkedin.com/in/marcus-webb-infra": {
+      "test_case_id": "eager_referral",
+      "profile_url": "https://www.linkedin.com/in/marcus-webb-infra/",
+      "connection_accepted": true,
+      "history": [
+        {
+          "message": "Thanks for connecting Nova! I'm actively exploring infra leadership roles at Series A companies — would love to hear what's in your network.",
+          "self": false
+        },
+        {
+          "message": "Marcus, great to hear you're actively exploring. Your post about what infra candidates should ask stood out to me — it shows you think deeply about team dynamics and growth.\n\nWhat are you most excited about in your current work at Figma? And what would an ideal next role look like for you — staying in big tech, or exploring earlier-stage environments?",
+          "self": true
+        },
+        {
+          "message": "That sounds nice, would you like to view my resume? I am interested in working at a Series A company where I can own the platform while the product still moves fast.",
+          "self": false
+        },
+        {
+          "message": "Perfect, Marcus. Your background in infrastructure at Figma is exactly what some of our portfolio companies are looking for—especially founders building the foundational layer while the product moves fast.\n\nI'll review your resume and connect you with 2–3 teams who are actively hiring for first-infrastructure and platform roles. You'll hear back in the next few days.",
+          "self": true
+        },
+        {
+          "message": "Sure, here you go!",
+          "self": false,
+          "attachments": [
+            {
+              "type": "resume",
+              "url": "https://linkedin.com/dms/marcus_webb_resume.pdf",
+              "filename": "marcus_webb_resume.pdf"
+            }
+          ]
+        }
+      ],
+      "messages_sent": 2,
+      "ended": false,
+      "ended_reason": null,
+      "loaded_at": "2026-06-06T20:25:16.251814+00:00"
+    },
+    "https://linkedin.com/in/priya-sharma-sre": {
+      "test_case_id": "ghosted_cold",
+      "profile_url": "https://www.linkedin.com/in/priya-sharma-sre/",
+      "connection_accepted": true,
+      "history": [],
+      "messages_sent": 0,
+      "ended": false,
+      "ended_reason": null,
+      "loaded_at": "2026-06-07T00:15:25.410398+00:00"
+    },
+    "https://linkedin.com/in/jordan-kim-ml": {
+      "test_case_id": "not_interested",
+      "profile_url": "https://www.linkedin.com/in/jordan-kim-ml/",
+      "connection_accepted": true,
+      "history": [],
+      "messages_sent": 0,
+      "ended": false,
+      "ended_reason": null,
+      "loaded_at": "2026-06-07T01:28:13.118978+00:00"
+    },
+    "https://linkedin.com/in/alex-chen-softeng": {
+      "test_case_id": "happy_path",
+      "profile_url": "https://www.linkedin.com/in/alex-chen-softeng/",
+      "connection_accepted": true,
+      "history": [],
+      "messages_sent": 0,
+      "ended": false,
+      "ended_reason": null,
+      "loaded_at": "2026-06-12T02:07:52.853902+00:00"
+    }
+  }
+}

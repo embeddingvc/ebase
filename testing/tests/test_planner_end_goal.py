@@ -5,7 +5,8 @@ import sys
 
 import pytest
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Core repo root (outreach.planner lives in the core, not testing/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
 
 # Stub mode: ensure no API key so plan_message uses _plan_stub

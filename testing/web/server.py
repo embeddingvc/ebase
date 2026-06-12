@@ -1,62 +1,54 @@
 #!/usr/bin/env python3
 """
-FastAPI app for the LinkedIn outreach dashboard.
+FastAPI app for the LinkedIn outreach dashboard (development / QA tool).
 
 - GET /                    → dashboard (home)
+- GET /mock                → mock-scope view (regression runner + mock thread)
 - GET /dashboard.css, /dashboard.js
 - GET /api/dashboard/*     → outreach data + routine config
 - POST /api/dashboard/connections → send connection via Claude skill
 
-Run with uvicorn (see Makefile ``make web`` or ``./install.sh``)::
+The routine scheduler does NOT run here — production scheduling lives in the
+core ``cron/server.py`` process. This server is read-mostly plus manual
+triggers (run-now, regression control).
 
-    uvicorn web.server:app --host 127.0.0.1 --port 3847
+Run with uvicorn (see ``testing/Makefile`` ``make web``)::
 
-Documentation: ``docs/web-dashboard.md``
+    uvicorn web.server:app --host 127.0.0.1 --port 3848
+
+Documentation: ``testing/docs/web-dashboard.md``
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-from contextlib import asynccontextmanager
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+WEB_DIR = Path(__file__).resolve().parent
+TESTING_ROOT = WEB_DIR.parent
+CORE_ROOT = TESTING_ROOT.parent
+
+# Core repo root first (cron package, outreach.browser); testing root next
+# (web package, outreach.mock namespace portion).
+for _p in (str(CORE_ROOT), str(TESTING_ROOT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
+from cron import routines_config, skill_runner
 from web import (
     dashboard_data,
     mock_conversation,
     regression_runner,
-    routine_scheduler,
-    routines_config,
-    skill_runner,
 )
 
-WEB_DIR = Path(__file__).resolve().parent
-REPO_ROOT = WEB_DIR.parent
-
-_scheduler_stop: asyncio.Event | None = None
-_scheduler_task: asyncio.Task | None = None
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global _scheduler_stop, _scheduler_task
-    _scheduler_stop = asyncio.Event()
-    _scheduler_task = asyncio.create_task(
-        routine_scheduler.scheduler_loop(_scheduler_stop)
-    )
-    yield
-    if _scheduler_stop:
-        _scheduler_stop.set()
-    if _scheduler_task:
-        await _scheduler_task
-
-
-app = FastAPI(title="LinkedIn Outreach Dashboard", lifespan=lifespan)
+app = FastAPI(title="LinkedIn Outreach Dashboard (testing)")
 
 
 def _static_file(name: str, media_type: str) -> FileResponse:
@@ -274,8 +266,8 @@ def main() -> None:
     import uvicorn
 
     host = os.environ.get("WEB_HOST", "127.0.0.1")
-    port = int(os.environ.get("WEB_PORT", "3847"))
-    print(f"[web] http://{host}:{port}/  (repo {REPO_ROOT})")
+    port = int(os.environ.get("WEB_PORT", "3848"))
+    print(f"[web] http://{host}:{port}/  (testing root {TESTING_ROOT})")
     uvicorn.run(
         "web.server:app",
         host=host,

@@ -14,8 +14,8 @@ DEFAULT_DIR="${LINKEDIN_OUTREACH_DIR:-${HOME}/LinkedIn-Outreach}"
 CDP_PORT="${CDP_PORT:-9222}"
 WEB_HOST="${WEB_HOST:-127.0.0.1}"
 WEB_PORT="${WEB_PORT:-3847}"
-WEB_PID_FILE="${WEB_PID_FILE:-outreach/storage/web.pid}"
-WEB_LOG="${WEB_LOG:-logs/server.log}"
+CRON_PID_FILE="${CRON_PID_FILE:-outreach/storage/cron.pid}"
+CRON_LOG="${CRON_LOG:-logs/cron.log}"
 CHROME_PROFILE="${CHROME_PROFILE:-${HOME}/.linkedin-chrome-profile}"
 CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
 SKILL_SRC="${SKILL_SRC:-outreach/skills}"
@@ -79,8 +79,8 @@ Usage: install.sh [options]
   Environment (same as --local when set to 1):
     LINKEDIN_OUTREACH_INSTALL_LOCAL=1
 
-  --no-web
-    Skip starting the outreach dashboard (same as LINKEDIN_OUTREACH_SKIP_WEB=1).
+  --no-cron (alias: --no-web)
+    Skip starting the cron scheduler server (same as LINKEDIN_OUTREACH_SKIP_WEB=1).
     Chrome, MCP registration, and dependency install still run.
 
   --skip-linkedin-login
@@ -104,8 +104,8 @@ Usage: install.sh [options]
 
   Other:
     LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
-    LINKEDIN_OUTREACH_SKIP_WEB=1           Skip dashboard (same as --no-web).
-    WEB_HOST, WEB_PORT                     Dashboard bind (default 127.0.0.1:3847).
+    LINKEDIN_OUTREACH_SKIP_WEB=1           Skip cron server (same as --no-cron).
+    WEB_HOST, WEB_PORT                     Cron server bind (default 127.0.0.1:3847).
     SKILL_SRC   Override repo skill directory (default: outreach/skills).
     LINKEDIN_OUTREACH_DIR, LINKEDIN_OUTREACH_REPO, USER_CLAUDE_SKILLS, …
 
@@ -139,7 +139,7 @@ parse_args() {
         SKIP_TONE_SETUP=1
         shift
         ;;
-      --no-web)
+      --no-cron | --no-web)
         SKIP_WEB=1
         shift
         ;;
@@ -225,7 +225,7 @@ preflight_checks() {
     info "Mode: global (MCP user scope; skills → ${USER_CLAUDE_SKILLS})"
   fi
 
-  require_cmd curl "curl is needed to install uv and verify Chrome/dashboard health."
+  require_cmd curl "curl is needed to install uv and verify Chrome/cron health."
   step_done "Prerequisites"
 }
 
@@ -571,7 +571,7 @@ prompt_linkedin_login() {
   printf '%s\n' "  2. Sign in with your LinkedIn account."
   printf '%s\n' "  3. Confirm you see your feed or home — not the login page."
   printf '%s\n' ""
-  printf '%s\n' "  The outreach engine (MCP, worker, dashboard skills) uses this"
+  printf '%s\n' "  The outreach engine (MCP, worker, scheduler, skills) uses this"
   printf '%s\n' "  browser session only. Do not use a different Chrome profile."
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   printf '\n'
@@ -738,21 +738,20 @@ persist_outreach_upgrade_config() {
   fi
 }
 
-start_web_dashboard() {
+start_cron_server() {
   if [[ "${SKIP_WEB}" == "1" ]]; then
-    step_begin "Starting outreach dashboard"
-    info "Skipped — --no-web / LINKEDIN_OUTREACH_SKIP_WEB=1"
-    note "skip: web dashboard not started (--no-web)"
-    step_done "Web dashboard (skipped)"
+    step_begin "Starting cron scheduler server"
+    info "Skipped — --no-cron / LINKEDIN_OUTREACH_SKIP_WEB=1"
+    note "skip: cron server not started (--no-cron)"
+    step_done "Cron server (skipped)"
     return 0
   fi
 
-  step_begin "Starting outreach dashboard"
+  step_begin "Starting cron scheduler server"
   cd "${REPO_ROOT}"
-  local pid_file="${REPO_ROOT}/${WEB_PID_FILE}"
-  local log_file="${REPO_ROOT}/${WEB_LOG}"
-  local health_url="http://${WEB_HOST}:${WEB_PORT}/api/dashboard/health"
-  local dashboard_url="http://${WEB_HOST}:${WEB_PORT}/"
+  local pid_file="${REPO_ROOT}/${CRON_PID_FILE}"
+  local log_file="${REPO_ROOT}/${CRON_LOG}"
+  local health_url="http://${WEB_HOST}:${WEB_PORT}/health"
 
   mkdir -p "$(dirname "${pid_file}")" "$(dirname "${log_file}")"
 
@@ -760,63 +759,63 @@ start_web_dashboard() {
     local old_pid
     old_pid="$(cat "${pid_file}")"
     if kill -0 "${old_pid}" 2>/dev/null && curl -sf "${health_url}" >/dev/null 2>&1; then
-      info "Dashboard already running at ${dashboard_url} (pid=${old_pid})"
-      note "ok: dashboard at ${dashboard_url}"
-      step_done "Web dashboard"
+      info "Cron server already running at ${health_url} (pid=${old_pid})"
+      note "ok: cron server at ${health_url}"
+      step_done "Cron server"
       return 0
     fi
     rm -f "${pid_file}"
   fi
 
   if command -v curl >/dev/null 2>&1 && curl -sf "${health_url}" >/dev/null 2>&1; then
-    info "Dashboard already reachable at ${dashboard_url}"
-    note "ok: dashboard already running at ${dashboard_url}"
-    step_done "Web dashboard"
+    info "Cron server already reachable at ${health_url}"
+    note "ok: cron server already running at ${health_url}"
+    step_done "Cron server"
     return 0
   fi
 
   if port_in_use "${WEB_PORT}"; then
     local holder
     holder="$(describe_port_holder "${WEB_PORT}")"
-    warn "Port ${WEB_PORT} is in use but dashboard health check failed."
+    warn "Port ${WEB_PORT} is in use but cron health check failed."
     [[ -n "${holder}" ]] && warn "  ${holder}"
-    warn "Free the port or set WEB_PORT, then run: make web"
-    note "warn: web port ${WEB_PORT} conflict — dashboard not started"
-    step_done "Web dashboard (port conflict)"
+    warn "Free the port or set WEB_PORT, then run: make cron"
+    note "warn: cron port ${WEB_PORT} conflict — server not started"
+    step_done "Cron server (port conflict)"
     return 0
   fi
 
-  info "URL: ${dashboard_url}  |  Log: ${log_file}"
-  if ! nohup uv run uvicorn web.server:app --host "${WEB_HOST}" --port "${WEB_PORT}" \
+  info "Health URL: ${health_url}  |  Log: ${log_file}"
+  if ! nohup uv run uvicorn cron.server:app --host "${WEB_HOST}" --port "${WEB_PORT}" \
     >>"${log_file}" 2>&1 & then
-    warn "Failed to start uvicorn. See ${log_file} or run: make web"
-    note "warn: dashboard failed to start"
-    step_done "Web dashboard (start failed)"
+    warn "Failed to start uvicorn. See ${log_file} or run: make cron"
+    note "warn: cron server failed to start"
+    step_done "Cron server (start failed)"
     return 0
   fi
   echo $! >"${pid_file}"
 
   if command -v curl >/dev/null 2>&1; then
-    info "Waiting for dashboard health (up to ~10s)…"
+    info "Waiting for cron health (up to ~10s)…"
     local i
     for i in $(seq 1 40); do
       if curl -sf "${health_url}" >/dev/null 2>&1; then
-        info "Dashboard ready (pid=$(cat "${pid_file}"))"
-        note "ok: dashboard at ${dashboard_url}"
-        step_done "Web dashboard"
+        info "Cron server ready (pid=$(cat "${pid_file}"))"
+        note "ok: cron server at ${health_url}"
+        step_done "Cron server"
         return 0
       fi
       sleep 0.25
     done
-    warn "Dashboard process started but health check did not succeed yet."
+    warn "Cron server process started but health check did not succeed yet."
     warn "Tail logs: tail -f ${log_file}"
-    warn "Restart: make stop-web && make web"
-    note "warn: dashboard started but health check pending — see ${log_file}"
+    warn "Restart: make stop-cron && make cron"
+    note "warn: cron server started but health check pending — see ${log_file}"
   else
-    info "Dashboard process started (pid=$(cat "${pid_file}")); install curl to verify health."
-    note "ok: dashboard process started (health not verified — no curl)"
+    info "Cron server process started (pid=$(cat "${pid_file}")); install curl to verify health."
+    note "ok: cron server process started (health not verified — no curl)"
   fi
-  step_done "Web dashboard"
+  step_done "Cron server"
 }
 
 env_file_read_value() {
@@ -979,7 +978,7 @@ setup_email_notifications() {
 }
 
 print_final_summary() {
-  local dashboard_url="http://${WEB_HOST}:${WEB_PORT}/"
+  local cron_health_url="http://${WEB_HOST}:${WEB_PORT}/health"
   printf '\n'
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   info "Setup finished"
@@ -1022,9 +1021,10 @@ print_final_summary() {
     printf '  • Outreach: connect to <linkedin-url>\n'
   fi
   if [[ "${SKIP_WEB}" != "1" ]]; then
-    printf '  • Dashboard: %s  (docs/web-dashboard.md)\n' "${dashboard_url}"
-    printf '  • Stop dashboard: make stop-web   |   Status: make status\n'
+    printf '  • Cron scheduler health: %s\n' "${cron_health_url}"
+    printf '  • Stop scheduler: make stop-cron   |   Status: make status\n'
   fi
+  printf '  • Dev dashboard + mock regression: see testing/README.md\n'
   if [[ ! -f "${REPO_ROOT}/.env" ]]; then
     printf '  • Optional email alerts: cp .env.example .env && re-run ./install.sh\n'
   fi
@@ -1033,7 +1033,7 @@ print_final_summary() {
   else
     printf '  • MCP is registered for all projects; skills live in %s/\n' "${USER_CLAUDE_SKILLS}"
   fi
-  printf '  • Day-to-day: make browser   make web   make run\n'
+  printf '  • Day-to-day: make browser   make cron   make run\n'
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
@@ -1054,7 +1054,7 @@ main() {
   run_sync_planner_persona_skill
   setup_planner_tone_and_examples
   setup_email_notifications
-  start_web_dashboard
+  start_cron_server
 
   print_final_summary
 }

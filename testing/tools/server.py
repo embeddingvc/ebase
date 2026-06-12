@@ -79,11 +79,17 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
-# Make the project root importable (outreach package, tools/mock.py, etc.).
-_ROOT = Path(__file__).parent.parent
+# This is the mock-capable fork of the core MCP server (core ``tools/server.py``
+# is live-only). It lives under ``testing/`` and needs both roots importable:
+# the core root for ``outreach.browser`` and ``tools/`` helpers, the testing
+# root for ``outreach.mock`` (namespace package portion) and ``tools/mock.py``.
+_TOOLS_DIR = Path(__file__).resolve().parent   # testing/tools
+_ROOT = _TOOLS_DIR.parent                      # testing/
+_CORE_ROOT = _ROOT.parent                      # core repo root
+sys.path.append(str(_CORE_ROOT))
 sys.path.append(str(_ROOT))
-# Also ensure the tools/ directory itself is on the path so `import mock` works.
-sys.path.append(str(Path(__file__).parent))
+sys.path.append(str(_CORE_ROOT / "tools"))     # notify, rate_limits
+sys.path.append(str(_TOOLS_DIR))               # import mock
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -102,10 +108,10 @@ logger = logging.getLogger("linkedin.server")
 
 from mcp.server.fastmcp import FastMCP
 
-import mock as _mock                    # tools/mock.py
-import notify as _notify                # tools/notify.py
+import mock as _mock                    # testing/tools/mock.py
+import notify as _notify                # core tools/notify.py
 from outreach.browser import LinkedInBrowser
-from rate_limits import rate_limit
+from rate_limits import rate_limit      # core tools/rate_limits.py
 
 # ── MCP server ────────────────────────────────────────────────────────────────
 
@@ -145,12 +151,12 @@ def _outreach_base() -> Path:
     """
     Root directory for outreach filesystem MCP tools.
 
-    Live mode uses ``outreach/``; mock mode uses ``outreach/mock/`` so scripted
-    runs do not overwrite operator data under ``outreach/``.
+    Live mode uses the core ``outreach/``; mock mode uses
+    ``testing/outreach/mock/`` so scripted runs do not overwrite operator data.
     """
     if _mock_mcp_enabled():
         return _ROOT / "outreach" / "mock"
-    return _ROOT / "outreach"
+    return _CORE_ROOT / "outreach"
 
 
 # ═════════════════════════════════════════════════════════════════════════════

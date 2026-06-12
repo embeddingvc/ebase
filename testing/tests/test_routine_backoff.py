@@ -12,7 +12,7 @@ import pytest
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from web.routine_backoff import (  # noqa: E402
+from cron.routine_backoff import (  # noqa: E402
     KEY_INTERVAL,
     KEY_LAST_AT,
     KEY_LAST_ERROR,

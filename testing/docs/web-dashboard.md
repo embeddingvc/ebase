@@ -1,47 +1,38 @@
-# Outreach web dashboard
+# Outreach web dashboard (dev/QA tool)
 
-Local FastAPI app for monitoring connections, scheduling skill routines, and triggering Claude skills from the browser. It reads the same outreach data tree as the LinkedIn MCP server (`outreach/` or `outreach/mock/`).
+Local FastAPI app for monitoring connections, inspecting routine state, and triggering Claude skills from the browser. It lives under `testing/` and is **not** part of the production install — the unattended scheduler runs in the core `cron/server.py` process (port 3847). The dashboard reads the live outreach tree (`<repo>/outreach/`) or the mock tree (`testing/outreach/mock/`).
 
 ## Quick start
 
-After [install](../README.md#install-one-command), run **`/setup-outreach`** in Claude Code once to configure your operator profile ([details](./skills.md#setup-outreach-first-run-wizard)).
+After [install](../../README.md#install-one-command), run **`/setup-outreach`** in Claude Code once to configure your operator profile ([details](../../docs/skills.md#setup-outreach-first-run-wizard)).
 
 ```text
-http://127.0.0.1:3847/
+http://127.0.0.1:3848/
 ```
 
-`./install.sh` starts Chrome, prompts you to sign in to LinkedIn, then starts the dashboard in the background (with MCP setup). To start it manually:
+Start it from the repo root:
 
 ```bash
-make web
-# or
-uv run uvicorn web.server:app --host 127.0.0.1 --port 3847
+make -C testing web
+# or, from testing/
+uv run uvicorn web.server:app --host 127.0.0.1 --port 3848
 ```
 
 Stop it:
 
 ```bash
-make stop-web
+make -C testing stop-web
 ```
-
-Check status:
-
-```bash
-make status
-```
-
-Logs: `logs/server.log` (append mode when started by `install.sh`).
 
 ## What runs
 
 | Component | Role |
 |-----------|------|
-| **Uvicorn** | Serves `web/server.py` (FastAPI) |
-| **Static UI** | `web/dashboard.html`, `dashboard.css`, `dashboard.js` |
-| **Routine scheduler** | Background asyncio loop (30s tick); runs active skills on interval |
-| **Skill runner** | Invokes `claude -p "Run <skill> skill"` for manual runs and scheduled routines |
+| **Uvicorn** | Serves `testing/web/server.py` (FastAPI) |
+| **Static UI** | `testing/web/dashboard.html`, `dashboard.css`, `dashboard.js` |
+| **Skill runner** | Invokes `claude -p "Run <skill> skill"` for manual "Run now" triggers (imports `cron.skill_runner` from core) |
 
-The dashboard does **not** replace the MCP server or the queue worker. It is a control plane on top of repo-local JSON/JSONL files.
+The background routine scheduler is **not** part of this process — it runs in the core `cron/server.py` (started by `install.sh` / `make cron`). The dashboard is a read-mostly view plus manual triggers on top of repo-local JSON/JSONL files.
 
 ## UI tabs
 
@@ -95,12 +86,12 @@ Prospects with meeting interest from conversation files (meeting link, email, or
 
 ## Data paths
 
-Resolved by `web/dashboard_data.outreach_base()`:
+Resolved by `testing/web/dashboard_data.outreach_base()`:
 
 | Env | Effect |
 |-----|--------|
 | `OUTREACH_DATA_ROOT` | Absolute path override (live data dir) |
-| `OUTREACH_MOCK=1` | Use `{repo}/outreach/mock` |
+| `OUTREACH_MOCK=1` | Use `testing/outreach/mock` |
 | `OUTREACH_MOCK=0` (default) | Use `{repo}/outreach` |
 
 Important files:
@@ -120,7 +111,7 @@ Important files:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `WEB_HOST` | `127.0.0.1` | Bind address |
-| `WEB_PORT` | `3847` | HTTP port |
+| `WEB_PORT` | `3848` | HTTP port (core cron server owns 3847) |
 | `OUTREACH_MOCK` | `0` | Mock vs live outreach tree |
 | `OUTREACH_DATA_ROOT` | — | Override data directory |
 | `CLAUDE_MODEL` | `haiku` | Model for `claude -p` skill runs |
@@ -132,24 +123,26 @@ Important files:
 
 ```mermaid
 flowchart LR
-  Browser["Browser\nlocalhost:3847"]
-  FastAPI["web/server.py\nFastAPI + scheduler"]
-  Data["outreach/mock or outreach/"]
-  Claude["claude -p\n(skill_runner)"]
+  Browser["Browser\nlocalhost:3848"]
+  FastAPI["testing/web/server.py\nFastAPI (no scheduler)"]
+  Cron["cron/server.py\nscheduler :3847 (core)"]
+  Data["testing/outreach/mock or outreach/"]
+  Claude["claude -p\n(cron.skill_runner)"]
   Chrome["Chrome CDP\n:9222"]
 
   Browser --> FastAPI
   FastAPI --> Data
   FastAPI --> Claude
   FastAPI -. health check .-> Chrome
+  Cron --> Claude
   Claude --> Data
 ```
 
-## The web server is the scheduler (production usage)
+## The cron server is the scheduler (production usage)
 
-The `web/server.py` process is the production driver for the workflow — the dashboard UI is a view on the same process, not a separate component. Inside the FastAPI `lifespan` hook, `web/routine_scheduler.scheduler_loop` ticks every 30 s and shells out to `claude -p "Run <skill>"` for any routine in `dashboard_routines.json` whose `active` flag is true and whose `interval_minutes` has elapsed since `last_run_at`.
+In production the workflow is driven by the core `cron/server.py` process, not the dashboard. Inside its FastAPI `lifespan` hook, `cron/routine_scheduler.scheduler_loop` ticks every 30 s and shells out to `claude -p "Run <skill>"` for any routine in `dashboard_routines.json` whose `active` flag is true and whose `interval_minutes` has elapsed since `last_run_at`.
 
-`./install.sh` already starts this process in the background (see `start_web_dashboard` in `install.sh`), so after the installer finishes the workflow runs unattended. You only need the browser at `http://127.0.0.1:3847/` if you want to inspect state or hand-toggle routines.
+`./install.sh` starts the cron server in the background (see `start_cron_server` in `install.sh`), so after the installer finishes the workflow runs unattended. The dashboard at `http://127.0.0.1:3848/` is optional — start it only when you want to inspect state or hand-toggle routines.
 
 ### Default routines (per-prospect scheduler)
 
@@ -175,14 +168,14 @@ covers the old defaults. Add custom loop routines (for `reply-to-post`,
 - `claude` must be on the PATH of whichever shell started `uvicorn`. `install.sh` inherits the user's PATH, so this normally works out of the box.
 - LinkedIn rate limits (`tools/rate_limits.py`) apply per `tools/server.py` subprocess; back-to-back routine runs are safe.
 - When `schedule_meeting` fires inside a routine run, the operator gets an SMTP email reminder if `OPERATOR_EMAIL` / `SMTP_HOST` are set in `.env` (see `.env.example`).
-- The web process does **not** survive reboot today. After a reboot, re-run `./install.sh` (or `make web`) to bring the scheduler back. A `launchd` / systemd unit is a natural follow-up but is out of scope here.
+- The cron process does **not** survive reboot today. After a reboot, re-run `./install.sh` (or `make cron`) to bring the scheduler back. A `launchd` / systemd unit is a natural follow-up but is out of scope here.
 
 ## Troubleshooting
 
-**Stale UI after code changes** — Restart the server (`make stop-web && make web`). Uvicorn is started without `--reload` by default.
+**Stale UI after code changes** — Restart the server (`make -C testing stop-web && make -C testing web`). Uvicorn is started without `--reload` by default.
 
 **Wrong prospect list** — Ensure the running process loaded current code; connections tab only includes rows in `connections.json`.
 
-**Skill run fails** — Confirm `claude` is on PATH (`which claude`). Check `logs/server.log` and the routine run note in the history table.
+**Skill run fails** — Confirm `claude` is on PATH (`which claude`). Check the dashboard process output and the routine run note in the history table.
 
-**Port already in use** — `make stop-web` or `lsof -ti :3847 | xargs kill`, then `make web`.
+**Port already in use** — `make -C testing stop-web` or `lsof -ti :3848 | xargs kill`, then `make -C testing web`.

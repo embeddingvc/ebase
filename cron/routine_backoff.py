@@ -207,7 +207,7 @@ def reschedule_to_window(
 ) -> dict[str, Any] | None:
     """Push ``next_check_at`` to the next active-window opening if it landed outside.
 
-    Server-local timezone, matching ``web.routines_config.in_active_window``.
+    Server-local timezone, matching ``cron.routines_config.in_active_window``.
     """
     if not isinstance(backoff, dict) or not window_start or not window_end:
         return backoff

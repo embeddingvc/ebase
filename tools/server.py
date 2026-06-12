@@ -1,39 +1,28 @@
 """
-LinkedIn MCP server.
+LinkedIn MCP server (live-only).
 
-Exposes LinkedIn browser automation (and a full mock backend for testing)
-as MCP tools so Claude — or any MCP host — can drive outreach workflows.
+Exposes LinkedIn browser automation as MCP tools so Claude — or any MCP
+host — can drive outreach workflows.
 
-── Modes ─────────────────────────────────────────────────────────────────────
+Drives a real Chrome browser via Playwright CDP. Chrome must be running with
+--remote-debugging-port=9222 and the user must be logged in to LinkedIn
+manually.
 
-  MOCK MODE  (default; _mock_mcp_enabled() returns True)
-    No browser required.  All tool calls are handled by tools/mock.py, which
-    simulates complete conversations from connection request to end state.
+Quick start:
+  make browser          # or launch Chrome with the flags above
+  uv run tools/server.py
 
-    Workflow:
-      1. send_connection_request(url, note)   — opens the conversation
-      2. [conversation-planner skill loop]    — fetch → plan → send, repeat
-
-    Test code configures scenarios via tools/mock.py (e.g. handle_load_test_case);
-    those helpers are not exposed as MCP tools.
-
-  LIVE MODE  (_mock_mcp_enabled() returns False)
-    Drives a real Chrome browser via Playwright CDP.
-    Chrome must be running with --remote-debugging-port=9222 and the user
-    must be logged in to LinkedIn manually.
-
-    Quick start:
-      make browser          # or launch Chrome with the flags above
-      uv run tools/server.py
+A mock-capable fork of this server (scripted responses, no browser) lives in
+``testing/tools/server.py`` for regression runs and the QA dashboard.
 
 ── Tools ─────────────────────────────────────────────────────────────────────
 
-  [all modes — LinkedIn actions]
+  [LinkedIn actions]
     scrape_profile            Scrape a profile → structured JSON.
     parse_profile             Structured multi-page parse (v2 schema; no raw page dump).
     is_first_degree_connection  Check whether a profile is a 1st-degree connection.
-      (Driven by the dashboard's deterministic connection sync sweep —
-      see web/connection_sync_sweep.py — and ad-hoc operator invocations.)
+      (Driven by the cron scheduler's deterministic connection sync sweep —
+      see cron/connection_sync_sweep.py — and ad-hoc operator invocations.)
     send_connection_request   Send a connection request with an optional note.
     send_message              Send a DM to a 1st-degree connection.
     fetch_chat_history        Read the DM thread for a connection.
@@ -41,9 +30,8 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     reply_to_post             Leave a comment on a LinkedIn post.
     browse_forever            Start a background human-like browsing session.
 
-  [all modes — outreach filesystem; paths are resolved inside the server]
-    Same relative layout as under outreach/; in MOCK MODE data is rooted at
-    outreach/mock/ so tests do not write into the live outreach/ tree.
+  [outreach filesystem; paths are resolved inside the server]
+    Data is rooted at outreach/ (live operator tree).
 
     get_connections           Return .../connections.json as JSON text.
     get_conversation_planner_config Return runtime planner config JSON.
@@ -60,11 +48,6 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     append_planned_message_log Append one JSON line to planned_messages.jsonl.
     save_outreach_report      Write .../storage/reports/<id>.md.
     remove_pending_queue_entry Remove a prospect from .../queue/pending.json.
-
-── Mock logic ────────────────────────────────────────────────────────────────
-
-  All mock data, state, and handler functions live in tools/mock.py.
-  This file only wires them up to the MCP framework.
 """
 
 from __future__ import annotations
@@ -79,10 +62,10 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
-# Make the project root importable (outreach package, tools/mock.py, etc.).
+# Make the project root importable (outreach package) plus tools/ itself
+# (notify, rate_limits).
 _ROOT = Path(__file__).parent.parent
 sys.path.append(str(_ROOT))
-# Also ensure the tools/ directory itself is on the path so `import mock` works.
 sys.path.append(str(Path(__file__).parent))
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -102,7 +85,6 @@ logger = logging.getLogger("linkedin.server")
 
 from mcp.server.fastmcp import FastMCP
 
-import mock as _mock                    # tools/mock.py
 import notify as _notify                # tools/notify.py
 from outreach.browser import LinkedInBrowser
 from rate_limits import rate_limit
@@ -116,45 +98,19 @@ mcp = FastMCP(
     ),
 )
 
-# ── Background task handle (live mode only) ───────────────────────────────────
+# ── Background task handle ────────────────────────────────────────────────────
 
 _browse_task: asyncio.Task | None = None
 _browse_lock = asyncio.Lock()
 
 
-# ── Mock mode flag ────────────────────────────────────────────────────────────
-
-def _mock_mcp_enabled() -> bool:
-    """Return True to run in mock mode (no browser, scripted responses).
-
-    ``OUTREACH_MOCK=1`` (also ``true``/``yes``) flips the server into mock mode
-    so the dashboard's regression panel and ``make regression`` can request
-    scripted responses without editing this source. Anything else falls back to
-    live mode — keeping live-mode the default for the operator's day-to-day MCP
-    process.
-    """
-    import os
-
-    env = os.environ.get("OUTREACH_MOCK", "").strip().lower()
-    if env in ("1", "true", "yes"):
-        return True
-    return False
-
-
 def _outreach_base() -> Path:
-    """
-    Root directory for outreach filesystem MCP tools.
-
-    Live mode uses ``outreach/``; mock mode uses ``outreach/mock/`` so scripted
-    runs do not overwrite operator data under ``outreach/``.
-    """
-    if _mock_mcp_enabled():
-        return _ROOT / "outreach" / "mock"
+    """Root directory for outreach filesystem MCP tools (live tree)."""
     return _ROOT / "outreach"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# LINKEDIN TOOLS (mock delegates to mock.py; live drives the browser)
+# LINKEDIN TOOLS (drive the browser via Playwright CDP)
 # ═════════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
@@ -170,8 +126,6 @@ async def scrape_profile(
     returns them as a JSON string matching the prospect schema used by the
     outreach planner.
 
-    In mock mode: returns the prospect from the active session's test case (Alex Chen /
-    ``happy_path`` if none was loaded yet).
 
     Parameters
     ----------
@@ -187,9 +141,6 @@ async def scrape_profile(
         linkedin_url, name, title, location, connection_degree,
         about, recent_posts, scraped_at.
     """
-    if _mock_mcp_enabled():
-        return await _mock.handle_scrape_profile(profile_url)
-
     err = rate_limit("profile_view", profile_url=profile_url, record=False)
     if err:
         return err
@@ -253,9 +204,6 @@ async def parse_profile(
     str
         JSON object with ``subject``, ``relations``, ``activity``, ``crawl_log``, ``meta``.
     """
-    if _mock_mcp_enabled():
-        return await _mock.handle_parse_profile(profile_url)
-
     err = rate_limit("profile_view", profile_url=profile_url, record=False)
     if err:
         return err
@@ -315,9 +263,6 @@ async def is_first_degree_connection(
     str
         JSON object: {"first_degree": bool, "profile_url": str}
     """
-    if _mock_mcp_enabled():
-        return await _mock.handle_is_first_degree_connection(profile_url)
-
     err = rate_limit("profile_view", profile_url=profile_url, record=False)
     if err:
         return err
@@ -354,9 +299,6 @@ async def send_connection_request(
     More overflow menu if Connect is not directly visible), optionally adds a
     personalised note (≤300 chars), and submits the invitation.
 
-    In mock mode: records the note as operator message 0 and appends the first
-    scripted prospect reply.  If the test case has connection_accepted=False,
-    the connection stays pending and fetch_chat_history returns an empty thread.
 
     Parameters
     ----------
@@ -378,9 +320,6 @@ async def send_connection_request(
             f"Note too long: {len(note)} chars (LinkedIn limit: 300). "
             "Please shorten and retry."
         )
-
-    if _mock_mcp_enabled():
-        return await _mock.handle_send_connection_request(profile_url, note)
 
     err = rate_limit("connection_request", profile_url=profile_url, record=False)
     if err:
@@ -418,9 +357,6 @@ async def send_message(
     conversation for the given profile URL, types the message at human-like
     speed, and submits it.
 
-    In mock mode: appends the operator message to history, then appends the
-    next scripted prospect reply (if any).  Silence is simulated when all
-    scripted replies are exhausted.
 
     Parameters
     ----------
@@ -436,9 +372,6 @@ async def send_message(
     str
         "ok" on success, or an error description.
     """
-    if _mock_mcp_enabled():
-        return await _mock.handle_send_message(profile_url, message)
-
     err = rate_limit("dm", profile_url=profile_url, record=False)
     if err:
         return err
@@ -471,9 +404,6 @@ async def fetch_chat_history(
     target conversation, then returns message bubbles currently in the DOM
     (older history may require scrolling in the UI).
 
-    In mock mode: returns the accumulated conversation history for that URL (starts empty
-    until ``send_connection_request`` / ``send_message``).  Default session uses the Alex Chen
-    ``happy_path`` script unless tests preconfigured another scenario via ``mock.handle_load_test_case``.
 
     Parameters
     ----------
@@ -489,9 +419,6 @@ async def fetch_chat_history(
         "self": true  = sent by operator (us)
         "self": false = sent by prospect
     """
-    if _mock_mcp_enabled():
-        return await _mock.handle_fetch_chat_history(profile_url)
-
     logger.info("fetch_chat_history called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
@@ -526,9 +453,6 @@ async def create_new_post(
     str
         "ok" on success, or an error description.
     """
-    if _mock_mcp_enabled():
-        return await _mock.handle_create_new_post(content)
-
     text = (content or "").strip()
     logger.info("create_new_post called  content_len=%d  cdp=%s", len(text), cdp_url)
     try:
@@ -573,9 +497,6 @@ async def reply_to_post(
     str
         "ok" on success, or an error description.
     """
-    if _mock_mcp_enabled():
-        return await _mock.handle_reply_to_post(post_url, comment)
-
     logger.info("reply_to_post called  url=%s  cdp=%s", post_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
@@ -600,13 +521,6 @@ async def download_profile_pdf(
     Saves the file to ./profiles/ in the project root and returns JSON:
       {"ok": true, "profile_url": "...", "filename": "<uuid>.pdf", "path": "..."}
     """
-    if _mock_mcp_enabled():
-        return json.dumps(
-            {"ok": False, "error": "download_profile_pdf is not supported in mock mode."},
-            ensure_ascii=False,
-            indent=2,
-        )
-
     filename = f"{uuid.uuid4()}.pdf"
     save_dir = _ROOT / "profiles"
 
@@ -662,9 +576,6 @@ async def browse_forever(
     """
     global _browse_task
 
-    if _mock_mcp_enabled():
-        return await _mock.handle_browse_forever(reaction, cdp_url)
-
     async with _browse_lock:
         if _browse_task is not None and not _browse_task.done():
             logger.warning("browse_forever: session already running")
@@ -702,8 +613,8 @@ async def browse_forever(
 
 # ═════════════════════════════════════════════════════════════════════════════
 # OUTREACH FILE-MANAGEMENT TOOLS
-# These tools always write under _outreach_base() (outreach/ or outreach/mock/)
-# so skills never need to guess paths or run bash scripts.
+# These tools always write under _outreach_base() (outreach/) so skills never
+# need to guess paths or run bash scripts.
 # ═════════════════════════════════════════════════════════════════════════════
 
 import tempfile
@@ -1199,8 +1110,8 @@ def _atomic_write_json(path: Path, data: object) -> None:
 @mcp.tool()
 async def get_connections() -> str:
     """
-    Read connections.json from the active outreach data directory (outreach/ or
-    outreach/mock/ when mock MCP is enabled). Skills must use this instead of constructing paths.
+    Read connections.json from the outreach data directory (outreach/).
+    Skills must use this instead of constructing paths.
     """
     path = _outreach_base() / "connections.json"
     try:
@@ -1496,8 +1407,6 @@ async def schedule_meeting(
     """
     Book a calendar hold for a prospect after email and time are agreed.
 
-    In mock mode: returns JSON with ``meeting_link`` and ``scheduled_at``, and
-    persists ``email`` / ``meeting_link`` on the mock conversation file.
 
     In live mode: not implemented — returns an explicit error (no silent success).
 
@@ -1519,13 +1428,6 @@ async def schedule_meeting(
     str
         JSON with scheduling fields on success, or ``error: ...`` on failure.
     """
-    if _mock_mcp_enabled():
-        return await _mock.handle_schedule_meeting(
-            email=email,
-            when=datetime,
-            prospect_id=prospect_id,
-            profile_url=profile_url,
-        )
     return await _schedule_meeting_live(
         email=email,
         datetime=datetime,
@@ -1989,14 +1891,4 @@ async def merge_conversation_planner_identity(
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    if _mock_mcp_enabled():
-        logger.warning(
-            "LinkedIn MCP server starting in MOCK MODE — "
-            "no browser actions are performed; responses use the Alex Chen happy_path fixture by default.\n"
-            "  • Outreach filesystem tools read/write under %s (not outreach/).\n"
-            "  • send_connection_request(url)   — begin the conversation\n"
-            "  • [conversation-planner loop]    — fetch → plan → send\n"
-            "  Test scenarios: use tools/mock.py (handle_load_test_case, etc.); not MCP tools.",
-            _outreach_base(),
-        )
     mcp.run(transport="stdio")

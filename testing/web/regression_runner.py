@@ -1,10 +1,11 @@
 """
 Background regression runner for the dashboard's mock view.
 
-Spawns ``pytest tests/test_regression_workflow.py`` as a subprocess with
-``OUTREACH_MOCK=1`` (so ``tools/server.py::_mock_mcp_enabled()`` returns True
-without touching the source) and streams stdout/stderr to a log file under
-``outreach/mock/logs/regression.log``.
+Spawns ``pytest tests/test_regression_workflow.py`` (from the ``testing/``
+root) as a subprocess with ``OUTREACH_MOCK=1`` (so
+``testing/tools/server.py::_mock_mcp_enabled()`` returns True without touching
+the source) and streams stdout/stderr to a log file under
+``testing/outreach/mock/logs/regression.log``.
 
 A single global ``RegressionState`` singleton is exposed so the FastAPI
 endpoints can query status, start, and stop runs. The dashboard polls
@@ -28,7 +29,7 @@ from typing import Any
 from web.dashboard_data import mock_base
 
 WEB_DIR = Path(__file__).resolve().parent
-REPO_ROOT = WEB_DIR.parent
+TESTING_ROOT = WEB_DIR.parent
 
 LOG_TAIL_LINES = 400  # ring buffer surfaced through the API
 DEFAULT_CASE_ID = "happy_path"
@@ -117,7 +118,7 @@ class RegressionRunner:
             try:
                 proc = subprocess.Popen(
                     cmd,
-                    cwd=str(REPO_ROOT),
+                    cwd=str(TESTING_ROOT),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -205,8 +206,8 @@ class RegressionRunner:
 
     def _subprocess_env(self) -> dict[str, str]:
         env = os.environ.copy()
-        # Force mock backend in tools/server.py + dashboard_data so the harness
-        # never accidentally drives a real LinkedIn session.
+        # Force mock backend in testing/tools/server.py + dashboard_data so the
+        # harness never accidentally drives a real LinkedIn session.
         env["OUTREACH_MOCK"] = "1"
         env["PYTHONUNBUFFERED"] = "1"
         # Ensure ``claude`` and ``uv`` resolve from common install dirs.

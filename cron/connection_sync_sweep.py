@@ -23,8 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from web.dashboard_data import _atomic_write_json, _read_json, outreach_base
-from web.routine_backoff import (
+from outreach.data_paths import _atomic_write_json, _read_json, outreach_base
+from cron.routine_backoff import (
     BackoffPolicy,
     SYNC_DEFAULT,
     apply_result,
@@ -32,7 +32,7 @@ from web.routine_backoff import (
     reschedule_to_window,
 )
 
-logger = logging.getLogger("web.connection_sync_sweep")
+logger = logging.getLogger("cron.connection_sync_sweep")
 
 CONNECTIONS_FILE = "connections.json"
 ACTIONS_LOG = "logs/actions.jsonl"

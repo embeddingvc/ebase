@@ -51,7 +51,8 @@ import urllib.request
 from pathlib import Path
 
 # Make the project root importable.
-BASE_DIR = Path(__file__).parent.parent
+# Core repo root (outreach.browser lives in the core, not testing/)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from outreach.browser import LinkedInBrowser  # noqa: E402

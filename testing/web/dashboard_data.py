@@ -1,7 +1,9 @@
 """
-Read-only outreach data for the web dashboard.
+Read-only outreach data for the testing web dashboard.
 
-Mirrors ``tools.server._outreach_base()`` path resolution so UI and MCP stay aligned.
+Mirrors the mock-capable MCP (``testing/tools/server.py``) path resolution so
+UI and MCP stay aligned: the mock tree lives at ``testing/outreach/mock`` and
+the live tree at the core repo's ``outreach/``.
 """
 
 from __future__ import annotations
@@ -10,7 +12,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -18,12 +19,8 @@ from pathlib import Path
 from typing import Any
 
 WEB_DIR = Path(__file__).resolve().parent
-REPO_ROOT = WEB_DIR.parent
-_TOOLS = REPO_ROOT / "tools"
-if str(_TOOLS) not in sys.path:
-    sys.path.insert(0, str(_TOOLS))
-
-import server as _mcp_server  # noqa: E402  # tools/server.py
+TESTING_ROOT = WEB_DIR.parent
+REPO_ROOT = TESTING_ROOT.parent  # core repo root (live outreach/ tree)
 
 CDP_URL = os.environ.get("CDP_URL", "http://localhost:9222")
 QUEUE_DIR = "queue"
@@ -33,8 +30,9 @@ MEETING_END_REASONS = frozenset({"call_scheduled"})
 MEETING_NEXT_ACTIONS = frozenset({"confirm_meeting"})
 
 def mock_mcp_enabled() -> bool:
-    """Delegate to ``tools.server._mock_mcp_enabled()`` (single source of truth)."""
-    return _mcp_server._mock_mcp_enabled()
+    """Mirror ``testing.tools.server._mock_mcp_enabled()`` (OUTREACH_MOCK env)."""
+    env = os.environ.get("OUTREACH_MOCK", "").strip().lower()
+    return env in ("1", "true", "yes")
 
 def outreach_base(scope: str | None = None) -> Path:
     """Outreach data root.
@@ -44,18 +42,18 @@ def outreach_base(scope: str | None = None) -> Path:
     1. Explicit ``scope="mock"`` / ``scope="live"`` (used by dashboard endpoints
        so the per-request scope cleanly forces a tree without touching env).
     2. ``OUTREACH_DATA_ROOT`` env override (regression harness, tests).
-    3. ``OUTREACH_MOCK=1`` env (mock tree at ``outreach/mock``).
-    4. Default — ``outreach/`` (live operator data).
+    3. ``OUTREACH_MOCK=1`` env (mock tree at ``testing/outreach/mock``).
+    4. Default — core ``outreach/`` (live operator data).
     """
     if scope == "mock":
-        return REPO_ROOT / "outreach" / "mock"
+        return TESTING_ROOT / "outreach" / "mock"
     if scope == "live":
         return REPO_ROOT / "outreach"
     override = os.environ.get("OUTREACH_DATA_ROOT", "").strip()
     if override:
         return Path(override).expanduser().resolve()
     if mock_mcp_enabled():
-        return REPO_ROOT / "outreach" / "mock"
+        return TESTING_ROOT / "outreach" / "mock"
     return REPO_ROOT / "outreach"
 
 
@@ -351,8 +349,8 @@ def _connection_routine_meta(conn: dict[str, Any]) -> dict[str, Any]:
     """Last/next per-prospect routine timestamps for the connections list.
 
     Reads from the row's ``sync_backoff`` / ``plan_backoff`` records (written
-    by the per-prospect scheduler sweeps in ``web.connection_sync_sweep`` /
-    ``web.conversation_plan_sweep``). Returns ``None`` fields when no record
+    by the per-prospect scheduler sweeps in ``cron.connection_sync_sweep`` /
+    ``cron.conversation_plan_sweep``). Returns ``None`` fields when no record
     exists yet so the UI can render a neutral placeholder.
     """
     status = conn.get("connection_status")
@@ -425,7 +423,7 @@ def get_connections(scope: str | None = None) -> dict[str, Any]:
 
 
 def get_routines(scope: str | None = None) -> dict[str, Any]:
-    from web import routines_config
+    from cron import routines_config
 
     base = outreach_base(scope)
     payload = routines_config.get_routines_display()
@@ -460,7 +458,7 @@ def get_execution_history(
     *, limit: int = 50, offset: int = 0, scope: str | None = None
 ) -> dict[str, Any]:
     """Routine skill runs from ``logs/routine_runs.jsonl`` only."""
-    from web import routines_config
+    from cron import routines_config
 
     base = outreach_base(scope)
     entries: list[dict[str, Any]] = []

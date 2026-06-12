@@ -11,7 +11,7 @@ import pytest
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from web import routines_config as rc  # noqa: E402
+from cron import routines_config as rc  # noqa: E402
 
 
 def test_validate_routine_rejects_bad_skill() -> None:

@@ -24,8 +24,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from web.dashboard_data import _atomic_write_json, _read_json, outreach_base
-from web.routine_backoff import PLAN_DEFAULT, SYNC_DEFAULT, BackoffPolicy
+from outreach.data_paths import _atomic_write_json, _read_json, outreach_base
+from cron.routine_backoff import PLAN_DEFAULT, SYNC_DEFAULT, BackoffPolicy
 
 CONFIG_NAME = "dashboard_routines.json"
 RUNS_LOG = "routine_runs.jsonl"
@@ -38,7 +38,7 @@ RUNS_LOG = "routine_runs.jsonl"
 # ``send-connection-request``. The "all in one" skills it used to drive
 # (``sync-pending-connections``, ``conversation-planner`` batch mode) have
 # been removed; default installs now use ``"per_prospect"`` which dispatches
-# typed sweeps from ``web.routine_scheduler``.
+# typed sweeps from ``cron.routine_scheduler``.
 SCHEDULER_KIND_LOOP = "loop"
 SCHEDULER_KIND_PER_PROSPECT = "per_prospect"
 _VALID_SCHEDULER_KINDS = frozenset({SCHEDULER_KIND_LOOP, SCHEDULER_KIND_PER_PROSPECT})
@@ -77,7 +77,7 @@ DEFAULT_WINDOW_END = "17:00"
 # Legacy "loop" routines are no longer auto-created. The two old defaults
 # (sync-pending-connections + conversation-planner batch) were the only
 # all-in-one skills and have been removed; per-prospect sweeps in
-# ``web.routine_scheduler`` cover the same ground without an LLM in the
+# ``cron.routine_scheduler`` cover the same ground without an LLM in the
 # loop. Users can still add custom ``"loop"`` routines pointing at the
 # remaining single-action skills via the dashboard.
 DEFAULT_ROUTINES: list[dict[str, Any]] = []
@@ -147,7 +147,7 @@ def _runs_log_path() -> Path:
 
 
 def _allowed_skills() -> frozenset[str]:
-    from web.skill_runner import ALLOWED_SKILLS
+    from cron.skill_runner import ALLOWED_SKILLS
 
     return ALLOWED_SKILLS
 

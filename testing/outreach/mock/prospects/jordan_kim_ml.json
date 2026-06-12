@@ -1,0 +1,25 @@
+{
+  "id": "jordan_kim_ml",
+  "linkedin_url": "https://www.linkedin.com/in/jordan-kim-ml/",
+  "name": "Jordan Kim",
+  "title": "Staff ML Engineer",
+  "company": "Databricks",
+  "location": "Seattle, WA",
+  "connection_degree": 2,
+  "mutual_connections": [
+    "Alex Chen"
+  ],
+  "recent_posts": [
+    {
+      "text": "We finally shipped our internal feature store v2 — biggest lesson was investing in lineage early.",
+      "likes": 98,
+      "timestamp": "2026-03-18"
+    }
+  ],
+  "connection_status": "pending",
+  "outreach_stage": "pending_connection",
+  "end_goal": "schedule_meeting",
+  "outreach_topic": "Series A ML infra roles in the portfolio",
+  "notes": "ML platform engineer focused on feature stores and training pipelines. Ten years across Meta and Databricks.",
+  "profile_fetched_at": "2026-06-07T01:28:13.119708+00:00"
+}
