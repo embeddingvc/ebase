@@ -12,6 +12,39 @@ description: >-
 
 Guide the operator **one step at a time**. Do **not** run the full wizard in a single turn — finish the current sub-step, then **stop and wait** for the user.
 
+## Browser tool policy (strict — read first)
+
+Every LinkedIn browser action in this wizard goes through the **LinkedIn MCP server** (tools
+prefixed `mcp__linkedin__*`) and **only** that server. The LinkedIn MCP attaches to the
+operator's logged-in Chrome over CDP on port `9222` with this project's rate-limits, human-like
+jitter, and bot-detection safeguards — substituting any other browser surface defeats those
+guarantees and can get the operator's LinkedIn account flagged at the very moment they are
+first signing in.
+
+Even if other browser tools are registered in the current Claude CLI session, do **not** use
+them for this workflow:
+
+- **No other browser MCPs.** Do not use `chrome-devtools`, `playwright`, `puppeteer`,
+  `browser-use`, `browserbase`, `gstack` browser, or any other Chrome-attached MCP to open,
+  click, type, or read on `linkedin.com` — including the `/in/me/` self-scrape.
+- **No "Claude in Chrome" extension / Chrome side-panel** to drive the browser on `linkedin.com`.
+- **No `WebFetch`, `WebSearch`, `curl`, `wget`, `fetch`, `requests`, or `Bash`** against
+  `linkedin.com` / `licdn.com`.
+- **No manual operator hand-off** for the scrape ("paste your headline here") — always call the
+  LinkedIn MCP scrape tool first and only fall back to operator-supplied text if the tool errors.
+
+Allowed browser-side tools in this skill (LinkedIn MCP only):
+
+- `mcp__linkedin__scrape_profile` (default for the wizard self-scrape)
+- `mcp__linkedin__parse_profile` (optional deep refresh in 2c)
+
+The `make browser` step is the only shell command involved in browser setup, and it launches
+the **operator's own Chrome** with CDP — it is not a substitute browser-automation tool.
+
+If `mcp__linkedin__*` tools are not registered in the current session, **stop and tell the
+operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
+`make claude-install`). Do **not** pick up a different browser tool as a fallback.
+
 ## Update check (run first)
 
 Before setup work, check for a newer LinkedIn-Outreach version:

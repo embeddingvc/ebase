@@ -5,6 +5,37 @@ description: Send a LinkedIn connection request (with an optional personalised n
 
 # Send Connection Request
 
+## Browser tool policy (strict — read first)
+
+Every browser action in this skill goes through the **LinkedIn MCP server** (tools prefixed
+`mcp__linkedin__*`) and **only** that server. The LinkedIn MCP attaches to the operator's
+logged-in Chrome over CDP on port `9222` with this project's rate-limits, human-like jitter,
+and bot-detection safeguards — substituting any other browser surface defeats those guarantees
+and can get the operator's LinkedIn account flagged.
+
+Even if other browser tools are registered in the current Claude CLI session, do **not** use
+them for this workflow:
+
+- **No other browser MCPs.** Do not use `chrome-devtools`, `playwright`, `puppeteer`,
+  `browser-use`, `browserbase`, `gstack` browser, or any other Chrome-attached MCP to open,
+  click, type, or read on `linkedin.com`.
+- **No "Claude in Chrome" extension / Chrome side-panel** to drive the browser on `linkedin.com`.
+- **No `WebFetch`, `WebSearch`, `curl`, `wget`, `fetch`, `requests`, or `Bash`** against
+  `linkedin.com` / `licdn.com`. The LinkedIn MCP is the only sanctioned surface — even read-only
+  scraping must go through `mcp__linkedin__scrape_profile`.
+- **No manual operator hand-off** as a substitute. Call the LinkedIn MCP tool; on error, report
+  the error verbatim and stop. Do not tell the operator to "do it yourself" instead of calling
+  the tool.
+
+Allowed browser-side tools in this skill (LinkedIn MCP only):
+
+- `mcp__linkedin__scrape_profile`
+- `mcp__linkedin__send_connection_request`
+
+If `mcp__linkedin__*` tools are not registered in the current session, **stop and tell the
+operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
+`make claude-install`). Do **not** pick up a different browser tool as a fallback.
+
 ## Update check (run first)
 
 Before connecting, check for a newer LinkedIn-Outreach version:

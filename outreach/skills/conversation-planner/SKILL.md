@@ -12,6 +12,39 @@ description: >
 
 # Conversation Planner
 
+## Browser tool policy (strict — read first)
+
+Every browser action in this skill goes through the **LinkedIn MCP server** (tools prefixed
+`mcp__linkedin__*`) and **only** that server. The LinkedIn MCP attaches to the operator's
+logged-in Chrome over CDP on port `9222` with this project's rate-limits, human-like jitter,
+and bot-detection safeguards — substituting any other browser surface defeats those guarantees
+and can get the operator's LinkedIn account flagged.
+
+Even if other browser tools are registered in the current Claude CLI session, do **not** use
+them for this workflow:
+
+- **No other browser MCPs.** Do not use `chrome-devtools`, `playwright`, `puppeteer`,
+  `browser-use`, `browserbase`, `gstack` browser, or any other Chrome-attached MCP to open,
+  click, type, or read on `linkedin.com`.
+- **No "Claude in Chrome" extension / Chrome side-panel** to drive the browser on `linkedin.com`.
+- **No `WebFetch`, `WebSearch`, `curl`, `wget`, `fetch`, `requests`, or `Bash`** against
+  `linkedin.com` / `licdn.com`. Even read-only thread inspection must go through
+  `mcp__linkedin__fetch_chat_history` (not a raw HTTP GET, not the Chrome side-panel).
+- **No manual operator hand-off** as a substitute. Call the LinkedIn MCP tool; on error, report
+  the error verbatim, leave `planned_message` in place for retry, and stop.
+
+Allowed browser-side tools in this skill (LinkedIn MCP only):
+
+- `mcp__linkedin__scrape_profile` (when fresh profile data is required at plan time)
+- `mcp__linkedin__fetch_chat_history` (Phase A)
+- `mcp__linkedin__send_message` (Phase C — DM delivery)
+- `mcp__linkedin__send_connection_request` (Phase C — Step 1 cold connect)
+
+If `mcp__linkedin__*` tools are not registered in the current session, **stop and tell the
+operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
+`make claude-install`). Do **not** pick up a different browser tool as a fallback. **Plan-only**
+mode (Phase B only, no MCP) is the only allowed degradation — never substitute another browser.
+
 ## Role
 
 You are the configured outreach operator defined in runtime planner config.
@@ -520,9 +553,13 @@ Expected: `end_conversation = true`, `ended_reason = "no_response"`, `message = 
 - **One prospect per run.** `prospect_id` is required; if missing, abort with
   a clear error rather than walking the connections list. Connection-list
   fan-out is the dashboard sweep's job, not this skill's.
-- **MCP only for LinkedIn automation.** Use `fetch_chat_history`,
-  `send_message`, and `send_connection_request` — no ad-hoc scraping or
-  undocumented APIs.
+- **LinkedIn MCP only for browser actions.** Use `mcp__linkedin__fetch_chat_history`,
+  `mcp__linkedin__send_message`, `mcp__linkedin__send_connection_request`, and
+  `mcp__linkedin__scrape_profile`. **Never** substitute another browser MCP
+  (`chrome-devtools`, `playwright`, `puppeteer`, `browser-use`, `browserbase`,
+  `gstack` browser, etc.), the "Claude in Chrome" extension, `WebFetch`, or
+  shell HTTP clients against `linkedin.com`. See **Browser tool policy** at
+  the top of this skill for the full enforcement rules.
 - **MCP only for outreach data I/O.** Use `get_*`, `upsert_*`, `append_*`,
   `save_outreach_report`, `save_connection`,
   `remove_pending_queue_entry` — **never** construct `outreach/...` paths or

@@ -2,6 +2,10 @@
 
 Workflow instructions for Claude live in **`outreach/skills/`**. Each skill is its **own directory** with a **`SKILL.md`** file. Skills assume the **LinkedIn MCP server** is available — see [Manual install & Claude Desktop MCP setup](./install.md).
 
+## Browser tool policy (applies to every skill)
+
+Every LinkedIn browser action across these skills runs **only** through the LinkedIn MCP server (tools prefixed `mcp__linkedin__*`). Each `SKILL.md` opens with a **Browser tool policy** block that forbids substituting any other browser surface — including generic `chrome-devtools` / `playwright` / `puppeteer` / `browser-use` / `browserbase` / `gstack` browser MCPs, the **Claude in Chrome** extension, `WebFetch` / `WebSearch`, and `curl` / `wget` against `linkedin.com`. The LinkedIn MCP attaches to the operator's logged-in Chrome over CDP `9222` with the project's rate-limits and bot-detection safeguards; competing surfaces bypass those and put the operator's account at risk. If `mcp__linkedin__*` tools are not registered in the current Claude CLI session, the skill must stop and report — not silently fall back to another browser tool.
+
 ## Core skills (this repo)
 
 - `setup-outreach` — interactive first-run wizard (see below)
