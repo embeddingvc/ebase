@@ -1101,27 +1101,40 @@ class LinkedInBrowser:
 
         workspace = self._page.locator("main, #workspace")
 
-        # SDUI invite CTA: <a href="/preload/custom-invite/?vanityName=..." aria-label="Invite … to connect">
-        # Prefer href (stable) scoped to the profile body; .first matches header before any sidebar dupes.
-        connect_btn = workspace.locator(
-            "a[href*='custom-invite']:has-text('Connect')"
-        ).first
-        if not await connect_btn.count():
-            connect_btn = workspace.locator("a[href*='custom-invite']").first
-        if not await connect_btn.count():
-            connect_btn = self._page.get_by_role(
-                "link",
-                name=re.compile(r"Invite .+ to connect", re.I),
-            ).first
-        if not await connect_btn.count():
-            connect_btn = workspace.get_by_role("button", name=re.compile(r"^Connect$", re.I)).first
-        if not await connect_btn.count():
-            connect_btn = workspace.get_by_role("link", name=re.compile(r"^Connect$", re.I)).first
+        # SDUI invite CTA variants:
+        #   • <a href="/preload/custom-invite/...">Connect</a>
+        #   • <button aria-label="Invite {name} to connect"><span>Connect</span></button>
+        # Playwright uses the accessible name (aria-label wins over inner text), so
+        # get_by_role(..., name="Connect") misses the common button form above.
+        _invite_connect = re.compile(r"Invite .+ to connect", re.I)
+        _connect_only = re.compile(r"^Connect$", re.I)
+
+        connect_btn = None
+        direct_connect_candidates = (
+            workspace.locator("a[href*='custom-invite']:has-text('Connect')").first,
+            workspace.locator("a[href*='custom-invite']").first,
+            workspace.get_by_role("button", name=_invite_connect).first,
+            workspace.get_by_role("link", name=_invite_connect).first,
+            workspace.locator(
+                "button[aria-label*='Invite'][aria-label*='to connect' i]"
+            ).first,
+            workspace.get_by_role("button", name=_connect_only).first,
+            workspace.get_by_role("link", name=_connect_only).first,
+            workspace.locator("button.artdeco-button--primary").filter(
+                has_text=_connect_only
+            ).first,
+            self._page.get_by_role("button", name=_invite_connect).first,
+            self._page.get_by_role("button", name=_connect_only).first,
+        )
+        for cand in direct_connect_candidates:
+            if await cand.count():
+                connect_btn = cand
+                break
 
         # Fall back to the profile-level "More" overflow → Connect.
         # LinkedIn renders this button with aria-label="More actions" (the
         # visible glyph is just "···"), so a name=/^More$/ search misses it.
-        if not await connect_btn.count():
+        if connect_btn is None:
             more_candidates = (
                 workspace.locator("button[aria-label='More actions']").first,
                 workspace.locator("button[aria-label*='More actions' i]").first,

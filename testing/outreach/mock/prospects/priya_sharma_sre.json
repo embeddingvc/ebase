@@ -1,0 +1,25 @@
+{
+  "id": "priya_sharma_sre",
+  "linkedin_url": "https://www.linkedin.com/in/priya-sharma-sre/",
+  "name": "Priya Sharma",
+  "title": "Site Reliability Engineer",
+  "company": "Airbnb",
+  "location": "San Francisco, CA",
+  "connection_degree": 2,
+  "mutual_connections": [
+    "Sam Liu"
+  ],
+  "recent_posts": [
+    {
+      "text": "Runbooks don't replace on-call empathy — they just buy you time to think.",
+      "likes": 54,
+      "timestamp": "2026-03-08"
+    }
+  ],
+  "connection_status": "pending",
+  "outreach_stage": "pending_connection",
+  "end_goal": "schedule_meeting",
+  "outreach_topic": "Series A ML infra roles in the portfolio",
+  "notes": "SRE with a focus on observability and incident response at scale.",
+  "profile_fetched_at": "2026-06-07T00:15:25.411384+00:00"
+}

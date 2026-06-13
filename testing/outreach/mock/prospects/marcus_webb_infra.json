@@ -1,0 +1,26 @@
+{
+  "id": "marcus_webb_infra",
+  "linkedin_url": "https://www.linkedin.com/in/marcus-webb-infra/",
+  "name": "Marcus Webb",
+  "title": "Engineering Manager, Infrastructure",
+  "company": "Figma",
+  "location": "New York, NY",
+  "connection_degree": 2,
+  "mutual_connections": [
+    "Alex Chen",
+    "Jordan Park"
+  ],
+  "recent_posts": [
+    {
+      "text": "Hiring tip: the best infra candidates ask about your deploy frequency before your stack.",
+      "likes": 112,
+      "timestamp": "2026-03-22"
+    }
+  ],
+  "connection_status": "connected",
+  "outreach_stage": "ended",
+  "end_goal": "schedule_meeting",
+  "outreach_topic": "Series A ML infra roles in the portfolio",
+  "notes": "Infra EM who still codes. Interested in early-stage founding-engineer and first-infra-hire roles.",
+  "profile_fetched_at": "2026-06-06T20:25:16.252421+00:00"
+}

@@ -1,0 +1,50 @@
+{
+  "case_id": "not_interested",
+  "description": "Prospect accepts the connection but declines interest on the first reply. Planner should end with not_interested.",
+  "profile_url": "https://www.linkedin.com/in/jordan-kim-ml/",
+  "prospect_id": "jordan_kim_ml",
+  "connection_accepted": true,
+  "end_condition": "not_interested",
+  "repeat_final": false,
+  "prospect": {
+    "linkedin_url": "https://www.linkedin.com/in/jordan-kim-ml/",
+    "name": "Jordan Kim",
+    "title": "Staff ML Engineer",
+    "company": "Databricks",
+    "location": "Seattle, WA",
+    "connection_degree": 2,
+    "mutual_connections": ["Alex Chen"],
+    "about": "ML platform engineer focused on feature stores and training pipelines. Ten years across Meta and Databricks.",
+    "recent_posts": [
+      {
+        "text": "We finally shipped our internal feature store v2 — biggest lesson was investing in lineage early.",
+        "likes": 98,
+        "timestamp": "2026-03-18"
+      }
+    ],
+    "connection_status": "none",
+    "outreach_stage": "cold",
+    "end_goal": "schedule_meeting",
+    "outreach_topic": "Series A ML infra roles in the portfolio",
+    "target_action": null,
+    "notes": "Strong ML platform background; polite but firm when not exploring.",
+    "scraped_at": "2026-03-24T00:00:00Z"
+  },
+  "replies": [
+    {
+      "text": "Hey Nova, thanks for reaching out but I'm not looking for anything new right now. Happy at Databricks and plan to stay for a while. Best of luck!"
+    }
+  ],
+  "rounds": [
+    {
+      "id": "ni_r0_close",
+      "allowed_actions": ["mark_ended", "mark_dead", "send_followup_message"],
+      "allowed_stages": ["engaged", "ended", "dead"]
+    }
+  ],
+  "terminal": {
+    "ended_reason": "not_interested",
+    "prospect_phrase": "not looking",
+    "accept_actions": ["mark_ended", "mark_dead"]
+  }
+}

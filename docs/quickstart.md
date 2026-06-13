@@ -53,6 +53,4 @@ See [Claude skills — setup-outreach](./skills.md#setup-outreach-first-run-wiza
 
 ## Mock mode (optional, no browser)
 
-For scripted tests without a browser, `tools/server.py` can run in mock mode when `_mock_mcp_enabled()` returns `True` (see `tools/server.py`). In mock mode, tools use `tools/mock.py` instead of Playwright.
-
-**Note:** in the current repo state, `_mock_mcp_enabled()` is set to **`False`** (live mode).
+The core MCP server (`tools/server.py`) is live-only. For scripted tests without a browser, use the mock-capable MCP server and fixtures under [`testing/`](../testing/README.md): set `OUTREACH_MOCK=1` and register `testing/tools/server.py` instead. See `testing/README.md` for the dev dashboard and regression suite.

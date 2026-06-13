@@ -11,7 +11,12 @@
 
 Example: copy `.env.example` to `.env` and fill your values (never commit `.env`).
 
-See also [`docs/web-dashboard.md`](./web-dashboard.md#environment-variables) for dashboard-specific variables (`WEB_HOST`, `WEB_PORT`, `OUTREACH_MOCK`, `OUTREACH_DATA_ROOT`, `CLAUDE_WEB_TIMEOUT_SEC`, …).
+- **Cron scheduler server**
+  - `WEB_HOST` / `WEB_PORT` (default `127.0.0.1:3847`) — bind address for `cron/server.py`
+  - `OUTREACH_DATA_ROOT` — override the live `outreach/` data root (mostly for tests)
+  - `CLAUDE_WEB_TIMEOUT_SEC` — timeout for scheduler-invoked Claude skill runs
+
+Mock mode (`OUTREACH_MOCK`) and the dev dashboard are `testing/` concerns; see [`testing/docs/web-dashboard.md`](../testing/docs/web-dashboard.md).
 
 ## Operational data layout
 
@@ -44,7 +49,8 @@ Run `make help` to see all targets. Common ones:
 - `make status`: check if Chrome/worker are running
 - `make queue`: pretty-print pending/completed/failed queue JSON
 - `make logs`: tail `outreach/logs/worker.log`
-- `make test`: run exploration tests
+- `make test`: run the test suite (delegates to `make -C testing test`)
 - `make test_conversation`: run conversation-planner tests (needs `ANTHROPIC_API_KEY`)
-- `make web`: start the dashboard in the foreground
-- `make stop-web`: stop the dashboard
+- `make cron`: start the cron scheduler server in the foreground
+- `make stop-cron`: stop the cron scheduler server
+- `make -C testing web`: start the dev dashboard (see [`testing/README.md`](../testing/README.md))

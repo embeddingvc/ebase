@@ -5,14 +5,13 @@
 #  make browser    Start Chrome with CDP debugging port (keeps existing profile)
 #  make server     Start the queue-draining worker (requires Chrome running)
 #  make stop       Kill the worker process
-#  make test       Run the full exploration test suite
-#  make regression Run local conversation-planner regression (claude -p + mock; skips if no claude)
-#  make smoke      Run smoke tests only (no credentials needed)
+#  make test       Run the pytest suite (delegates to testing/)
+#  make regression Run local conversation-planner regression (delegates to testing/)
 #  make install    Install Python dependencies + Playwright browsers
 #  make claude-install   Sync skills + register MCP (default: user scope + ~/.claude/skills; LOCAL=1: local MCP only)
 #  make claude-cleanup   Remove linkedin MCP from user/local/project scopes; does not delete skill dirs
-#  make web          Outreach dashboard (http://127.0.0.1:3847); see docs/web-dashboard.md
-#  make stop-web     Stop dashboard started by install.sh or background uvicorn
+#  make cron         Scheduler + health API (http://127.0.0.1:3847/health)
+#  make stop-cron    Stop cron server started by install.sh or background uvicorn
 #  make logs       Tail the worker output log
 #  make queue      Pretty-print the pending job queue
 #  make status     Show whether Chrome + worker are running
@@ -41,8 +40,8 @@ LOG_FILE := $(LOG_DIR)/worker.log
 PID_FILE := outreach/storage/worker.pid
 WEB_HOST ?= 127.0.0.1
 WEB_PORT ?= 3847
-WEB_PID_FILE := outreach/storage/web.pid
-WEB_LOG := logs/server.log
+CRON_PID_FILE := outreach/storage/cron.pid
+CRON_LOG := logs/cron.log
 
 # Claude Code CLI (https://docs.anthropic.com/en/docs/claude-code)
 CLAUDE_MCP_SERVER_NAME := linkedin
@@ -56,7 +55,7 @@ ifneq ($(LOCAL),)
 override CLAUDE_INSTALL_LOCAL := $(LOCAL)
 endif
 
-.PHONY: run browser server stop stop-web test test_conversation regression smoke install upgrade uninstall logs queue status help web \
+.PHONY: run browser server stop stop-cron stop-web test test_conversation regression smoke install upgrade uninstall logs queue status help cron \
 	claude-install claude-cleanup
 
 # ── Default target ────────────────────────────────────────────────────────────
@@ -110,36 +109,38 @@ stop: ## Kill the running worker process
 	  echo "[worker] No PID file found — worker may not be running."; \
 	fi
 
-stop-web: ## Kill the outreach dashboard (uvicorn)
-	@if [ -f $(WEB_PID_FILE) ]; then \
-	  PID=$$(cat $(WEB_PID_FILE)); \
-	  echo "[web] Stopping pid=$$PID"; \
-	  kill $$PID 2>/dev/null && echo "[web] Stopped." || echo "[web] Process not found."; \
-	  rm -f $(WEB_PID_FILE); \
+stop-cron: ## Kill the cron scheduler server (uvicorn)
+	@if [ -f $(CRON_PID_FILE) ]; then \
+	  PID=$$(cat $(CRON_PID_FILE)); \
+	  echo "[cron] Stopping pid=$$PID"; \
+	  kill $$PID 2>/dev/null && echo "[cron] Stopped." || echo "[cron] Process not found."; \
+	  rm -f $(CRON_PID_FILE); \
 	else \
-	  echo "[web] No PID file — trying port $(WEB_PORT)…"; \
-	  lsof -ti :$(WEB_PORT) | xargs kill 2>/dev/null && echo "[web] Stopped." || echo "[web] Not running."; \
+	  echo "[cron] No PID file — trying port $(WEB_PORT)…"; \
+	  lsof -ti :$(WEB_PORT) | xargs kill 2>/dev/null && echo "[cron] Stopped." || echo "[cron] Not running."; \
 	fi
+
+stop-web: stop-cron ## Alias for stop-cron (dashboard moved to testing/)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-test: ## Run all exploration tests (set env vars to unlock tiers)
-	uv run tests/test_playwright_exploration.py
+test: ## Run the pytest suite (delegates to testing/)
+	@$(MAKE) -C testing test
 
 test_conversation: ## Run conversation-planner skill tests against Claude API (needs ANTHROPIC_API_KEY)
 	@echo "▶  Running conversation-planner tests..."
-	uv run tests/test_conversation_planner.py
+	uv run testing/tests/test_conversation_planner.py
 
-regression: ## Local pytest regression (Claude CLI + tools/mock); see docs/designs/outreach-workflow-regression-tests-design.md
-	uv run pytest tests/test_regression_workflow.py -v
+regression: ## Local pytest regression (Claude CLI + mock backend; delegates to testing/)
+	@$(MAKE) -C testing regression
 
 smoke: ## Run smoke tests only (no credentials needed)
-	uv run tests/test_playwright_exploration.py
+	uv run testing/tests/test_playwright_exploration.py
 
 browse: ## Run the human-behaviour session forever (Ctrl-C to stop)
 	@echo "▶  Starting continuous browsing session. Ctrl-C to stop."
 	FOREVER=1 LINKEDIN_POST_URL=$(LINKEDIN_POST_URL) \
-	  uv run tests/test_playwright_exploration.py
+	  uv run testing/tests/test_playwright_exploration.py
 
 # ── Install ───────────────────────────────────────────────────────────────────
 
@@ -225,12 +226,12 @@ status: ## Show whether Chrome, worker, and dashboard are running
 	@curl -sf http://localhost:$(CDP_PORT)/json/version \
 	  && echo "  ✅  Running" \
 	  || echo "  ❌  Not running  (start with: make browser)"
-	@echo "── Dashboard (http://$(WEB_HOST):$(WEB_PORT)/) ───"
-	@curl -sf http://$(WEB_HOST):$(WEB_PORT)/api/dashboard/health >/dev/null 2>&1 \
+	@echo "── Cron server (http://$(WEB_HOST):$(WEB_PORT)/health) ───"
+	@curl -sf http://$(WEB_HOST):$(WEB_PORT)/health >/dev/null 2>&1 \
 	  && echo "  ✅  Running" \
-	  || echo "  ❌  Not running  (start with: make web or ./install.sh)"
-	@if [ -f $(WEB_PID_FILE) ]; then \
-	  echo "      pid=$$(cat $(WEB_PID_FILE))  log=$(WEB_LOG)"; \
+	  || echo "  ❌  Not running  (start with: make cron or ./install.sh)"
+	@if [ -f $(CRON_PID_FILE) ]; then \
+	  echo "      pid=$$(cat $(CRON_PID_FILE))  log=$(CRON_LOG)"; \
 	fi
 	@echo "── Worker ───────────────────────────────────────"
 	@if [ -f $(PID_FILE) ]; then \
@@ -242,10 +243,10 @@ status: ## Show whether Chrome, worker, and dashboard are running
 	  echo "  ❌  Not running  (start with: make server)"; \
 	fi
 
-web: ## Start outreach dashboard in foreground (WEB_HOST / WEB_PORT)
+cron: ## Start the scheduler + health API in foreground (WEB_HOST / WEB_PORT)
 	@mkdir -p outreach/storage logs
-	@echo "[web] http://$(WEB_HOST):$(WEB_PORT)/  (see docs/web-dashboard.md)"
-	@cd "$(CURDIR)" && uv run uvicorn web.server:app --host "$(WEB_HOST)" --port "$(WEB_PORT)"
+	@echo "[cron] http://$(WEB_HOST):$(WEB_PORT)/health"
+	@cd "$(CURDIR)" && uv run uvicorn cron.server:app --host "$(WEB_HOST)" --port "$(WEB_PORT)"
 
 help: ## List all targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \

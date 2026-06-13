@@ -1,0 +1,63 @@
+{
+  "prospect_id": "marcus_webb_infra",
+  "outreach_stage": "ended",
+  "messages": [
+    {
+      "text": "Thanks for connecting Nova! I'm actively exploring infra leadership roles at Series A companies — would love to hear what's in your network.",
+      "sender": "prospect",
+      "timestamp": "2026-06-06T21:30:00Z"
+    },
+    {
+      "text": "Marcus, great to hear you're actively exploring. Your post about what infra candidates should ask stood out to me — it shows you think deeply about team dynamics and growth.\n\nWhat are you most excited about in your current work at Figma? And what would an ideal next role look like for you — staying in big tech, or exploring earlier-stage environments?",
+      "sender": "operator",
+      "timestamp": "2026-06-06T21:31:00Z"
+    },
+    {
+      "text": "That sounds nice, would you like to view my resume? I am interested in working at a Series A company where I can own the platform while the product still moves fast.",
+      "sender": "prospect",
+      "timestamp": "2026-06-06T21:35:00Z"
+    },
+    {
+      "text": "Perfect, Marcus. Your background in infrastructure at Figma is exactly what some of our portfolio companies are looking for—especially founders building the foundational layer while the product moves fast.\n\nI'll review your resume and connect you with 2–3 teams who are actively hiring for first-infrastructure and platform roles. You'll hear back in the next few days.",
+      "sender": "operator",
+      "timestamp": "2026-06-06T21:36:00Z"
+    }
+  ],
+  "last_action": "send_followup_message",
+  "last_action_timestamp": "2026-06-06T21:36:00Z",
+  "next_action": null,
+  "next_action_after": null,
+  "planned_message": null,
+  "connection_note": "Hi Marcus — your post on what infra candidates should ask really stood out. We connect founding teams with strong operators for Series A infra roles. Curious if exploring that interests you?",
+  "end_goal": "resume_received",
+  "outreach_topic": "Series A ML infra roles in the portfolio",
+  "resume_path": null,
+  "email": null,
+  "meeting_link": null,
+  "ended_at": "2026-06-06T21:36:00Z",
+  "ended_reason": "resume_received",
+  "report_path": "outreach/storage/reports/marcus_webb_infra.md",
+  "sequence_step": 5,
+  "stage_history": [
+    {
+      "stage": "cold",
+      "entered_at": "2026-06-05T20:25:53Z",
+      "reason": "regression seed"
+    },
+    {
+      "stage": "pending_connection",
+      "entered_at": "2026-06-06T17:25:53Z",
+      "reason": "connection request sent"
+    },
+    {
+      "stage": "engaged",
+      "entered_at": "2026-06-06T19:25:53Z",
+      "reason": "connection accepted"
+    },
+    {
+      "stage": "ended",
+      "entered_at": "2026-06-06T21:36:00Z",
+      "reason": "resume received signal"
+    }
+  ]
+}
