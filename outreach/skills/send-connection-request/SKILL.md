@@ -1,6 +1,6 @@
 ---
 name: send-connection-request
-description: Send a LinkedIn connection request (with an optional personalised note) via the MCP send_connection_request tool, then persist pipeline state with save_connection, upsert_conversation, append_action_log, and remove_pending_queue_entry — never raw outreach/ paths. Notes are grounded in the runtime planner campaign (campaign.topic / campaign.goal / persona) with per-prospect and per-invocation overrides. Use when the user asks to connect with, invite, or add a LinkedIn profile.
+description: Send a LinkedIn connection request via the MCP send_connection_request tool (no note by default; optional personalised note only when the user supplies one or explicitly asks for a message), then persist pipeline state with save_connection, upsert_conversation, append_action_log, and remove_pending_queue_entry — never raw outreach/ paths. When a note is requested, ground it in the runtime planner campaign with per-prospect and per-invocation overrides. Use when the user asks to connect with, invite, or add a LinkedIn profile.
 ---
 
 # Send Connection Request
@@ -50,10 +50,8 @@ If output is `UPGRADE_AVAILABLE <old> <new>`, follow the inline flow in skill
 Do not block on network failures.
 
 Scrape a LinkedIn profile, then immediately send a connection request — no confirmation step needed.
-When you auto-generate a note, anchor it to the active campaign topic from the runtime planner
-config (`get_conversation_planner_config` → `campaign.topic` / `campaign.goal` /
-`campaign.value_proposition`), with per-prospect and per-invocation overrides described under
-**Inputs → Topic precedence**.
+
+**Default: send without a note.** Only include a connection note when the user supplies note text or explicitly asks for a personalised message (e.g. "with a note", "and say …", "mention …"). When you do compose a note, anchor it to the active campaign topic from the runtime planner config (`get_conversation_planner_config` → `campaign.topic` / `campaign.goal` / `campaign.value_proposition`), with per-prospect and per-invocation overrides described under **Inputs → Topic precedence**.
 
 **Filesystem rule:** Do not read or write `outreach/` files via workspace paths. Use MCP tools from
 `tools/server.py`: **`get_conversation_planner_config`**, **`save_connection`**, **`get_conversation`**,
@@ -71,23 +69,23 @@ connection flows. Do not seed MCP upserts from fixture JSON unless the user is e
 ## Inputs
 
 - `profile_url` (required) — full LinkedIn profile URL, e.g. `https://www.linkedin.com/in/username/`
-- `note` (optional) — personalised connection note (LinkedIn limit: **300 chars**). Pass to send verbatim; omit to auto-generate from planner config + profile.
-- `outreach_topic` (optional, per-invocation) — the angle for *this* connection note. Parse it from the user's natural-language ask. Examples:
-  - `connect to <url> for AI startup ideas` → `outreach_topic = "AI startup ideas"`
-  - `connect to <url> about catching up after grad school` → `outreach_topic = "catching up after grad school"`
-  - `connect to <url>` (no qualifier) → fall through the precedence below.
+- `note` (optional) — personalised connection note (LinkedIn limit: **300 chars**). Use **only** when the user supplied note text or explicitly asked for a message with the invite. Otherwise omit the parameter (or pass empty) to send without a note.
+- `outreach_topic` (optional, per-invocation) — the angle to persist for later follow-ups (`conversation-planner`). Parse from the user's ask when they qualify the connect (e.g. `for …`, `about …`). Does **not** by itself require a connection note. Examples:
+  - `connect to <url> for AI startup ideas` → `outreach_topic = "AI startup ideas"` (no note unless they also ask for one)
+  - `connect to <url> about catching up and say we met at NeurIPS` → note **and** topic
+  - `connect to <url>` (no qualifier) → no topic override; send without a note
 
-### Topic precedence (highest → lowest)
+### Topic precedence (when composing a note)
 
-When composing an auto-generated note, resolve `outreach_topic` in this order and stop at the first match:
+When the user **did** request a note and you are composing it (not sending verbatim), resolve `outreach_topic` in this order and stop at the first match:
 
 1. **Per-invocation topic** parsed from the user's request (`for …`, `about …`, `re: …`, etc.).
 2. **`prospect.outreach_topic`** from the prospect JSON.
 3. **`campaign.topic`** from **`get_conversation_planner_config`** (the project-wide default for the active outreach setup).
 
-If you resolved at level 1 (and the prospect did not already have the same topic), call **`upsert_prospect`** with the merged `outreach_topic` so later `conversation-planner` runs stay anchored on the same angle.
+If you resolved at level 1 (and the prospect did not already have the same topic), call **`upsert_prospect`** with the merged `outreach_topic` so later `conversation-planner` runs stay anchored on the same angle — even when the connection request itself is sent without a note.
 
-Skip topic resolution entirely when the user supplied `note` verbatim — that text is shipped as-is.
+Skip topic resolution when the user supplied `note` verbatim — that text is shipped as-is.
 
 **Prospect JSON** (via `upsert_prospect` before you generate the note) also drives:
 
@@ -106,13 +104,21 @@ Tool: scrape_profile
 
 Use the scraped data to:
 - Check `connection_degree` — if it is `1`, abort and report: `"<Name> is already a 1st-degree connection. Use send_message to reach them directly."`
-- Personalise the note (if one is being generated) using `name`, `title`, `about`, and `recent_posts`.
+- Personalise a note **only when the user requested one** — using `name`, `title`, `about`, and `recent_posts`.
 
-### 2. Compose the note (skip if `note` was passed verbatim)
+### 2. Decide whether to include a note
 
-If the user supplied a `note`, use it verbatim (trim silently to 300 chars if needed) and jump to Step 3.
+**Send without a note** (default) when the user only asked to connect / invite / add the profile and did not supply note text or an explicit message request.
 
-Otherwise, load runtime planner config so the note is grounded in the active campaign — not a generic "let's connect":
+**Include a note** when any of these apply:
+- The user pasted or dictated note text.
+- The user asked for a personalised message with the invite (e.g. "and say …", "with a note about …", "mention …").
+
+If sending **without** a note, skip to Step 3 and omit the `note` parameter.
+
+If the user supplied **verbatim** note text, trim silently to 300 chars if needed and jump to Step 3.
+
+Otherwise (user asked you to compose a note), load runtime planner config:
 
 ```
 Tool: get_conversation_planner_config
@@ -134,7 +140,7 @@ Then compose so that:
 - It honors `end_goal` — no meeting/resume ask if `end_goal == "none"`; light tee-up for a call if `schedule_meeting`; profile/resume angle if `obtain_resume`.
 - It stays within the character budget — count carefully and trim before sending.
 
-If the per-invocation topic came from the user's phrase (precedence level 1), call **`upsert_prospect`** to persist it onto the prospect record before sending. This keeps follow-ups in `conversation-planner` aligned on the same angle.
+If the per-invocation topic came from the user's phrase (precedence level 1), call **`upsert_prospect`** to persist it onto the prospect record before sending — with or without a connection note.
 
 ### 3. Send the connection request
 
@@ -143,7 +149,7 @@ Call `send_connection_request` immediately — no need to ask for confirmation:
 ```
 Tool: send_connection_request
   profile_url: <the LinkedIn URL>
-  note:        <note text, or omit for no note>
+  # note: omit entirely (default) — or pass note text only when Step 2 required one
 ```
 
 If a note is provided, verify it is ≤ 300 characters before calling the tool. Trim silently if needed.
@@ -213,44 +219,70 @@ that file manually.
 
 ## Examples
 
-### A. Per-invocation topic override
+### A. Per-invocation topic override (no connection note)
 
 **User:** `Connect to https://www.linkedin.com/in/alexchen/ for AI startup ideas`
 
-Parsed: `outreach_topic = "AI startup ideas"` (precedence level 1 — overrides `prospect.outreach_topic` and `campaign.topic`).
+Parsed: `outreach_topic = "AI startup ideas"`. No note requested → persist topic, send without a note:
 
 ```
 Tool call → scrape_profile(profile_url="https://www.linkedin.com/in/alexchen/")
-→ { name: "Alex Chen", title: "ML Engineer at Acme", connection_degree: 2, recent_posts: [...] }
+→ { name: "Alex Chen", title: "ML Engineer at Acme", connection_degree: 2, ... }
 
-Tool call → get_conversation_planner_config()
-→ { persona: { name: "Nova", organization: "Acme Capital" }, campaign: { topic: "AI startup opportunities and career exploration", ... }, message_rules: { connection_note_char_limit: 200, ... } }
-
-# Topic resolves to "AI startup ideas" (user-supplied) — not campaign.topic.
-# Persist to prospect so follow-ups stay aligned:
 Tool call → upsert_prospect(prospect_id="alex_chen", prospect=json.dumps({ ..., "outreach_topic": "AI startup ideas" }))
 
 Tool call → send_connection_request(
-  profile_url="https://www.linkedin.com/in/alexchen/",
-  note="Hi Alex — your post on retrieval evals stood out. I'm Nova at Acme Capital, mostly trading AI startup ideas with folks who've shipped infra at scale. Open to comparing notes?"
+  profile_url="https://www.linkedin.com/in/alexchen/"
 )
 
 ── Connection Request Sent ───────────────────────────────────
 To:       Alex Chen (https://www.linkedin.com/in/alexchen/)
 Title:    ML Engineer at Acme
 Sent at:  2026-04-03T14:10:00+00:00
-Topic:    "AI startup ideas" (per-invocation override)
-Note:     "Hi Alex — your post on retrieval evals stood out…"
+Topic:    "AI startup ideas" (saved for conversation-planner)
+Note:     (none)
 ─────────────────────────────────────────────────────────────
 ```
 
-### B. No topic supplied — fall back to campaign default
+### B. Composed note (user explicitly asked for a message)
+
+**User:** `Connect to https://www.linkedin.com/in/alexchen/ for AI startup ideas and write a short personalised note`
+
+Explicit message request → compose from planner config + scrape, then send with `note`:
+
+```
+Tool call → get_conversation_planner_config()
+→ { persona: { name: "Nova", ... }, campaign: { topic: "...", ... }, message_rules: { ... } }
+
+Tool call → send_connection_request(
+  profile_url="https://www.linkedin.com/in/alexchen/",
+  note="Hi Alex — your post on retrieval evals stood out. I'm Nova at Acme Capital; open to comparing notes on AI startup ideas?"
+)
+```
+
+### C. No note (default)
 
 **User:** `Connect with https://www.linkedin.com/in/priya/`
 
-Parsed: no per-invocation topic; prospect has no `outreach_topic`. Falls back to `campaign.topic` from `get_conversation_planner_config` (e.g. `"AI startup opportunities and career exploration"`). The note is composed around that angle and `outreach_topic` is **not** written back to the prospect (it's the project-wide default).
+No note text and no explicit message request → scrape, then send without a note:
 
-### C. Verbatim note (no auto-generation)
+```
+Tool call → scrape_profile(profile_url="https://www.linkedin.com/in/priya/")
+→ { name: "Priya Sharma", title: "...", connection_degree: 2, ... }
+
+Tool call → send_connection_request(
+  profile_url="https://www.linkedin.com/in/priya/"
+)
+
+── Connection Request Sent ───────────────────────────────────
+To:       Priya Sharma (https://www.linkedin.com/in/priya/)
+Title:    ...
+Sent at:  2026-04-03T14:10:00+00:00
+Note:     (none)
+─────────────────────────────────────────────────────────────
+```
+
+### D. Verbatim note (no auto-generation)
 
 **User:** `Connect with https://www.linkedin.com/in/alexchen/ and say we met at NeurIPS`
 
