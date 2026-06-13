@@ -43,7 +43,7 @@ A mock-capable fork of this server (scripted responses, no browser) lives in
     upsert_prospect           Write .../prospects/<id>.json from JSON string.
     save_connection           Upsert one row in .../connections.json.
     upsert_conversation       Write .../conversations/<id>.json from JSON string.
-    schedule_meeting          Book (mock) or reserve a call after email + time are known.
+    schedule_meeting          Book or reserve a call after email + time are known.
     append_action_log         Append one JSON line to .../logs/actions.jsonl.
     append_planned_message_log Append one JSON line to planned_messages.jsonl.
     save_outreach_report      Write .../storage/reports/<id>.md.

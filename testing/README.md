@@ -11,7 +11,7 @@ folder is required for production use; the operator path is the core repo
 | `web/` | Full FastAPI dashboard (connections, routines, mock view at `/mock`) |
 | `tools/server.py` | Mock-capable MCP server (fork of core `tools/server.py` with `OUTREACH_MOCK` support) |
 | `tools/mock.py` | Scripted LinkedIn backend (no browser) |
-| `outreach/mock/` | Mock data tree + scenario fixtures |
+| `outreach/mock/` | Mock data tree + scenario fixtures (under `testing/outreach/mock/`) |
 | `outreach/regression_harness.py` | Drives the full workflow loop via `claude -p` + mock MCP |
 | `tests/` | Pytest suite (unit + regression) |
 | `docs/web-dashboard.md` | Dashboard documentation |

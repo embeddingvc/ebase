@@ -1,4 +1,4 @@
-"""Tests for outreach/mock/fixtures/*.json loader."""
+"""Tests for testing/outreach/mock/fixtures/*.json loader."""
 
 from __future__ import annotations
 

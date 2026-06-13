@@ -23,17 +23,17 @@ outreach/config/persona.json
 # Outreach action logs
 outreach/logs/actions.jsonl
 
-# Mock LinkedIn session store (persisted across MCP subprocesses; scenario-local only)
-outreach/mock/mock_linkedin_sessions.json
+# Mock LinkedIn session store (testing/ only; persisted across MCP subprocesses)
+testing/outreach/mock/mock_linkedin_sessions.json
 
 # Local generated/user-specific outreach data (keep committed fixtures)
 outreach/connections.json
 outreach/generated/
-outreach/mock/connections.json
-outreach/mock/conversations/*.json
-outreach/mock/prospects/*.json
-outreach/mock/logs/
-outreach/mock/storage/
+testing/outreach/mock/connections.json
+testing/outreach/mock/conversations/*.json
+testing/outreach/mock/prospects/*.json
+testing/outreach/mock/logs/
+testing/outreach/mock/storage/
 outreach/logs/planned_messages.jsonl
 outreach/conversations/*.json
 
@@ -44,6 +44,5 @@ CLAUDE.md
 # Claude Code project-scoped MCP (paths are machine-specific; created by install.sh / make claude-install)
 .mcp.json
 outreach/config/dashboard_routines.json
-outreach/storage/web.pid
 outreach/storage/cron.pid
-outreach/mock/config/dashboard_routines.json
+testing/outreach/mock/config/dashboard_routines.json

@@ -14,7 +14,7 @@ Every LinkedIn browser action across these skills runs **only** through the Link
 - `send-connection-request`
 - `reply-to-post`
 
-The former `sync-pending-connections` skill has been retired — the dashboard now runs that workload as a deterministic Python sweep (`web/connection_sync_sweep.py`) with no LLM in the loop. See [`docs/designs/per-connection-routines-with-backoff-design.md`](./designs/per-connection-routines-with-backoff-design.md).
+The former `sync-pending-connections` skill has been retired — the cron scheduler now runs that workload as a deterministic Python sweep (`cron/connection_sync_sweep.py`) with no LLM in the loop. See [`docs/designs/per-connection-routines-with-backoff-design.md`](./designs/per-connection-routines-with-backoff-design.md).
 
 ## `setup-outreach` (first-run wizard)
 

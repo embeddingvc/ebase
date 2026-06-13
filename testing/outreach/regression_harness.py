@@ -754,14 +754,14 @@ async def run_scenario_async(case_id: str) -> None:
     mod = get_server_module()
 
     # Hard guard: never run the regression against live LinkedIn. The mock
-    # path returns scripted responses from ``tools/mock.py`` and writes to
-    # ``outreach/mock/``; live mode would talk to the real browser session
+    # path returns scripted responses from ``testing/tools/mock.py`` and writes to
+    # ``testing/outreach/mock/``; live mode would talk to the real browser session
     # and corrupt the operator's connection list.
     if not mod._mock_mcp_enabled():
         pytest.fail(
             "Regression requires mock MCP mode. "
-            "Edit tools/server.py::_mock_mcp_enabled to return True before running "
-            "`make regression` (or set this via env once that knob is wired up)."
+            "Run `make -C testing regression` (sets OUTREACH_MOCK=1) or export "
+            "OUTREACH_MOCK=1 and register testing/tools/server.py with Claude."
         )
 
     url = REGRESSION_SPECS[case_id].get("profile_url") or REGRESSION_PROFILE_URL

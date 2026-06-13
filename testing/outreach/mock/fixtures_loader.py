@@ -1,5 +1,5 @@
 """
-Load mock regression scenarios from ``outreach/mock/fixtures/*.json``.
+Load mock regression scenarios from ``testing/outreach/mock/fixtures/*.json``.
 
 Each fixture file is the single source of truth for:
 
@@ -7,7 +7,8 @@ Each fixture file is the single source of truth for:
 - Regression transition specs (``rounds`` with ``allowed_actions`` / ``allowed_stages``)
 - Case metadata surfaced in the dashboard regression panel
 
-Consumed by ``tools/mock.py``, ``outreach/regression_harness.py``, and ``web/mock_conversation.py``.
+Consumed by ``testing/tools/mock.py``, ``testing/outreach/regression_harness.py``,
+and ``testing/web/mock_conversation.py``.
 """
 
 from __future__ import annotations

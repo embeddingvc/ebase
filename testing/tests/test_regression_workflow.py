@@ -46,12 +46,12 @@ def test_regression_mock_scenario(case_id: str) -> None:
             "See docs/designs/outreach-workflow-regression-tests-design.md"
         )
     # Hard guard: regression must never talk to real LinkedIn.
-    # ``tools/server.py::_mock_mcp_enabled`` is the single source of truth
+    # ``testing/tools/server.py::_mock_mcp_enabled`` is the single source of truth
     # for which I/O backend the MCP server uses; if it returns False the
     # regression would silently drive the operator's live session.
     mod = get_server_module()
     assert mod._mock_mcp_enabled(), (
-        "Regression must run with tools/server.py::_mock_mcp_enabled() == True. "
-        "Flip it to True before running `make regression`."
+        "Regression must run with testing/tools/server.py::_mock_mcp_enabled() == True. "
+        "Run `make -C testing regression` (sets OUTREACH_MOCK=1 automatically)."
     )
     run_scenario(case_id)
