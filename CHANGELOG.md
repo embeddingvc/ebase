@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.6.1] - 2026-06-14
+
+### Added
+- MIT license for open-source distribution
+- CONTRIBUTING.md with dev setup, testing, and submission guidelines
+
+### Changed
+- `claude_desktop_config.json` removed from tracking; replaced with `.example` template with placeholder paths
+- Scrubbed personal data from design docs and test fixtures (real LinkedIn URLs, realistic email addresses replaced with `example.com` domains)
+
+### Fixed
+- `docs/install.md` now references the `.example` config file instead of the removed original
+
 ## [0.0.6.0] - 2026-06-13
 
 ### Changed
