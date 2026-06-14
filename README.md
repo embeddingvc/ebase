@@ -41,3 +41,8 @@ For development and QA there is a full web dashboard, mock LinkedIn backend, and
 - **[Conversation planner config](docs/conversation-planner.md)** — runtime persona + campaign config without restarting the MCP server
 - **[Operations](docs/operations.md)** — environment variables, data layout, Make targets
 - **[Design notes](docs/designs/)** — internal design docs for per-connection routines, schedule-meeting MCP, regression tests, team rollout
+- **[Contributing](CONTRIBUTING.md)** — dev setup, testing, how to submit changes
+
+## License
+
+[MIT](LICENSE)

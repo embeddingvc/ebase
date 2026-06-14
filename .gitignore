@@ -41,6 +41,9 @@ testing/outreach/mock/storage/
 # gstack retro artifacts (per-machine)
 .context/
 
+# Claude Desktop config (copy claude_desktop_config.json.example → claude_desktop_config.json)
+claude_desktop_config.json
+
 # Claude Code local config + gstack skills (per-machine)
 .claude/
 CLAUDE.md
