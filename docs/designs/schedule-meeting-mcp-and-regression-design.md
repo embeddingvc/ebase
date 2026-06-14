@@ -22,7 +22,7 @@ We need:
 
 ## Demand Evidence
 
-- Mock case **`happy_path`** in `tools/mock.py` already scripts prospect replies that offer availability and share **`alexchen336@gmail.com`** with “schedule a call next week”, but nothing in the stack records **`meeting_link`** or proves scheduling ran.
+- Mock case **`happy_path`** in `tools/mock.py` already scripts prospect replies that offer availability and share **`alex.chen@example.com`** with “schedule a call next week”, but nothing in the stack records **`meeting_link`** or proves scheduling ran.
 - `outreach/regression_harness.py` **`scenario_terminal_satisfied`** still treats **`happy_path`** like a resume outcome (`_prospect_has_resume_in_history`), which contradicts `TEST_CASES["happy_path"]["end_condition"] == "meeting_scheduled"`.
 - Schema and planner config already use **`call_scheduled`** / **`confirm_meeting`** — the missing piece is a tool boundary the skill and tests can target.
 
@@ -95,7 +95,7 @@ JSON **string** (same pattern as other tools), e.g.:
   "status": "scheduled",
   "meeting_link": "https://meet.example/mock/alex-chen-softeng-20260520T150000Z",
   "scheduled_at": "2026-05-20T15:00:00Z",
-  "email": "alexchen336@gmail.com",
+  "email": "alex.chen@example.com",
   "prospect_id": "alex_chen_softeng"
 }
 ```
@@ -315,7 +315,7 @@ Keep **`test_regression_workflow.py`** as the single **`@pytest.mark.local_regre
 
 ## Success Criteria
 
-- Mock `schedule_meeting("alexchen336@gmail.com", "2026-05-20T15:00:00Z", prospect_id="alex_chen_softeng")` returns a stable `meeting_link` and persists on `outreach/mock/conversations/alex_chen_softeng.json`.
+- Mock `schedule_meeting("alex.chen@example.com", "2026-05-20T15:00:00Z", prospect_id="alex_chen_softeng")` returns a stable `meeting_link` and persists on `outreach/mock/conversations/alex_chen_softeng.json`.
 - Live mode returns a clear not-implemented error (no false `ok`).
 - Skill instructs the planner to call the tool on the email + availability path before Step 5 close.
 - `happy_path` regression terminates with `ended_reason: call_scheduled` (or equivalent) and optional `meeting_link` assertion — **not** resume attachment.

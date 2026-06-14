@@ -137,9 +137,9 @@ Extend each `connections.json` row with two backoff records. (Could also live in
 
 ```jsonc
 {
-  "prospect_id": "ariharan_s_936a4a205",
-  "profile_url": "https://www.linkedin.com/in/ariharan-s-936a4a205/",
-  "name": "Ariharan S",
+  "prospect_id": "jane_doe_example",
+  "profile_url": "https://www.linkedin.com/in/jane-doe-example/",
+  "name": "Jane Doe",
   "title": "Software Engineer",
   "connection_status": "pending",
   "connected_at": "2026-05-24T05:31:48.050685+00:00",

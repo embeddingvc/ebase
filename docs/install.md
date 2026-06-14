@@ -68,7 +68,7 @@ Details: [setup-outreach in Claude skills](./skills.md#setup-outreach-first-run-
 1. `Settings` → `Developer` → `Edit Config`
 2. Add (or merge) a `linkedin` server entry.
 
-The sample in [`claude_desktop_config.json`](../claude_desktop_config.json) matches the expected shape; update paths for your machine:
+The sample in [`claude_desktop_config.json.example`](../claude_desktop_config.json.example) matches the expected shape; update paths for your machine:
 
 ```json
 {

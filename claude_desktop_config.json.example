@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "linkedin": {
+      "command": "/path/to/uv",
+      "args": [
+        "run",
+        "--project",
+        "/path/to/LinkedIn-Outreach",
+        "/path/to/LinkedIn-Outreach/tools/server.py"
+      ]
+    }
+  }
+}

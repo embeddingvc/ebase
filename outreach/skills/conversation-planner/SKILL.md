@@ -286,7 +286,7 @@ ask for first.
 
 Call **`schedule_meeting`** in the same run **before** composing the Step 5 close message when **both** are true:
 
-1. **Email** is known — from the merged thread, `conversation.email`, or prospect text (e.g. `alexchen336@gmail.com`).
+1. **Email** is known — from the merged thread, `conversation.email`, or prospect text (e.g. `alex.chen@example.com`).
 2. **Scheduling intent** is clear — prospect agreed to a call and gave a concrete time **or** you resolve ambiguous phrasing (“next week”, “anytime next week”) to a single ISO 8601 UTC instant (e.g. next Tuesday 15:00 UTC) and mention that time in the closing DM.
 
 Do **not** call `schedule_meeting` before email is known. Do **not** call it for `end_goal: obtain_resume` unless config explicitly maps to a call goal.
