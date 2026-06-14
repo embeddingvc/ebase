@@ -25,7 +25,7 @@ import notify as _notify  # noqa: E402  — core tools/notify.py
 from outreach.regression_harness import get_server_module  # noqa: E402
 
 PROSPECT_ID = "alex_chen_softeng"
-EMAIL = "alexchen336@gmail.com"
+EMAIL = "alex.chen@example.com"
 WHEN = "2026-05-20T15:00:00Z"
 PROFILE_URL = "https://www.linkedin.com/in/alex-chen-softeng/"
 

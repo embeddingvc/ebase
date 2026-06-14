@@ -9,11 +9,5 @@
         "/path/to/LinkedIn-Outreach/tools/server.py"
       ]
     }
-  },
-  "preferences": {
-    "coworkScheduledTasksEnabled": true,
-    "ccdScheduledTasksEnabled": true,
-    "sidebarMode": "task",
-    "coworkWebSearchEnabled": true
   }
 }
