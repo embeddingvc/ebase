@@ -20,8 +20,11 @@ logs/
 # Local outreach identity (copy persona.json.example → persona.json)
 outreach/config/persona.json
 
-# Outreach action logs
-outreach/logs/actions.jsonl
+# Outreach runtime data (per-user; not shared across teammates)
+outreach/prospects/
+outreach/conversations/
+outreach/logs/
+outreach/storage/
 
 # Mock LinkedIn session store (testing/ only; persisted across MCP subprocesses)
 testing/outreach/mock/mock_linkedin_sessions.json
@@ -34,8 +37,6 @@ testing/outreach/mock/conversations/*.json
 testing/outreach/mock/prospects/*.json
 testing/outreach/mock/logs/
 testing/outreach/mock/storage/
-outreach/logs/planned_messages.jsonl
-outreach/conversations/*.json
 
 # Claude Code local config + gstack skills (per-machine)
 .claude/
@@ -44,5 +45,4 @@ CLAUDE.md
 # Claude Code project-scoped MCP (paths are machine-specific; created by install.sh / make claude-install)
 .mcp.json
 outreach/config/dashboard_routines.json
-outreach/storage/cron.pid
 testing/outreach/mock/config/dashboard_routines.json

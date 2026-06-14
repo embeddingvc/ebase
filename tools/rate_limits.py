@@ -48,6 +48,13 @@ _LIMIT_ENV = {
     _CATEGORY_PROFILE_VIEW: "LINKEDIN_RATE_LIMIT_PROFILE_VIEWS",
 }
 
+# Aliases from the original issue spec — checked as fallback when primary env var is unset
+_LIMIT_ENV_ALIASES = {
+    _CATEGORY_CONNECTION: "LINKEDIN_RATE_LIMIT_CONNECTIONS",
+    _CATEGORY_DM: "LINKEDIN_RATE_LIMIT_MESSAGES",
+    _CATEGORY_PROFILE_VIEW: "LINKEDIN_RATE_LIMIT_VIEWS",
+}
+
 _CONFIG_KEYS = {
     _CATEGORY_CONNECTION: "connection_requests_per_day",
     _CATEGORY_DM: "dms_per_day",
@@ -55,9 +62,9 @@ _CONFIG_KEYS = {
 }
 
 _DEFAULT_LIMITS = {
-    _CATEGORY_CONNECTION: 1,
-    _CATEGORY_DM: 3,
-    _CATEGORY_PROFILE_VIEW: 10,
+    _CATEGORY_CONNECTION: 25,
+    _CATEGORY_DM: 50,
+    _CATEGORY_PROFILE_VIEW: 100,
 }
 
 _ERROR_MESSAGES = {
@@ -115,14 +122,24 @@ def get_limits() -> dict[str, int]:
 
     limits: dict[str, int] = {}
     for category, default in _DEFAULT_LIMITS.items():
+        # Try primary env var, then alias, then config, then default
         env_key = _LIMIT_ENV[category]
-        env_val = os.environ.get(env_key, "").strip()
-        if env_val:
+        alias_key = _LIMIT_ENV_ALIASES.get(category, "")
+        resolved = False
+        for key in (env_key, alias_key):
+            if not key:
+                continue
+            env_val = os.environ.get(key, "").strip()
+            if not env_val:
+                continue
             try:
                 limits[category] = max(0, int(env_val))
-                continue
+                resolved = True
+                break
             except ValueError:
-                logger.warning("invalid %s=%r; using config/default", env_key, env_val)
+                logger.warning("invalid %s=%r; trying next source", key, env_val)
+        if resolved:
+            continue
 
         cfg_key = _CONFIG_KEYS[category]
         cfg_val = cfg.get(cfg_key)
