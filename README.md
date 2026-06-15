@@ -1,25 +1,60 @@
-> **This project has moved to [embeddingvc/ebase](https://github.com/embeddingvc/ebase).**
-> This repository is kept for reference. New development happens in the new repo.
-
 # ebase
 
-Recruiting toolkit: LinkedIn MCP server, Claude skills, queue worker, cron scheduler.
+**Outreach that won't get you flagged.**
 
-## Install (one command)
+LinkedIn recruiting outreach that runs inside Claude Code — in your own signed-in Chrome, under LinkedIn's safe limits, so your account stays clean.
 
-From any directory, download and run the installer (uses [bash](https://www.gnu.org/software/bash/)):
+100% free. Open source. MIT licensed. Read every line before it touches your LinkedIn.
+
+---
+
+### Cold to booked call in three sentences
+
+```
+ ── Day 01 · Outreach ────────────────────────────────────
+ › connect to linkedin.com/in/maya-khatri
+ ● Reading profile — ex-Anthropic, inference. Recent post on speculative decoding.
+ ● Drafting note in your voice — persona: founder · warm · specific.
+   "Maya — your speculative-decoding work is exactly what we're chasing.
+    Would love to compare notes."
+ ✓ Connection request sent · 9 / 25 today.
+
+ ── Day 03 · Routine check-in ────────────────────────────
+ ⟳ ebase routine — syncing pending connections…
+ ✓ Maya Khatri accepted · status → connected.
+ › plan the next message for everyone who accepted
+ ● Reading Maya's profile and your first note for context.
+   "Glad we connected, Maya. We're hiring a founding engineer to push
+    decoding further — open to a quick chat?"
+ ✓ Follow-up queued · 14 / 50 messages today.
+
+ ── Day 06 · Convert ─────────────────────────────────────
+ ⟳ ebase routine — checking replies…
+ ● Maya replied — "Sounds interesting, this week?"
+ › plan a conversation to convert
+ ● Proposing a 20-min intro — offering Tue 10:00 / Wed 14:00.
+ ✓ Meeting scheduled · Tue 10:00 · added to pipeline.
+
+ ↳ Maya:  cold → connected → in conversation → call booked.
+```
+
+That whole session starts with **one command**.
+
+---
+
+## Install
 
 <!-- REPO_URL: update when the repo moves -->
 ```bash
 curl -fsSL https://raw.githubusercontent.com/embeddingvc/ebase/main/install.sh | bash
 ```
-- **First run:** run **`/setup-outreach`** in Claude Code to configure your operator profile from LinkedIn.
-- **Outreach:** `connect to <linkedin-url>` in Claude CLI.
----
 
-By default this clones or updates the repo at **`~/ebase`**. Override the directory with **`EBASE_DIR`**, the remote URL with **`EBASE_REPO`** (for forks), or **`git clone`** the repo and run **`./install.sh`** from the repository root so an existing clone is used instead.
+Then run **`/setup-outreach`** in Claude Code to configure your operator profile from LinkedIn.
 
-### What the installer does
+**Requirements:** macOS · Python 3.10+ · Claude Code
+
+<details>
+<summary>What the installer does</summary>
 
 The script does **not** require **Make** (suitable for a fresh Mac before Xcode Command Line Tools). It:
 
@@ -33,18 +68,77 @@ The script does **not** require **Make** (suitable for a fresh Mac before Xcode 
 
 Once it finishes, run **`/setup-outreach`** in Claude Code to scrape your LinkedIn profile, review the draft persona, and save `outreach/config/persona.json`. The cron scheduler then runs the workflow unattended; check it with **`make status`**.
 
-For development and QA there is a full web dashboard, mock LinkedIn backend, and regression suite under [`testing/`](testing/README.md) — none of it is needed for production use.
+By default this clones or updates the repo at **`~/ebase`**. Override the directory with **`EBASE_DIR`**, the remote URL with **`EBASE_REPO`** (for forks), or **`git clone`** the repo and run **`./install.sh`** from the repository root so an existing clone is used instead.
+
+</details>
+
+---
+
+## Why ebase
+
+### Your account stays safe
+
+Every other outreach tool eventually gets your LinkedIn flagged. ebase doesn't blast — daily caps match what LinkedIn actually tolerates:
+
+| Action | Daily limit |
+|--------|------------|
+| Connection requests | 25 |
+| Direct messages | 50 |
+| Profile views | 100 |
+
+It hits the cap and stops with "resume tomorrow." No override, no workaround.
+
+### It runs in your real Chrome
+
+ebase drives your signed-in Chrome session over CDP — not a headless browser, not a bot account, nothing for LinkedIn to fingerprint. You keep browsing normally while ebase works the pipeline alongside you.
+
+### One sentence in, real outreach out
+
+No dashboard to learn. No per-seat fees. Say what you want in plain English:
+
+```
+› connect to linkedin.com/in/maya-khatri
+› book a meeting with linkedin.com/in/jordan-liu
+› ask linkedin.com/in/sara-ramos for her resume
+› follow up with last week's accepts
+```
+
+Each ask runs as a Claude skill — ebase reads the profile, writes in your voice, sends, and logs it to your pipeline.
+
+---
+
+## What's inside
+
+| Component | Description |
+|-----------|-------------|
+| **LinkedIn MCP server** | 30 tools — profiles, connect, message, engage, persist |
+| **Claude skills** | 5 chainable workflows in `~/.claude/skills` |
+| **Queue worker** | Batch automation from JSON queue files |
+| **Cron scheduler** | Auto-syncs accepts, plans follow-ups, respects rate limits |
+| **Per-user state** | Isolated prospects, threads, logs (JSON / JSONL) |
+| **One-command installer** | uv · Playwright · MCP register |
+
+---
+
+## How it works
+
+1. **Install once** — one curl command. uv, Playwright, the MCP server and skills register with Claude Code.
+2. **Sign in to Chrome** — ebase drives your real, authenticated Chrome session. Nothing headless, nothing to flag.
+3. **Ask Claude** — "Connect to this profile." "Follow up with last week's accepts." Natural language in, real outreach out.
+4. **It stays safe** — every action is logged and capped to LinkedIn-safe daily limits. The agent refuses to cross them.
+
+---
 
 ## Documentation
 
-- **[Testing & dev dashboard](testing/README.md)** — web dashboard UI, mock mode, regression suite
-- **[Architecture & capabilities](docs/architecture.md)** — components, MCP tool inventory, high-level + detailed workflow diagrams
-- **[Manual install & Claude Desktop MCP](docs/install.md)** — prerequisites, `make install`, `claude_desktop_config.json`
 - **[Quickstart (live + mock)](docs/quickstart.md)** — `make run`, live mode checklist, example prompts
-- **[Claude skills](docs/skills.md)** — `setup-outreach`, `conversation-planner`, `send-connection-request`, `reply-to-post`, `sync-planner-persona-from-linkedin`
-- **[Conversation planner config](docs/conversation-planner.md)** — runtime persona + campaign config without restarting the MCP server
+- **[Architecture & capabilities](docs/architecture.md)** — components, MCP tool inventory, workflow diagrams
+- **[Claude skills](docs/skills.md)** — `setup-outreach`, `conversation-planner`, `send-connection-request`, and more
+- **[Manual install & Claude Desktop MCP](docs/install.md)** — prerequisites, `make install`, `claude_desktop_config.json`
+- **[Conversation planner config](docs/conversation-planner.md)** — runtime persona + campaign config
 - **[Operations](docs/operations.md)** — environment variables, data layout, Make targets
-- **[Design notes](docs/designs/)** — internal design docs for per-connection routines, schedule-meeting MCP, regression tests, team rollout
+- **[Design notes](docs/designs/)** — internal design docs
+- **[Testing & dev dashboard](testing/README.md)** — web dashboard UI, mock mode, regression suite
 - **[Contributing](CONTRIBUTING.md)** — dev setup, testing, how to submit changes
 - **[Changelog](CHANGELOG.md)** — version history and release notes
 
