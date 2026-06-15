@@ -1,3 +1,6 @@
+> **This project has moved to [embeddingvc/ebase](https://github.com/embeddingvc/ebase).**
+> This repository is kept for reference. New development happens in the new repo.
+
 # ebase
 
 Recruiting toolkit: LinkedIn MCP server, Claude skills, queue worker, cron scheduler.
