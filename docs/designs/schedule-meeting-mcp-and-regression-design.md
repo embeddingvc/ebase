@@ -2,7 +2,7 @@
 
 Generated on 2026-05-17  
 Branch: main  
-Repo: huangruoqi/LinkedIn-Outreach  
+Repo: embeddingvc/ebase  
 Status: DRAFT (implementation not started)  
 Related:
 - [`docs/designs/outreach-workflow-regression-tests-design.md`](outreach-workflow-regression-tests-design.md)

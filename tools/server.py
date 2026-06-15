@@ -118,7 +118,7 @@ def _run_upgrade_check() -> None:
             old, new = parts[1], parts[2]
             _upgrade_info.update(status="upgrade_available", old=old, new=new)
             logger.warning(
-                "LinkedIn-Outreach v%s available (current: v%s). "
+                "ebase v%s available (current: v%s). "
                 "Run /outreach-upgrade or make upgrade.",
                 new,
                 old,
@@ -127,7 +127,7 @@ def _run_upgrade_check() -> None:
             old, new = parts[1], parts[2]
             _upgrade_info.update(status="just_upgraded", old=old, new=new)
             logger.info(
-                "LinkedIn-Outreach upgraded from v%s to v%s.",
+                "ebase upgraded from v%s to v%s.",
                 old,
                 new,
             )

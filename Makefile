@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# LinkedIn Outreach — Makefile
+# ebase — Makefile
 #
 #  make run        Start Chrome + worker (the only command you need day-to-day)
 #  make browser    Start Chrome with CDP debugging port (keeps existing profile)
@@ -263,7 +263,7 @@ check-version: ## CI gate: assert VERSION and pyproject.toml match
 	echo "OK: VERSION and pyproject.toml both at $$VER"
 
 check-repo-url: ## Verify install.sh, README.md, and CONTRIBUTING.md use the same repo org/name
-	@SLUG=$$(grep -oE 'github\.com/[^/]+/LinkedIn-Outreach' install.sh | head -1 | sed 's/github\.com\///'); \
+	@SLUG=$$(grep -oE 'github\.com/[^/]+/ebase' install.sh | head -1 | sed 's/github\.com\///'); \
 	if [ -z "$$SLUG" ]; then \
 	  echo "ERROR: could not extract repo slug from install.sh" >&2; \
 	  exit 1; \

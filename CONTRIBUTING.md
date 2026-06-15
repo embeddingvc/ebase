@@ -1,13 +1,13 @@
-# Contributing to LinkedIn Outreach
+# Contributing to ebase
 
-Thanks for wanting to improve LinkedIn Outreach. This guide covers the dev setup, testing, and how to submit changes.
+Thanks for wanting to improve ebase. This guide covers the dev setup, testing, and how to submit changes.
 
 ## Quick start
 
 <!-- REPO_URL: update when the repo moves -->
 ```bash
-git clone https://github.com/huangruoqi/LinkedIn-Outreach.git
-cd LinkedIn-Outreach
+git clone https://github.com/embeddingvc/ebase.git
+cd ebase
 make install            # uv sync + playwright install chromium
 cp .env.example .env    # add your ANTHROPIC_API_KEY
 ```

@@ -38,7 +38,7 @@ operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
 
 ## Update check (run first)
 
-Before connecting, check for a newer LinkedIn-Outreach version:
+Before connecting, check for a newer ebase version:
 
 ```bash
 bin/outreach-update-check 2>/dev/null || true

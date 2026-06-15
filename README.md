@@ -1,6 +1,6 @@
-# LinkedIn Outreach
+# ebase
 
-Automation + workflow tooling for LinkedIn outreach: a LinkedIn MCP server, Claude skills, a queue worker.
+Recruiting toolkit: LinkedIn MCP server, Claude skills, queue worker, cron scheduler.
 
 ## Install (one command)
 
@@ -8,22 +8,22 @@ From any directory, download and run the installer (uses [bash](https://www.gnu.
 
 <!-- REPO_URL: update when the repo moves -->
 ```bash
-curl -fsSL https://raw.githubusercontent.com/huangruoqi/LinkedIn-Outreach/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/embeddingvc/ebase/main/install.sh | bash
 ```
 - **First run:** run **`/setup-outreach`** in Claude Code to configure your operator profile from LinkedIn.
 - **Outreach:** `connect to <linkedin-url>` in Claude CLI.
 ---
 
-By default this clones or updates the repo at **`~/LinkedIn-Outreach`**. Override the directory with **`LINKEDIN_OUTREACH_DIR`**, the remote URL with **`LINKEDIN_OUTREACH_REPO`** (for forks), or **`git clone`** the repo and run **`./install.sh`** from the repository root so an existing clone is used instead.
+By default this clones or updates the repo at **`~/ebase`**. Override the directory with **`EBASE_DIR`**, the remote URL with **`EBASE_REPO`** (for forks), or **`git clone`** the repo and run **`./install.sh`** from the repository root so an existing clone is used instead.
 
 ### What the installer does
 
 The script does **not** require **Make** (suitable for a fresh Mac before Xcode Command Line Tools). It:
 
 - Installs **[uv](https://docs.astral.sh/uv/)** if it is missing, then runs **`uv sync`** and **`playwright install chromium`** (same as **`make install`**).
-- **Default:** registers the LinkedIn MCP with Claude Code **`--scope user`** (all projects; stored in **`~/.claude.json`**). Copies each skill under **`outreach/skills/<name>/`** (with **`SKILL.md`**) into **`~/.claude/skills/<name>/`**. Set **`LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0`** to skip the skill copy only.
-- **`--local`** (or **`LINKEDIN_OUTREACH_INSTALL_LOCAL=1`**): MCP **`--scope local`** only (this absolute project path); **does not** copy skills to **`~/.claude/skills`**. Same idea as **`make claude-install LOCAL=1`**.
-- Pre-allows LinkedIn-Outreach in Claude Code settings: MCP (`mcp__linkedin`), all repo skills (`Skill(...)`), and maintenance bash (`bin/outreach-*`, `install.sh`, `uninstall.sh`, `make upgrade` / `uninstall` / `claude-install`). Writes to **`~/.claude/settings.json`** in default mode, or **`<repo>/.claude/settings.local.json`** with **`--local`**.
+- **Default:** registers the LinkedIn MCP with Claude Code **`--scope user`** (all projects; stored in **`~/.claude.json`**). Copies each skill under **`outreach/skills/<name>/`** (with **`SKILL.md`**) into **`~/.claude/skills/<name>/`**. Set **`EBASE_SYNC_SKILLS_HOME=0`** to skip the skill copy only.
+- **`--local`** (or **`EBASE_INSTALL_LOCAL=1`**): MCP **`--scope local`** only (this absolute project path); **does not** copy skills to **`~/.claude/skills`**. Same idea as **`make claude-install LOCAL=1`**.
+- Pre-allows ebase in Claude Code settings: MCP (`mcp__linkedin`), all repo skills (`Skill(...)`), and maintenance bash (`bin/outreach-*`, `install.sh`, `uninstall.sh`, `make upgrade` / `uninstall` / `claude-install`). Writes to **`~/.claude/settings.json`** in default mode, or **`<repo>/.claude/settings.local.json`** with **`--local`**.
 - If **`claude`** is missing, it prints next steps. **`./install.sh --help`** lists options.
 - Launches **Google Chrome** on macOS at the default path with remote debugging (CDP) on port **9222** (same idea as **`make browser`**), opens **LinkedIn login**, and **pauses until you press Enter** after signing in. Playwright automation attaches to that live Chrome session. Skip the pause with **`./install.sh --skip-linkedin-login`**.
 - Starts the **cron scheduler server** in the background (health: **http://127.0.0.1:3847/health**, logs: `logs/cron.log`). It runs the unattended routine sweeps (connection sync, conversation planning). Skip with **`./install.sh --no-cron`**.

@@ -48,7 +48,7 @@ from web import (
     regression_runner,
 )
 
-app = FastAPI(title="LinkedIn Outreach Dashboard (testing)")
+app = FastAPI(title="ebase Dashboard (testing)")
 
 
 def _static_file(name: str, media_type: str) -> FileResponse:

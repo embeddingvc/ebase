@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LinkedIn Outreach — remove Claude/MCP integration and optional local data.
+# ebase — remove Claude/MCP integration and optional local data.
 # Wrapper around bin/outreach-uninstall (mirrors install.sh).
 set -euo pipefail
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# outreach-uninstall — remove LinkedIn-Outreach Claude/MCP integration and optional data.
+# outreach-uninstall — remove ebase Claude/MCP integration and optional data.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,7 +13,7 @@ CHROME_PROFILE="${CHROME_PROFILE:-${HOME}/.linkedin-chrome-profile}"
 CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
 SKILL_SRC="${SKILL_SRC:-outreach/skills}"
 USER_CLAUDE_SKILLS="${USER_CLAUDE_SKILLS:-${HOME}/.claude/skills}"
-OUTREACH_STATE_DIR="${OUTREACH_STATE_DIR:-${HOME}/.linkedin-outreach}"
+OUTREACH_STATE_DIR="${OUTREACH_STATE_DIR:-${HOME}/.ebase}"
 
 YES=0
 MCP_ONLY=0
@@ -116,12 +116,12 @@ resolve_repo_root() {
   local root
   root="$(git -C "${DEFAULT_REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || true)"
   if [[ -n "$root" ]] && [[ -f "${root}/pyproject.toml" ]] \
-      && grep -q 'name = "linkedin-outreach"' "${root}/pyproject.toml" 2>/dev/null; then
+      && grep -q 'name = "ebase"' "${root}/pyproject.toml" 2>/dev/null; then
     printf '%s' "$root"
     return 0
   fi
   if [[ -f "${DEFAULT_REPO_ROOT}/pyproject.toml" ]] \
-      && grep -q 'name = "linkedin-outreach"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
+      && grep -q 'name = "ebase"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
     printf '%s' "$DEFAULT_REPO_ROOT"
     return 0
   fi
@@ -357,7 +357,7 @@ main() {
 
   local repo=""
   if ! repo="$(resolve_repo_root)"; then
-    warn "Could not find LinkedIn-Outreach repo root."
+    warn "Could not find ebase repo root."
     warn "Set OUTREACH_REPO_ROOT or run from the repository."
     exit 1
   fi
@@ -365,7 +365,7 @@ main() {
 
   printf '\n'
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  info "LinkedIn-Outreach uninstall"
+  info "ebase uninstall"
   printf '%s\n' ""
   printf '%s\n' "  Repo: ${repo}"
   printf '%s\n' ""
@@ -373,7 +373,7 @@ main() {
     printf '%s\n' "  Mode: MCP + permissions only"
   else
     printf '%s\n' "  Core: stop services, remove MCP, permissions, home skills"
-    printf '%s\n' "  Optional: outreach data, ~/.linkedin-outreach, Chrome profile"
+    printf '%s\n' "  Optional: outreach data, ~/.ebase, Chrome profile"
   fi
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   printf '\n'

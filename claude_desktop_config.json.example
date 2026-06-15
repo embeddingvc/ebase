@@ -5,8 +5,8 @@
       "args": [
         "run",
         "--project",
-        "/path/to/LinkedIn-Outreach",
-        "/path/to/LinkedIn-Outreach/tools/server.py"
+        "/path/to/ebase",
+        "/path/to/ebase/tools/server.py"
       ]
     }
   }

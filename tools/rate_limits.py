@@ -1,8 +1,8 @@
 """
 Daily rate limits for LinkedIn MCP tools (connection requests, DMs, profile views).
 
-State: ``~/.linkedin-outreach/rate_limits.json`` (override with ``LINKEDIN_OUTREACH_HOME``).
-Limits: env vars, then ``~/.linkedin-outreach/config.json`` → ``rate_limits``, then defaults.
+State: ``~/.ebase/rate_limits.json`` (override with ``EBASE_HOME``).
+Limits: env vars, then ``~/.ebase/config.json`` → ``rate_limits``, then defaults.
 
 Day boundaries use the local timezone (``datetime.now().astimezone().tzinfo``).
 """
@@ -80,11 +80,38 @@ _ERROR_MESSAGES = {
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 
+def _maybe_migrate_state_dir(new_home: Path) -> None:
+    """One-time migration: copy ~/.linkedin-outreach/ → new_home if new doesn't exist."""
+    old_home = Path.home() / ".linkedin-outreach"
+    if new_home.exists() or not old_home.exists():
+        return
+    if old_home == new_home:
+        return
+    import shutil
+    try:
+        shutil.copytree(str(old_home), str(new_home))
+        logger.info(
+            "migrated state dir %s → %s",
+            old_home, new_home,
+        )
+    except OSError:
+        logger.warning(
+            "could not migrate state dir %s → %s",
+            old_home, new_home,
+            exc_info=True,
+        )
+
+
 def outreach_home() -> Path:
-    raw = os.environ.get("LINKEDIN_OUTREACH_HOME", "").strip()
+    raw = (
+        os.environ.get("EBASE_HOME", "").strip()
+        or os.environ.get("LINKEDIN_OUTREACH_HOME", "").strip()
+    )
     if raw:
         return Path(raw).expanduser().resolve()
-    return Path.home() / ".linkedin-outreach"
+    home = Path.home() / ".ebase"
+    _maybe_migrate_state_dir(home)
+    return home
 
 
 def config_path() -> Path:

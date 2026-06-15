@@ -19,7 +19,7 @@ import rate_limits as rl  # noqa: E402
 
 @pytest.fixture()
 def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("LINKEDIN_OUTREACH_HOME", str(tmp_path))
+    monkeypatch.setenv("EBASE_HOME", str(tmp_path))
     monkeypatch.delenv("LINKEDIN_RATE_LIMIT_DISABLED", raising=False)
     monkeypatch.delenv("LINKEDIN_RATE_LIMIT_CONNECTION_REQUESTS", raising=False)
     monkeypatch.delenv("LINKEDIN_RATE_LIMIT_DMS", raising=False)

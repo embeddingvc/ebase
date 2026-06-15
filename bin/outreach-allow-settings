@@ -18,7 +18,7 @@ usage() {
 Usage: outreach-allow-settings add [--local]
        outreach-allow-settings remove [--local]
 
-  add     Pre-approve LinkedIn-Outreach MCP tools, skills, and maintenance bash.
+  add     Pre-approve ebase MCP tools, skills, and maintenance bash.
   remove  Remove those rules (used by outreach-uninstall).
 
   --local   Write <repo>/.claude/settings.local.json (default: ~/.claude/settings.json)
@@ -33,12 +33,12 @@ resolve_repo_root() {
   local root
   root="$(git -C "${DEFAULT_REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || true)"
   if [[ -n "$root" ]] && [[ -f "${root}/pyproject.toml" ]] \
-      && grep -q 'name = "linkedin-outreach"' "${root}/pyproject.toml" 2>/dev/null; then
+      && grep -q 'name = "ebase"' "${root}/pyproject.toml" 2>/dev/null; then
     printf '%s' "$root"
     return 0
   fi
   if [[ -f "${DEFAULT_REPO_ROOT}/pyproject.toml" ]] \
-      && grep -q 'name = "linkedin-outreach"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
+      && grep -q 'name = "ebase"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
     printf '%s' "$DEFAULT_REPO_ROOT"
     return 0
   fi
@@ -176,7 +176,7 @@ main() {
 
   local repo=""
   if ! repo="$(resolve_repo_root)"; then
-    echo "ERROR: LinkedIn-Outreach repo not found" >&2
+    echo "ERROR: ebase repo not found" >&2
     exit 1
   fi
   repo="$(cd "$repo" && pwd)"

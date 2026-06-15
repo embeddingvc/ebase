@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - 2026-06-15
+
+### Changed
+- Repository moved to [embeddingvc/ebase](https://github.com/embeddingvc/ebase)
+- Package renamed from `linkedin-outreach` to `ebase`
+- Default install directory: `~/LinkedIn-Outreach` → `~/ebase`
+- State directory: `~/.linkedin-outreach/` → `~/.ebase/` (automatic migration on first run)
+- Toolkit env vars renamed: `LINKEDIN_OUTREACH_DIR` → `EBASE_DIR`, etc. (old names still work as fallbacks)
+- Copyright updated to embeddingvc
+
+### Unchanged
+- MCP server name stays `linkedin`
+- LinkedIn-specific env vars: `LINKEDIN_RATE_LIMIT_*`, `LINKEDIN_LOGIN_URL`
+- All outreach skills, schemas, and browser automation internals
+
 ## [0.0.7.0] - 2026-06-14
 
 ### Added

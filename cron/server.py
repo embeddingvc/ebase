@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
         await _scheduler_task
 
 
-app = FastAPI(title="LinkedIn Outreach Cron", lifespan=lifespan)
+app = FastAPI(title="ebase Cron", lifespan=lifespan)
 
 
 def _scheduler_state() -> str:

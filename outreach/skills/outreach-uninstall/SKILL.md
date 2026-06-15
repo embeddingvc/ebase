@@ -1,14 +1,14 @@
 ---
 name: outreach-uninstall
 description: >-
-  Remove LinkedIn-Outreach from Claude Code: stop dashboard/worker, unregister
+  Remove ebase from Claude Code: stop dashboard/worker, unregister
   MCP, clean permissions, optionally delete synced skills and local outreach
   data. Use when the user asks to uninstall, remove, or tear down outreach.
 ---
 
 # Outreach Uninstall
 
-Remove LinkedIn-Outreach integration from Claude Code and optionally delete
+Remove ebase integration from Claude Code and optionally delete
 local outreach data. **Does not delete the git checkout** — the repo stays on
 disk for re-install.
 
@@ -24,7 +24,7 @@ Explain what will be removed and confirm scope with **`AskQuestion`** (or chat):
 |--------|----------------|
 | **Core only** | Stop services + MCP + permissions + `~/.claude/skills/` outreach copies |
 | **Core + data** | Above + repo `outreach/` runtime files (connections, conversations, persona, logs) |
-| **Full cleanup** | Above + `~/.linkedin-outreach/` + dedicated Chrome profile |
+| **Full cleanup** | Above + `~/.ebase/` + dedicated Chrome profile |
 
 Default recommendation: **Core only** — keeps outreach history and persona for a future re-install.
 
@@ -61,7 +61,7 @@ The script asks **yes/no** before each category. The user can decline any step.
 | `--mcp-only` | MCP + permissions only |
 | `--no-skills` | Keep `~/.claude/skills/<outreach-skill>/` |
 | `--remove-data` | Delete repo runtime outreach files |
-| `--remove-state` | Delete `~/.linkedin-outreach/` |
+| `--remove-state` | Delete `~/.ebase/` |
 | `--remove-chrome-profile` | Delete `~/.linkedin-chrome-profile/` |
 
 Do **not** pass `--remove-data` or `--remove-chrome-profile` unless the user

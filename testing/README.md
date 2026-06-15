@@ -1,6 +1,6 @@
-# LinkedIn Outreach — testing/
+# ebase — testing/
 
-Development and QA tooling for the LinkedIn-Outreach core. Nothing in this
+Development and QA tooling for the ebase core. Nothing in this
 folder is required for production use; the operator path is the core repo
 (`./install.sh` → Claude skills + live MCP + cron scheduler).
 

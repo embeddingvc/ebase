@@ -1,7 +1,7 @@
 ---
 name: outreach-upgrade
 description: >-
-  Upgrade LinkedIn-Outreach to the latest version from git. Detects the repo
+  Upgrade ebase to the latest version from git. Detects the repo
   checkout, runs git pull + uv sync + skill/MCP refresh, and shows what changed.
   Use when asked to upgrade, update, or get the latest outreach version; also
   invoked inline when other skills detect UPGRADE_AVAILABLE.
@@ -9,7 +9,7 @@ description: >-
 
 # Outreach Upgrade
 
-Upgrade the LinkedIn-Outreach installation and refresh Claude skills + MCP.
+Upgrade the ebase installation and refresh Claude skills + MCP.
 
 Voice triggers: "upgrade outreach", "update linkedin outreach", "get latest version".
 
@@ -39,7 +39,7 @@ Network or git failures produce no output — **do not block** the invoking skil
 **Always** use **`AskQuestion`** when `UPGRADE_AVAILABLE` is detected — never
 skip the prompt based on config or environment.
 
-- Question: "LinkedIn-Outreach **v{new}** is available (you're on v{old}). Upgrade now?"
+- Question: "ebase **v{new}** is available (you're on v{old}). Upgrade now?"
 - Options:
   - **Yes, upgrade now**
   - **Not now**
@@ -54,7 +54,7 @@ skip the prompt based on config or environment.
 **Snooze ("Not now")** — escalating backoff for the same remote version:
 
 ```bash
-_SNOOZE_FILE="$HOME/.linkedin-outreach/update-snoozed"
+_SNOOZE_FILE="$HOME/.ebase/update-snoozed"
 _REMOTE_VER="{new}"
 _CUR_LEVEL=0
 if [ -f "$_SNOOZE_FILE" ]; then
@@ -80,7 +80,7 @@ bin/outreach-update-check --apply 2>/dev/null || bin/outreach-upgrade "{old}" "{
 On success, parse `UPGRADED <old> <new>` and show:
 
 ```
-LinkedIn-Outreach v{new} — upgraded from v{old}!
+ebase v{new} — upgraded from v{old}!
 
 Run `git log v{old}..v{new} --oneline` in the repo for details, or see CHANGELOG if present.
 ```
@@ -104,7 +104,7 @@ Resume the skill the user originally invoked (setup-outreach, send-connection-re
 
 ---
 
-## Config (`~/.linkedin-outreach/config`)
+## Config (`~/.ebase/config`)
 
 | Key | Default | Meaning |
 |-----|---------|---------|

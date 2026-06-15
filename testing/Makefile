@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# LinkedIn Outreach — testing/ (dashboard, mock backend, regression, pytest)
+# ebase — testing/ (dashboard, mock backend, regression, pytest)
 #
 # Everything here is a development / QA tool. The production core (Claude
 # skills, live MCP, cron scheduler) lives in the parent directory and has no

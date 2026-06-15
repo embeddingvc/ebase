@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-STATE_DIR="${OUTREACH_STATE_DIR:-$HOME/.linkedin-outreach}"
+STATE_DIR="${OUTREACH_STATE_DIR:-$HOME/.ebase}"
 CACHE_FILE="$STATE_DIR/last-update-check"
 MARKER_FILE="$STATE_DIR/just-upgraded-from"
 SNOOZE_FILE="$STATE_DIR/update-snoozed"
@@ -43,12 +43,12 @@ resolve_repo_root() {
   local root
   root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [[ -n "$root" ]] && [[ -f "${root}/pyproject.toml" ]] \
-      && grep -q 'name = "linkedin-outreach"' "${root}/pyproject.toml" 2>/dev/null; then
+      && grep -q 'name = "ebase"' "${root}/pyproject.toml" 2>/dev/null; then
     printf '%s' "$root"
     return 0
   fi
   if [[ -f "${DEFAULT_REPO_ROOT}/pyproject.toml" ]] \
-      && grep -q 'name = "linkedin-outreach"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
+      && grep -q 'name = "ebase"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
     printf '%s' "$DEFAULT_REPO_ROOT"
     return 0
   fi

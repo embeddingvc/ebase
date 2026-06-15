@@ -178,7 +178,7 @@ def _build_meeting_email(
         f"When (UTC): {scheduled_at}\n"
         f"Meeting:    {link_line}\n"
         f"\n"
-        f"Scheduled via LinkedIn-Outreach.\n"
+        f"Scheduled via ebase.\n"
     )
     msg.set_content(body)
     return msg
@@ -222,7 +222,7 @@ def _build_ended_email(
         f"Last step:   {step_line}\n"
         f"Report:      {report_path or '(no report written)'}\n"
         f"\n"
-        f"Closed via LinkedIn-Outreach.\n"
+        f"Closed via ebase.\n"
     )
     msg.set_content(body)
     return msg

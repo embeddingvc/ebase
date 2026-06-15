@@ -2,7 +2,7 @@
 
 Generated on 2026-05-28
 Branch: main
-Repo: huangruoqi/LinkedIn-Outreach
+Repo: embeddingvc/ebase
 Status: DRAFT (implementation not started)
 Related:
 - [`docs/designs/team-rollout-design.md`](team-rollout-design.md)

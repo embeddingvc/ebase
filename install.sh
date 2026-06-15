@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LinkedIn Outreach — clone (if needed), Python env + Playwright Chromium,
+# ebase — clone (if needed), Python env + Playwright Chromium,
 # Claude Code MCP registration, and Chrome with CDP for LinkedIn sign-in.
 # Does not require GNU Make (friendly to a fresh macOS install).
 #
@@ -7,8 +7,8 @@
 #   ./install.sh --local  → MCP --scope local (this project path only); no home skill sync
 set -euo pipefail
 
-REPO_URL="${LINKEDIN_OUTREACH_REPO:-https://github.com/huangruoqi/LinkedIn-Outreach.git}"
-DEFAULT_DIR="${LINKEDIN_OUTREACH_DIR:-${HOME}/LinkedIn-Outreach}"
+REPO_URL="${EBASE_REPO:-${LINKEDIN_OUTREACH_REPO:-https://github.com/embeddingvc/ebase.git}}"
+DEFAULT_DIR="${EBASE_DIR:-${LINKEDIN_OUTREACH_DIR:-${HOME}/ebase}}"
 
 # Mirror Makefile defaults (override via environment)
 CDP_PORT="${CDP_PORT:-9222}"
@@ -21,16 +21,16 @@ CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
 SKILL_SRC="${SKILL_SRC:-outreach/skills}"
 USER_CLAUDE_SKILLS="${USER_CLAUDE_SKILLS:-${HOME}/.claude/skills}"
 # Set to 0 to skip copying skills into ~/.claude/skills (ignored when --local / INSTALL_LOCAL)
-LINKEDIN_OUTREACH_SYNC_SKILLS_HOME="${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME:-1}"
+EBASE_SYNC_SKILLS_HOME="${EBASE_SYNC_SKILLS_HOME:-${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME:-1}}"
 # 1 = MCP local scope + project skills only (same as ./install.sh --local)
-INSTALL_LOCAL="${LINKEDIN_OUTREACH_INSTALL_LOCAL:-0}"
+INSTALL_LOCAL="${EBASE_INSTALL_LOCAL:-${LINKEDIN_OUTREACH_INSTALL_LOCAL:-0}}"
 SKIP_LINKEDIN_LOGIN="${LINKEDIN_OUTREACH_SKIP_LINKEDIN_LOGIN:-0}"
 LINKEDIN_LOGIN_URL="${LINKEDIN_LOGIN_URL:-https://www.linkedin.com}"
-SKIP_EMAIL_SETUP="${LINKEDIN_OUTREACH_SKIP_EMAIL_SETUP:-0}"
+SKIP_EMAIL_SETUP="${EBASE_SKIP_EMAIL_SETUP:-${LINKEDIN_OUTREACH_SKIP_EMAIL_SETUP:-0}}"
 GMAIL_APP_PASSWORD_URL="${GMAIL_APP_PASSWORD_URL:-https://myaccount.google.com/apppasswords}"
-SKIP_PERSONA_SYNC="${LINKEDIN_OUTREACH_SKIP_PERSONA_SYNC:-0}"
-SKIP_TONE_SETUP="${LINKEDIN_OUTREACH_SKIP_TONE_SETUP:-0}"
-SKIP_WEB="${LINKEDIN_OUTREACH_SKIP_WEB:-0}"
+SKIP_PERSONA_SYNC="${EBASE_SKIP_PERSONA_SYNC:-${LINKEDIN_OUTREACH_SKIP_PERSONA_SYNC:-0}}"
+SKIP_TONE_SETUP="${EBASE_SKIP_TONE_SETUP:-${LINKEDIN_OUTREACH_SKIP_TONE_SETUP:-0}}"
+SKIP_WEB="${EBASE_SKIP_WEB:-${LINKEDIN_OUTREACH_SKIP_WEB:-0}}"
 PERSONA_PROFILE_URL="${PERSONA_PROFILE_URL:-https://www.linkedin.com/in/me/}"
 
 REPO_ROOT=""
@@ -77,10 +77,10 @@ Usage: install.sh [options]
     - Do not copy skills to ~/.claude/skills (repo outreach/skills only).
 
   Environment (same as --local when set to 1):
-    LINKEDIN_OUTREACH_INSTALL_LOCAL=1
+    EBASE_INSTALL_LOCAL=1
 
   --no-cron (alias: --no-web)
-    Skip starting the cron scheduler server (same as LINKEDIN_OUTREACH_SKIP_WEB=1).
+    Skip starting the cron scheduler server (same as EBASE_SKIP_WEB=1).
     Chrome, MCP registration, and dependency install still run.
 
   --skip-linkedin-login
@@ -88,26 +88,26 @@ Usage: install.sh [options]
 
   --skip-email-setup
     Do not prompt for the Gmail app password / operator email
-    (same as LINKEDIN_OUTREACH_SKIP_EMAIL_SETUP=1). Always skipped when stdin
+    (same as EBASE_SKIP_EMAIL_SETUP=1). Always skipped when stdin
     is not a TTY (e.g. curl | bash).
 
   --skip-persona-sync
     Do not run the sync-planner-persona-from-linkedin skill after sign-in
-    (same as LINKEDIN_OUTREACH_SKIP_PERSONA_SYNC=1). Auto-skipped when the
+    (same as EBASE_SKIP_PERSONA_SYNC=1). Auto-skipped when the
     claude CLI is missing or Chrome CDP is unreachable.
 
   --skip-tone-setup
     Do not prompt for tone description / sample replies that seed
     message_rules.tone_guidelines and message_rules.style_examples
-    (same as LINKEDIN_OUTREACH_SKIP_TONE_SETUP=1). Always skipped when stdin
+    (same as EBASE_SKIP_TONE_SETUP=1). Always skipped when stdin
     is not a TTY (e.g. curl | bash).
 
   Other:
-    LINKEDIN_OUTREACH_SYNC_SKILLS_HOME=0   Skip global skill copy (default mode only).
-    LINKEDIN_OUTREACH_SKIP_WEB=1           Skip cron server (same as --no-cron).
+    EBASE_SYNC_SKILLS_HOME=0               Skip global skill copy (default mode only).
+    EBASE_SKIP_WEB=1                       Skip cron server (same as --no-cron).
     WEB_HOST, WEB_PORT                     Cron server bind (default 127.0.0.1:3847).
     SKILL_SRC   Override repo skill directory (default: outreach/skills).
-    LINKEDIN_OUTREACH_DIR, LINKEDIN_OUTREACH_REPO, USER_CLAUDE_SKILLS, …
+    EBASE_DIR, EBASE_REPO, USER_CLAUDE_SKILLS, …
 
   curl | bash with flags:
     curl -fsSL …/install.sh | bash -s -- --local
@@ -159,7 +159,7 @@ parse_args() {
 repo_root_from_pyproject() {
   local dir="$1"
   [[ -f "${dir}/pyproject.toml" ]] || return 1
-  grep -q 'name = "linkedin-outreach"' "${dir}/pyproject.toml" 2>/dev/null
+  grep -q 'name = "ebase"' "${dir}/pyproject.toml" 2>/dev/null
 }
 
 require_cmd() {
@@ -283,8 +283,8 @@ ensure_repo() {
       step_done "Repository"
       return 0
     fi
-    warn "${DEFAULT_DIR} exists but is not a LinkedIn-Outreach git checkout."
-    warn "Remove it, set LINKEDIN_OUTREACH_DIR to another path, or clone manually:"
+    warn "${DEFAULT_DIR} exists but is not an ebase git checkout."
+    warn "Remove it, set EBASE_DIR to another path, or clone manually:"
     warn "  git clone ${REPO_URL} \"${DEFAULT_DIR}\""
     exit 1
   fi
@@ -303,7 +303,7 @@ ensure_repo() {
 
   info "Cloning ${REPO_URL} → ${DEFAULT_DIR}"
   if ! git clone "${REPO_URL}" "${DEFAULT_DIR}"; then
-    warn "git clone failed. Check network access and LINKEDIN_OUTREACH_REPO (${REPO_URL})."
+    warn "git clone failed. Check network access and EBASE_REPO (${REPO_URL})."
     exit 1
   fi
   REPO_ROOT="${DEFAULT_DIR}"
@@ -340,8 +340,8 @@ sync_claude_skills_to_home() {
     step_done "Claude skills (repo only)"
     return 0
   fi
-  [[ "${LINKEDIN_OUTREACH_SYNC_SKILLS_HOME}" == "1" ]] || {
-    info "Skipped — LINKEDIN_OUTREACH_SYNC_SKILLS_HOME != 1"
+  [[ "${EBASE_SYNC_SKILLS_HOME}" == "1" ]] || {
+    info "Skipped — EBASE_SYNC_SKILLS_HOME != 1"
     note "skip: skills not copied to ${USER_CLAUDE_SKILLS}"
     step_done "Claude skills"
     return 0
@@ -882,7 +882,7 @@ setup_email_notifications() {
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   info "Operator email notifications (optional)"
   printf '%s\n' ""
-  printf '%s\n' "  The LinkedIn-Outreach MCP can email you whenever:"
+  printf '%s\n' "  The ebase MCP can email you whenever:"
   printf '%s\n' "    • a prospect agrees to a meeting (schedule_meeting), or"
   printf '%s\n' "    • a sequence ends or is dropped (upsert_conversation)."
   printf '%s\n' ""
@@ -916,7 +916,7 @@ setup_email_notifications() {
 
   printf '%s\n' "  1. Turn ON 2-Step Verification for your Google account (required):"
   printf '%s\n' "       https://myaccount.google.com/security"
-  printf '%s\n' "  2. Generate an app password (label it 'LinkedIn-Outreach'):"
+  printf '%s\n' "  2. Generate an app password (label it 'ebase'):"
   printf '%s\n' "       ${GMAIL_APP_PASSWORD_URL}"
   printf '%s\n' "  3. Copy the 16-character password Google shows (spaces are fine)."
   printf '\n'
