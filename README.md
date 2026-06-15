@@ -6,6 +6,7 @@ Automation + workflow tooling for LinkedIn outreach: a LinkedIn MCP server, Clau
 
 From any directory, download and run the installer (uses [bash](https://www.gnu.org/software/bash/)):
 
+<!-- REPO_URL: update when the repo moves -->
 ```bash
 curl -fsSL https://raw.githubusercontent.com/huangruoqi/LinkedIn-Outreach/main/install.sh | bash
 ```
@@ -42,6 +43,7 @@ For development and QA there is a full web dashboard, mock LinkedIn backend, and
 - **[Operations](docs/operations.md)** — environment variables, data layout, Make targets
 - **[Design notes](docs/designs/)** — internal design docs for per-connection routines, schedule-meeting MCP, regression tests, team rollout
 - **[Contributing](CONTRIBUTING.md)** — dev setup, testing, how to submit changes
+- **[Changelog](CHANGELOG.md)** — version history and release notes
 
 ## License
 

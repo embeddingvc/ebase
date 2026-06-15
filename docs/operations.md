@@ -53,4 +53,7 @@ Run `make help` to see all targets. Common ones:
 - `make test_conversation`: run conversation-planner tests (needs `ANTHROPIC_API_KEY`)
 - `make cron`: start the cron scheduler server in the foreground
 - `make stop-cron`: stop the cron scheduler server
+- `make sync-version`: copy `VERSION` into `pyproject.toml`
+- `make check-version`: CI gate — assert `VERSION` and `pyproject.toml` match
+- `make check-repo-url`: verify `install.sh`, `README.md`, and `CONTRIBUTING.md` use the same repo org/name
 - `make -C testing web`: start the dev dashboard (see [`testing/README.md`](../testing/README.md))

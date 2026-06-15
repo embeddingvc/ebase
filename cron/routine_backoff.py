@@ -84,15 +84,15 @@ class BackoffPolicy:
 # Conservative defaults that match the design doc table.
 SYNC_DEFAULT = BackoffPolicy(
     initial_minutes=30,
-    multiplier=3.0,
-    max_minutes=1000000,
+    multiplier=1.5,
+    max_minutes=24 * 60,
     error_jitter=True,
 )
 
 PLAN_DEFAULT = BackoffPolicy(
-    initial_minutes=10,
-    multiplier=3.0,
-    max_minutes=1000000,
+    initial_minutes=60,
+    multiplier=2.0,
+    max_minutes=12 * 60,
     error_jitter=True,
 )
 

@@ -83,6 +83,71 @@ logging.basicConfig(
 )
 logger = logging.getLogger("linkedin.server")
 
+# ── Background upgrade check ─────────────────────────────────────────────────
+# Non-blocking: fires a daemon thread that shells out to bin/outreach-update-check
+# and logs the result.  Never blocks mcp.run(); dies with the process.
+
+_upgrade_info: dict = {}
+
+
+def _run_upgrade_check() -> None:
+    """Shell out to bin/outreach-update-check and log the result."""
+    import subprocess
+
+    check_bin = _ROOT / "bin" / "outreach-update-check"
+    if not check_bin.is_file():
+        return
+
+    try:
+        result = subprocess.run(
+            [str(check_bin)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(_ROOT),
+            env={**__import__("os").environ, "OUTREACH_REPO_ROOT": str(_ROOT)},
+        )
+        line = (result.stdout or "").strip()
+        if not line:
+            return
+
+        parts = line.split()
+        status = parts[0] if parts else ""
+
+        if status == "UPGRADE_AVAILABLE" and len(parts) >= 3:
+            old, new = parts[1], parts[2]
+            _upgrade_info.update(status="upgrade_available", old=old, new=new)
+            logger.warning(
+                "LinkedIn-Outreach v%s available (current: v%s). "
+                "Run /outreach-upgrade or make upgrade.",
+                new,
+                old,
+            )
+        elif status == "JUST_UPGRADED" and len(parts) >= 3:
+            old, new = parts[1], parts[2]
+            _upgrade_info.update(status="just_upgraded", old=old, new=new)
+            logger.info(
+                "LinkedIn-Outreach upgraded from v%s to v%s.",
+                old,
+                new,
+            )
+        elif status == "UP_TO_DATE" and len(parts) >= 2:
+            _upgrade_info.update(status="up_to_date", version=parts[1])
+        else:
+            _upgrade_info.update(status="unknown", raw=line)
+    except subprocess.TimeoutExpired:
+        logger.debug("Upgrade check timed out (15s) — skipping.")
+    except Exception:
+        logger.debug("Upgrade check failed — skipping.", exc_info=True)
+
+
+import threading as _threading
+
+_upgrade_thread = _threading.Thread(target=_run_upgrade_check, daemon=True)
+_upgrade_thread.start()
+
+# ── MCP imports ──────────────────────────────────────────────────────────────
+
 from mcp.server.fastmcp import FastMCP
 
 import notify as _notify                # tools/notify.py

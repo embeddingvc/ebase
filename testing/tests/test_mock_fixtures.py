@@ -77,13 +77,21 @@ def test_load_regression_specs_from_fixtures() -> None:
     )
 
 
-def test_get_mock_conversations_lists_all_fixtures() -> None:
-    from web.mock_conversation import get_mock_conversations
+def test_get_mock_conversations_lists_all_fixtures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from web import mock_conversation as mc
 
-    data = get_mock_conversations()
+    # Isolate from on-disk mock sessions so the test sees only fixture
+    # placeholders (no live sessions).
+    empty_mock = tmp_path / "mock_isolated"
+    empty_mock.mkdir()
+    monkeypatch.setattr(mc, "mock_base", lambda: empty_mock)
+
+    data = mc.get_mock_conversations()
     assert len(data["cases"]) == 5
     assert data["total"] == 5
-    assert data["live_total"] >= 0
+    assert data["live_total"] == 0
     case_ids = {s["test_case_id"] for s in data["sessions"]}
     assert case_ids == {
         "eager_referral",

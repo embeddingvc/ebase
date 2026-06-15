@@ -56,7 +56,7 @@ override CLAUDE_INSTALL_LOCAL := $(LOCAL)
 endif
 
 .PHONY: run browser server stop stop-cron stop-web test test_conversation regression smoke install upgrade uninstall logs queue status help cron \
-	claude-install claude-cleanup
+	claude-install claude-cleanup sync-version check-version check-repo-url
 
 # ── Default target ────────────────────────────────────────────────────────────
 
@@ -247,6 +247,36 @@ cron: ## Start the scheduler + health API in foreground (WEB_HOST / WEB_PORT)
 	@mkdir -p outreach/storage logs
 	@echo "[cron] http://$(WEB_HOST):$(WEB_PORT)/health"
 	@cd "$(CURDIR)" && uv run uvicorn cron.server:app --host "$(WEB_HOST)" --port "$(WEB_PORT)"
+
+sync-version: ## Copy VERSION into pyproject.toml
+	@VER=$$(cat VERSION | tr -d '[:space:]'); \
+	VER="$$VER" uv run python -c "import pathlib, re, os; v=os.environ['VER']; p=pathlib.Path('pyproject.toml'); t=p.read_text(); p.write_text(re.sub(r'(?m)^version = .+$$', 'version = \"'+v+'\"', t))"; \
+	echo "pyproject.toml version → $$VER"
+
+check-version: ## CI gate: assert VERSION and pyproject.toml match
+	@VER=$$(cat VERSION | tr -d '[:space:]'); \
+	PYVER=$$(uv run python -c "import re, pathlib; m=re.search(r'(?m)^version = \"(.+)\"', pathlib.Path('pyproject.toml').read_text()); print(m.group(1))"); \
+	if [ "$$VER" != "$$PYVER" ]; then \
+	  echo "ERROR: VERSION ($$VER) != pyproject.toml ($$PYVER). Run: make sync-version" >&2; \
+	  exit 1; \
+	fi; \
+	echo "OK: VERSION and pyproject.toml both at $$VER"
+
+check-repo-url: ## Verify install.sh, README.md, and CONTRIBUTING.md use the same repo org/name
+	@SLUG=$$(grep -oE 'github\.com/[^/]+/LinkedIn-Outreach' install.sh | head -1 | sed 's/github\.com\///'); \
+	if [ -z "$$SLUG" ]; then \
+	  echo "ERROR: could not extract repo slug from install.sh" >&2; \
+	  exit 1; \
+	fi; \
+	FAIL=0; \
+	for f in README.md CONTRIBUTING.md; do \
+	  if ! grep -q "$$SLUG" "$$f"; then \
+	    echo "ERROR: $$f does not contain $$SLUG" >&2; \
+	    FAIL=1; \
+	  fi; \
+	done; \
+	if [ "$$FAIL" -eq 1 ]; then exit 1; fi; \
+	echo "OK: repo slug ($$SLUG) consistent across install.sh, README.md, CONTRIBUTING.md"
 
 help: ## List all targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
