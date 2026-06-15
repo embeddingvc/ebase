@@ -39,8 +39,11 @@ stop-web: ## Stop the background dashboard
 	  echo "[testing-web] not running (no pid file)"; \
 	fi
 
-test: ## Run the full pytest suite
-	@uv run pytest tests -v
+test: ## Run the pytest suite (excludes tests that need Chrome, Claude CLI, or API keys)
+	@uv run pytest tests -v \
+	  --ignore=tests/test_regression_workflow.py \
+	  --ignore=tests/test_conversation_planner.py \
+	  --ignore=tests/test_playwright_exploration.py
 
 regression: ## Mock workflow regression (needs `claude` CLI + auth)
 	@OUTREACH_MOCK=1 uv run pytest tests/test_regression_workflow.py -v

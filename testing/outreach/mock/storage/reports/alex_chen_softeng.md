@@ -18,7 +18,7 @@ Alex is evaluating Series A opportunities in ML infrastructure. He wants to move
 
 ## Outcome
 - **Resume:** Not shared (not requested in this flow)
-- **Email:** alexchen336@gmail.com
+- **Email:** alex.chen@example.com
 - **Call:** Scheduled for Wednesday, June 10, 2026 at 15:00 UTC  
   Meeting Link: https://mock.calendar.local/alex_chen_softeng/20260610T150000Z
 
