@@ -14,7 +14,17 @@ LinkedIn recruiting outreach that runs inside Claude Code — in your own signed
   <img src="assets/demo.svg" alt="ebase terminal demo — cold outreach to booked call in 6 days" width="800" />
 </p>
 
-That whole session starts with **one command**.
+Researched the profile. Wrote a personalized connection request. Sent it. Logged it to the pipeline. **One command.**
+
+---
+
+## Who is this for
+
+- **Recruiters and talent partners** tired of toggling between LinkedIn, a CRM, and a spreadsheet
+- **Founders doing their own sourcing** who'd rather ship product than write cold DMs
+- **Anyone replacing Dripify, Expandi, Octopus, or Linked Helper** and wanting something that won't get their account restricted
+
+If you spend time on LinkedIn outreach every day, ebase turns that into a conversation with Claude.
 
 ---
 
@@ -64,22 +74,44 @@ Every other outreach tool eventually gets your LinkedIn flagged. ebase doesn't b
 
 It hits the cap and stops with "resume tomorrow." No override, no workaround.
 
-### It runs in your real Chrome
+### Not computer use — LinkedIn-native MCP
 
-ebase drives your signed-in Chrome session over CDP — not a headless browser, not a bot account, nothing for LinkedIn to fingerprint. You keep browsing normally while ebase works the pipeline alongside you.
+Generic "computer use" tools screenshot the page and guess where to click. ebase is different: it's a purpose-built MCP server that wraps Playwright to execute LinkedIn operations directly — structured profile scrapes, connection requests, DMs, engagement — with typed inputs and JSON outputs. No pixel-guessing, no screenshot parsing, no prompt-injected click coordinates.
 
-### One sentence in, real outreach out
+The MCP drives your signed-in Chrome session over CDP. Not a headless browser, not a bot account — your real, authenticated session. You keep browsing normally while ebase works the pipeline alongside you.
 
-No dashboard to learn. No per-seat fees. Say what you want in plain English:
+### Every skill is a task you already do
+
+No dashboard to learn. No per-seat fees. Each skill maps to something you already spend time on every day:
+
+| What you'd normally do | ebase skill | What happens |
+|---|---|---|
+| Research + connect with a candidate | `/send-connection-request` | Reads their profile, writes a personalized note in your voice, sends, logs to pipeline |
+| Check which requests got accepted | `/sync-pending-connections` | Verifies acceptance on LinkedIn, updates your connections list, queues follow-ups |
+| Write a multi-touch DM sequence | `/conversation-planner` | Plans the next message based on thread history, your persona, and their profile |
+| Set up your outreach voice | `/setup-outreach` | Scrapes your LinkedIn profile, builds your persona and tone config |
+| Engage on a prospect's post | `/reply-to-post` | Writes a comment in your voice, confirms with you, posts it |
+
+Say what you want in plain English — each ask runs as a Claude skill:
 
 ```
 › connect to linkedin.com/in/maya-khatri
-› book a meeting with linkedin.com/in/jordan-liu
-› ask linkedin.com/in/sara-ramos for her resume
+› plan outreach for everyone who accepted this week
+› reply to this post from jordan-liu
 › follow up with last week's accepts
 ```
 
-Each ask runs as a Claude skill — ebase reads the profile, writes in your voice, sends, and logs it to your pipeline.
+### A day with ebase
+
+> **Morning** — Cron already synced last night's accepts and queued follow-ups. You didn't open LinkedIn.
+>
+> **10am** — "Connect to these 5 profiles from my shortlist." Five personalized connection requests go out in your voice.
+>
+> **2pm** — "Plan outreach for everyone who accepted this week." `/conversation-planner` drafts the next message for each, grounded in their profile and your thread history.
+>
+> **4pm** — "Send the first message to everyone in the queue." The queue worker executes, rate-limited, logged.
+>
+> **You sourced a full pipeline without opening LinkedIn once.**
 
 ---
 
@@ -87,8 +119,8 @@ Each ask runs as a Claude skill — ebase reads the profile, writes in your voic
 
 | Component | Description |
 |-----------|-------------|
-| **LinkedIn MCP server** | 30 tools — profiles, connect, message, engage, persist |
-| **Claude skills** | 5 chainable workflows in `~/.claude/skills` |
+| **LinkedIn MCP server** | 30 tools wrapping Playwright — structured profile scrapes, connect, message, engage, persist. Typed inputs, JSON outputs, no screenshot guessing. |
+| **Claude skills** | 7 chainable workflows in `~/.claude/skills` |
 | **Queue worker** | Batch automation from JSON queue files |
 | **Cron scheduler** | Auto-syncs accepts, plans follow-ups, respects rate limits |
 | **Per-user state** | Isolated prospects, threads, logs (JSON / JSONL) |
