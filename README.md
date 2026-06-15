@@ -10,33 +10,9 @@ LinkedIn recruiting outreach that runs inside Claude Code — in your own signed
 
 ### Cold to booked call in three sentences
 
-```
- ── Day 01 · Outreach ────────────────────────────────────
- › connect to linkedin.com/in/maya-khatri
- ● Reading profile — ex-Anthropic, inference. Recent post on speculative decoding.
- ● Drafting note in your voice — persona: founder · warm · specific.
-   "Maya — your speculative-decoding work is exactly what we're chasing.
-    Would love to compare notes."
- ✓ Connection request sent · 9 / 25 today.
-
- ── Day 03 · Routine check-in ────────────────────────────
- ⟳ ebase routine — syncing pending connections…
- ✓ Maya Khatri accepted · status → connected.
- › plan the next message for everyone who accepted
- ● Reading Maya's profile and your first note for context.
-   "Glad we connected, Maya. We're hiring a founding engineer to push
-    decoding further — open to a quick chat?"
- ✓ Follow-up queued · 14 / 50 messages today.
-
- ── Day 06 · Convert ─────────────────────────────────────
- ⟳ ebase routine — checking replies…
- ● Maya replied — "Sounds interesting, this week?"
- › plan a conversation to convert
- ● Proposing a 20-min intro — offering Tue 10:00 / Wed 14:00.
- ✓ Meeting scheduled · Tue 10:00 · added to pipeline.
-
- ↳ Maya:  cold → connected → in conversation → call booked.
-```
+<p align="center">
+  <img src="assets/demo.svg" alt="ebase terminal demo — cold outreach to booked call in 6 days" width="800" />
+</p>
 
 That whole session starts with **one command**.
 

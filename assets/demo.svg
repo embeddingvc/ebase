@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 530" width="800" height="530">
+  <defs>
+    <clipPath id="rc"><rect width="800" height="530" rx="14" /></clipPath>
+  </defs>
+  <style>
+    text { font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace }
+
+    /* Line appear animations — each fades in at its scheduled time, holds, fades out together */
+    @keyframes l1  { 0%,3.3%  {opacity:0} 3.8%  {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l2  { 0%,6.8%  {opacity:0} 7.3%  {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l3  { 0%,11.4% {opacity:0} 11.9% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l4  { 0%,15.1% {opacity:0} 15.6% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l5  { 0%,18.9% {opacity:0} 19.4% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l6  { 0%,24.5% {opacity:0} 25.0% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l7  { 0%,28.4% {opacity:0} 28.9% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l8  { 0%,31.8% {opacity:0} 32.3% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l9  { 0%,36.1% {opacity:0} 36.6% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l10 { 0%,40.0% {opacity:0} 40.5% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l11 { 0%,44.7% {opacity:0} 45.2% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l12 { 0%,48.4% {opacity:0} 48.9% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l13 { 0%,54.0% {opacity:0} 54.5% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l14 { 0%,57.9% {opacity:0} 58.4% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l15 { 0%,61.3% {opacity:0} 61.8% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l16 { 0%,65.6% {opacity:0} 66.1% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l17 { 0%,69.3% {opacity:0} 69.8% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l18 { 0%,74.0% {opacity:0} 74.5% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l19 { 0%,77.7% {opacity:0} 78.2% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    @keyframes l20 { 0%,81.6% {opacity:0} 82.1% {opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+
+    .l1  { animation: l1  21s infinite }
+    .l2  { animation: l2  21s infinite }
+    .l3  { animation: l3  21s infinite }
+    .l4  { animation: l4  21s infinite }
+    .l5  { animation: l5  21s infinite }
+    .l6  { animation: l6  21s infinite }
+    .l7  { animation: l7  21s infinite }
+    .l8  { animation: l8  21s infinite }
+    .l9  { animation: l9  21s infinite }
+    .l10 { animation: l10 21s infinite }
+    .l11 { animation: l11 21s infinite }
+    .l12 { animation: l12 21s infinite }
+    .l13 { animation: l13 21s infinite }
+    .l14 { animation: l14 21s infinite }
+    .l15 { animation: l15 21s infinite }
+    .l16 { animation: l16 21s infinite }
+    .l17 { animation: l17 21s infinite }
+    .l18 { animation: l18 21s infinite }
+    .l19 { animation: l19 21s infinite }
+    .l20 { animation: l20 21s infinite }
+
+    /* Cursor — visible from start, fades with content */
+    @keyframes cur { 0%{opacity:1} 86%{opacity:1} 90%{opacity:0} 100%{opacity:0} }
+    .cursor { animation: cur 21s infinite }
+
+    /* Caret blink */
+    @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+    .caret { animation: blink 1s steps(1) infinite }
+
+    /* Live-dot pulse */
+    @keyframes pulse { 0%,100%{opacity:.18} 50%{opacity:.35} }
+    .live-glow { animation: pulse 2s ease-in-out infinite }
+  </style>
+
+  <g clip-path="url(#rc)">
+    <!-- Background -->
+    <rect width="800" height="530" fill="#16150f" />
+
+    <!-- Title bar -->
+    <rect width="800" height="38" fill="#1f1d15" />
+    <line x1="0" y1="38" x2="800" y2="38" stroke="#322f23" />
+
+    <!-- Traffic-light dots -->
+    <circle cx="22" cy="19" r="5.5" fill="#e0654f" />
+    <circle cx="40" cy="19" r="5.5" fill="#d8a44a" />
+    <circle cx="58" cy="19" r="5.5" fill="#5ba35e" />
+
+    <!-- Title -->
+    <text x="400" y="23" text-anchor="middle" font-size="11.5" fill="#8d8772" letter-spacing=".06em">ebase · claude code</text>
+
+    <!-- Live indicator -->
+    <circle cx="750" cy="19" r="6" fill="#2e8a56" class="live-glow" />
+    <circle cx="750" cy="19" r="3" fill="#2e8a56" />
+    <text x="762" y="23" font-size="10.5" fill="#2e8a56" letter-spacing=".06em">LIVE</text>
+
+    <!-- ── Line 1: Day 01 · Outreach ──────────────────────── -->
+    <g class="l1" opacity="0">
+      <line x1="22" y1="62" x2="36" y2="62" stroke="#322f23" />
+      <text x="48" y="65" font-size="10.5" fill="#2151f5" letter-spacing=".12em">DAY 01 · OUTREACH</text>
+      <line x1="200" y1="62" x2="778" y2="62" stroke="#322f23" />
+    </g>
+
+    <!-- ── Line 2: › connect to … ─────────────────────────── -->
+    <g class="l2" opacity="0">
+      <text x="22" y="86" font-size="13" fill="#2151f5" font-weight="600">›</text>
+      <text x="36" y="86" font-size="13" fill="#ece6d4">connect to linkedin.com/in/maya-khatri</text>
+    </g>
+
+    <!-- ── Line 3: ● Reading profile … ────────────────────── -->
+    <g class="l3" opacity="0">
+      <text x="42" y="106" font-size="13" fill="#8d8772">●</text>
+      <text x="56" y="106" font-size="13" fill="#8d8772">Reading profile — ex-Anthropic, inference. Recent post on speculative decoding.</text>
+    </g>
+
+    <!-- ── Line 4: ● Drafting note … ──────────────────────── -->
+    <g class="l4" opacity="0">
+      <text x="42" y="124" font-size="13" fill="#8d8772">●</text>
+      <text x="56" y="124" font-size="13" fill="#8d8772">Drafting note in your voice — persona: founder · warm · specific.</text>
+    </g>
+
+    <!-- ── Line 5: Note "Maya — …" ────────────────────────── -->
+    <g class="l5" opacity="0">
+      <rect x="42" y="134" width="736" height="38" rx="6" fill="#201e16" />
+      <rect x="42" y="134" width="2" height="38" fill="#2151f5" />
+      <text x="58" y="151" font-size="12.5" fill="#ece6d4" font-style="italic">“Maya — your speculative-decoding work is exactly what we’re</text>
+      <text x="58" y="166" font-size="12.5" fill="#ece6d4" font-style="italic">chasing. Would love to compare notes.”</text>
+    </g>
+
+    <!-- ── Line 6: ✓ Connection sent … ────────────────────── -->
+    <g class="l6" opacity="0">
+      <text x="42" y="186" font-size="13" fill="#2e8a56">✓</text>
+      <text x="56" y="186" font-size="13" fill="#ece6d4">Connection request sent · 9 / 25 today.</text>
+    </g>
+
+    <!-- ── Line 7: Day 03 · Routine check-in ──────────────── -->
+    <g class="l7" opacity="0">
+      <line x1="22" y1="210" x2="36" y2="210" stroke="#322f23" />
+      <text x="48" y="213" font-size="10.5" fill="#2151f5" letter-spacing=".12em">DAY 03 · ROUTINE CHECK-IN</text>
+      <line x1="264" y1="210" x2="778" y2="210" stroke="#322f23" />
+    </g>
+
+    <!-- ── Line 8: ⟳ syncing … ────────────────────────────── -->
+    <g class="l8" opacity="0">
+      <text x="42" y="234" font-size="13" fill="#2151f5">⟳</text>
+      <text x="56" y="234" font-size="13" fill="#ece6d4">ebase routine — syncing pending connections…</text>
+    </g>
+
+    <!-- ── Line 9: ✓ Maya accepted … ──────────────────────── -->
+    <g class="l9" opacity="0">
+      <text x="42" y="254" font-size="13" fill="#2e8a56">✓</text>
+      <text x="56" y="254" font-size="13" fill="#ece6d4">Maya Khatri accepted · status → connected.</text>
+    </g>
+
+    <!-- ── Line 10: › plan the next … ─────────────────────── -->
+    <g class="l10" opacity="0">
+      <text x="22" y="274" font-size="13" fill="#2151f5" font-weight="600">›</text>
+      <text x="36" y="274" font-size="13" fill="#ece6d4">plan the next message for everyone who accepted</text>
+    </g>
+
+    <!-- ── Line 11: ● Reading Maya's … ────────────────────── -->
+    <g class="l11" opacity="0">
+      <text x="42" y="294" font-size="13" fill="#8d8772">●</text>
+      <text x="56" y="294" font-size="13" fill="#8d8772">Reading Maya’s profile and your first note for context.</text>
+    </g>
+
+    <!-- ── Line 12: Note "Glad we connected …" ────────────── -->
+    <g class="l12" opacity="0">
+      <rect x="42" y="304" width="736" height="38" rx="6" fill="#201e16" />
+      <rect x="42" y="304" width="2" height="38" fill="#2151f5" />
+      <text x="58" y="321" font-size="12.5" fill="#ece6d4" font-style="italic">“Glad we connected, Maya. We’re hiring a founding engineer to push</text>
+      <text x="58" y="336" font-size="12.5" fill="#ece6d4" font-style="italic">decoding further — open to a quick chat?”</text>
+    </g>
+
+    <!-- ── Line 13: ✓ Follow-up queued … ──────────────────── -->
+    <g class="l13" opacity="0">
+      <text x="42" y="356" font-size="13" fill="#2e8a56">✓</text>
+      <text x="56" y="356" font-size="13" fill="#ece6d4">Follow-up queued · 14 / 50 messages today.</text>
+    </g>
+
+    <!-- ── Line 14: Day 06 · Convert ──────────────────────── -->
+    <g class="l14" opacity="0">
+      <line x1="22" y1="380" x2="36" y2="380" stroke="#322f23" />
+      <text x="48" y="383" font-size="10.5" fill="#2151f5" letter-spacing=".12em">DAY 06 · CONVERT</text>
+      <line x1="195" y1="380" x2="778" y2="380" stroke="#322f23" />
+    </g>
+
+    <!-- ── Line 15: ⟳ checking replies … ──────────────────── -->
+    <g class="l15" opacity="0">
+      <text x="42" y="402" font-size="13" fill="#2151f5">⟳</text>
+      <text x="56" y="402" font-size="13" fill="#ece6d4">ebase routine — checking replies…</text>
+    </g>
+
+    <!-- ── Line 16: ● Maya replied … ──────────────────────── -->
+    <g class="l16" opacity="0">
+      <text x="42" y="420" font-size="13" fill="#8d8772">●</text>
+      <text x="56" y="420" font-size="13" fill="#8d8772">Maya replied — “Sounds interesting, this week?”</text>
+    </g>
+
+    <!-- ── Line 17: › plan a conversation … ───────────────── -->
+    <g class="l17" opacity="0">
+      <text x="22" y="440" font-size="13" fill="#2151f5" font-weight="600">›</text>
+      <text x="36" y="440" font-size="13" fill="#ece6d4">plan a conversation to convert</text>
+    </g>
+
+    <!-- ── Line 18: ● Proposing … ─────────────────────────── -->
+    <g class="l18" opacity="0">
+      <text x="42" y="458" font-size="13" fill="#8d8772">●</text>
+      <text x="56" y="458" font-size="13" fill="#8d8772">Proposing a 20-min intro — offering Tue 10:00 / Wed 14:00.</text>
+    </g>
+
+    <!-- ── Line 19: ✓ Meeting scheduled … ─────────────────── -->
+    <g class="l19" opacity="0">
+      <text x="42" y="476" font-size="13" fill="#2e8a56">✓</text>
+      <text x="56" y="476" font-size="13" fill="#ece6d4">Meeting scheduled · Tue 10:00 · added to pipeline.</text>
+    </g>
+
+    <!-- ── Line 20: ↳ Maya: cold → … (meta) ──────────────── -->
+    <g class="l20" opacity="0">
+      <line x1="42" y1="492" x2="778" y2="492" stroke="#322f23" />
+      <text x="42" y="508" font-size="12.5" fill="#8d8772">↳</text>
+      <text x="58" y="508" font-size="12.5" fill="#8d8772">Maya:  cold → connected → in conversation → call booked.</text>
+    </g>
+
+    <!-- ── Cursor prompt ──────────────────────────────────── -->
+    <g class="cursor">
+      <text x="22" y="524" font-size="13" fill="#2151f5" font-weight="600">›</text>
+      <rect class="caret" x="36" y="512" width="8" height="14" fill="#2151f5" />
+    </g>
+  </g>
+
+  <!-- Border -->
+  <rect width="800" height="530" rx="14" fill="none" stroke="#322f23" />
+</svg>
