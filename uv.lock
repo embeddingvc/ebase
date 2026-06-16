@@ -246,7 +246,7 @@ wheels = [
 
 [[package]]
 name = "ebase"
-version = "1.0.0"
+version = "1.0.0.1"
 source = { virtual = "." }
 dependencies = [
     { name = "certifi" },
