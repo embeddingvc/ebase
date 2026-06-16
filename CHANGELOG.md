@@ -10,9 +10,6 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - pyproject.toml now includes full package metadata: description, readme, license, keywords, classifiers, and project URLs
 
-### Fixed
-- TOML scoping bug where `dependencies` was placed after `[project.urls]`, causing all six runtime packages to be silently dropped from the lockfile
-
 ## [1.0.0] - 2026-06-15
 
 ### Changed
