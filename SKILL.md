@@ -1,12 +1,6 @@
 ---
 name: ebase
-description: >-
-  LinkedIn recruiting outreach that runs inside Claude Code. Sends personalized
-  connection requests, plans multi-step DM sequences, syncs thread state from
-  LinkedIn, and replies to posts — all from your own signed-in Chrome session
-  under LinkedIn's safe daily limits. Includes 7 skills: setup-outreach,
-  send-connection-request, conversation-planner, sync-planner-persona-from-linkedin,
-  reply-to-post, outreach-upgrade, and outreach-uninstall.
+description: "LinkedIn recruiting outreach that runs inside Claude Code. Sends personalized connection requests, plans multi-step DM sequences, and replies to posts from your own signed-in Chrome session under LinkedIn's safe daily limits."
 ---
 
 # ebase — LinkedIn Outreach for Claude Code
