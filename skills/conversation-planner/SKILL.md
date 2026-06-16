@@ -1,0 +1,573 @@
+---
+name: conversation-planner
+description: >
+  Single-prospect LinkedIn DM sequencer. Given a prospect_id, sync the live
+  thread via MCP fetch_chat_history, plan exactly one next step, deliver with
+  send_message or send_connection_request, then persist outcomes via outreach
+  filesystem MCP tools (get_* / upsert_* / append_* / save_outreach_report).
+  Emits one PlannedMessage through append_planned_message_log. **Never loops
+  over multiple prospects** — batch fan-out is owned by the dashboard
+  scheduler's per-prospect plan sweep (web/conversation_plan_sweep.py).
+---
+
+# Conversation Planner
+
+## Browser tool policy (strict — read first)
+
+Every browser action in this skill goes through the **LinkedIn MCP server** (tools prefixed
+`mcp__linkedin__*`) and **only** that server. The LinkedIn MCP attaches to the operator's
+logged-in Chrome over CDP on port `9222` with this project's rate-limits, human-like jitter,
+and bot-detection safeguards — substituting any other browser surface defeats those guarantees
+and can get the operator's LinkedIn account flagged.
+
+Even if other browser tools are registered in the current Claude CLI session, do **not** use
+them for this workflow:
+
+- **No other browser MCPs.** Do not use `chrome-devtools`, `playwright`, `puppeteer`,
+  `browser-use`, `browserbase`, `gstack` browser, or any other Chrome-attached MCP to open,
+  click, type, or read on `linkedin.com`.
+- **No "Claude in Chrome" extension / Chrome side-panel** to drive the browser on `linkedin.com`.
+- **No `WebFetch`, `WebSearch`, `curl`, `wget`, `fetch`, `requests`, or `Bash`** against
+  `linkedin.com` / `licdn.com`. Even read-only thread inspection must go through
+  `mcp__linkedin__fetch_chat_history` (not a raw HTTP GET, not the Chrome side-panel).
+- **No manual operator hand-off** as a substitute. Call the LinkedIn MCP tool; on error, report
+  the error verbatim, leave `planned_message` in place for retry, and stop.
+
+Allowed browser-side tools in this skill (LinkedIn MCP only):
+
+- `mcp__linkedin__scrape_profile` (when fresh profile data is required at plan time)
+- `mcp__linkedin__fetch_chat_history` (Phase A)
+- `mcp__linkedin__send_message` (Phase C — DM delivery)
+- `mcp__linkedin__send_connection_request` (Phase C — Step 1 cold connect)
+
+If `mcp__linkedin__*` tools are not registered in the current session, **stop and tell the
+operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
+`make claude-install`). Do **not** pick up a different browser tool as a fallback. **Plan-only**
+mode (Phase B only, no MCP) is the only allowed degradation — never substitute another browser.
+
+## Role
+
+You are the configured outreach operator defined in runtime planner config.
+You **plan and compose** exactly one outbound touch for **one** prospect per
+run, and you **drive delivery** through the LinkedIn MCP tools
+(`fetch_chat_history`, `send_message`, `send_connection_request` — see
+`tools/server.py`). You still **do not** hand-operate the browser outside
+those tools.
+
+> **Per-prospect only.** This skill operates on a single `prospect_id` per
+> invocation. Fan-out across the connection list is performed by the
+> dashboard's per-prospect plan sweep (see
+> `docs/designs/per-connection-routines-with-backoff-design.md`). Do not
+> attempt to enumerate other prospects in the same run — keep your context
+> window tight on the one prospect you were given.
+
+**Filesystem rule:** Never read or write `outreach/` data with raw paths, `read_file`, or shell
+commands. The MCP host’s cwd is unknown — always use the **outreach filesystem tools** in
+`tools/server.py` (`get_connections`, `get_prospect`, `get_conversation`, `upsert_conversation`,
+`upsert_prospect`, `save_connection`, `append_action_log`, `append_planned_message_log`,
+`save_outreach_report`, `remove_pending_queue_entry`).
+
+For each prospect run, treat this skill as the **conductor**: run the phases below in order unless
+the user asks for a read-only sync or plan-only mode.
+
+### Runtime planner config (load first every run)
+
+Before planning any message, call MCP tool `get_conversation_planner_config` and parse JSON. This is
+the source of truth for operator profile, campaign goal/topic, and desired end states. Do not cache
+across runs; always read fresh so file edits apply immediately without skill reload or server restart.
+
+Server-managed files:
+- Planner (campaign, end goals, message rules, router): `outreach/config/conversation_planner.json`
+- Operator identity (**`persona`**, **`organization`**): `outreach/config/persona.json` (typically gitignored — copy `persona.json.example` locally)
+
+The MCP **`get_conversation_planner_config`** response merges both so you always have one JSON with `persona` + `organization` + the rest.
+
+**Initializing or refreshing persona from LinkedIn:** Follow the dedicated Skill **`sync-planner-persona-from-linkedin`**: call MCP **`parse_profile`**, synthesize `persona` + `organization` copy from the v2 envelope (experience, education, skills, activity, about), then call **`merge_conversation_planner_identity`** to persist into **`persona.json`** only those fields. Do not rely on ad-hoc scraping for a full identity refresh when depth matters.
+
+Use config fields when composing:
+- `persona.name`, `persona.role`, `persona.organization`, `persona.specialization`
+- `organization.description`
+- `campaign.goal`, `campaign.topic`, `campaign.value_proposition`
+- `conversation_end_goals.preferred[]` / `fallback[]` (their `id` values can be custom)
+- `message_rules` limits and phrasing constraints
+- `message_rules.tone` (short adjective list) and `message_rules.tone_guidelines`
+  (longer free-form voice description)
+- `message_rules.style_examples[]` — operator-authored example replies (see
+  **Tone & style examples** below). Treat them as the canonical voice cue.
+- `router` for route selection (`default_plan_mode`, `step_timeout_hours`,
+  `step4_path_priority`, `signal_routes`)
+
+If a field is missing, fall back to the behavior currently documented in this skill.
+
+---
+
+## Schemas
+
+All prospect and conversation payloads must conform to the canonical schemas (for validation and
+field meanings). The agent does **not** open schema files by path unless the operator explicitly
+allows it; rely on documented fields below and MCP-returned JSON.
+
+| Record | Schema (reference) |
+|--------|-------------------|
+| Prospect | `outreach/schemas/prospect.schema.json` |
+| Conversation | `outreach/schemas/conversation.schema.json` |
+
+### Outreach filesystem MCP tools (authoritative I/O)
+
+| Tool | Use |
+|------|-----|
+| `get_prospect` | Load one prospect by `prospect_id`. On `error: prospect not found`, stop or branch per operator. |
+| `get_conversation` | Load one conversation by `prospect_id`. If missing, initialise a new object in memory that matches the conversation schema, then `upsert_conversation` when persisting. |
+| `upsert_conversation` | Persist the full conversation object: pass `prospect_id` and `conversation` = **stringified JSON** of the whole document. |
+| `upsert_prospect` | Persist the full prospect object the same way when `outreach_stage` (or other fields) must change. |
+| `save_connection` | Upsert one row in the connections list (used heavily by send-connection-request; planner may use after intros). |
+| `append_action_log` | Append one JSON object line to the actions log (`entry` = stringified JSON). |
+| `append_planned_message_log` | Append one PlannedMessage object (`entry` = stringified JSON). |
+| `merge_conversation_planner_identity` | Shallow-merge `persona` and/or `organization` JSON blobs into `outreach/config/persona.json` after you distill copy (typically following Skill `sync-planner-persona-from-linkedin`). |
+| `save_outreach_report` | Write markdown body for end-of-sequence reports (`prospect_id`, `content`). |
+| `remove_pending_queue_entry` | Remove a prospect from `pending.json` when the pipeline uses the queue. |
+| `schedule_meeting` | Book (mock) or reserve a call after email + time are known; persist `meeting_link` on the conversation. |
+
+---
+
+## Inputs
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prospect_id` | string | **yes** | Required. The single prospect this run will plan for. If omitted or empty, **abort** with a clear error — never fall back to walking the connections list. |
+| (echo) | — | — | Surface PlannedMessage JSON to the user if helpful; **persistence** is always `append_planned_message_log`. |
+
+### Loading records (MCP only)
+
+1. `get_prospect(prospect_id)` → parse JSON → `prospect` (abort if tool returns `error: ...`).
+2. `get_conversation(prospect_id)` → if success, parse → `conversation`; if `error: conversation not found`, build a minimal valid in-memory `conversation` with `prospect_id`, `outreach_stage`, `messages: []`, etc., then persist with `upsert_conversation` when appropriate.
+
+Do **not** call `get_connections` in this skill. The connections list is for
+the dashboard sweep; this skill operates on the one prospect handed to it.
+
+---
+
+## LinkedIn sequence workflow (MCP + state-updater + planner)
+
+Use this as the default end-to-end runbook. **Phases A–D** map to MCP calls and the companion
+**state-updater** skill (`outreach/skills/state-updater/SKILL.md`).
+
+### Phase A — Sync thread from LinkedIn
+
+1. Take `prospect.linkedin_url` as `profile_url`.
+2. Call MCP **`fetch_chat_history`** (`profile_url`, optional `cdp_url` if not default). Parse the
+   JSON array `[{ "message": string, "self": boolean }, ...]` (`self` = logged-in user).
+3. Apply **state-updater** step 2: map `self: true` → `sender: "operator"`, `self: false` →
+   `sender: "prospect"`, `text` = `message`; assign stable ISO timestamps for new rows; merge into
+   `conversation.messages` without duplicating existing lines.
+4. Persist merged thread: **`upsert_conversation(prospect_id, json.dumps(conversation))`** so local
+   state matches LinkedIn before planning.
+5. Optionally run intent classification and `next_action` **hints** from state-updater steps 3–6 when
+   they help (disinterest, conversion). The **5-step sequence state machine below remains authoritative**
+   for what to send next; reconcile conflicts in favour of terminal outcomes (`not_interested`,
+   `mark_dead`, resume/email captured) when the thread clearly demands it.
+
+
+### Phase B — Plan (this skill’s core)
+
+1. Ensure `prospect` and `conversation` are current (after Phase A, use in-memory objects or call
+   `get_prospect` / `get_conversation` again if another tool may have changed files).
+2. Apply **Inputs → The Outreach Sequence**, **State Machine**, and **Composing the Message** below.
+   When `router.signal_routes` provides an explicit route for an observed signal, apply it before
+   default state-machine branching.
+3. Perform **Side Effects** (below): build the updated `conversation` object, then
+   **`upsert_conversation`**. For end-of-sequence, **`save_outreach_report`** then upsert conversation
+   with `report_path` set to the canonical relative string `outreach/storage/reports/<prospect_id>.md`.
+4. Emit **PlannedMessage** JSON: **`append_planned_message_log(entry=json.dumps(...))`** and echo to
+   the user if useful.
+
+### Phase C — Deliver (MCP)
+
+Only when `planned_message` is non-null and the run should send:
+
+| `next_action` | MCP tool | Parameters |
+|---------------|----------|------------|
+| `send_followup_message` | **`send_message`** | `profile_url` = `prospect.linkedin_url`, `message` = `planned_message` |
+| `send_connection_request` | **`send_connection_request`** | `profile_url`, `note` = connection note (Step 1, ≤300 chars) |
+
+Do **not** call `send_message` for connection-request flows; use `send_connection_request` with the note.
+
+If MCP returns an error string instead of success (`ok` / `[MOCK] ok`), log the failure, **do not**
+pretend the message was delivered, and leave `planned_message` in place for retry unless the operator
+directs otherwise.
+
+### Phase D — Post-delivery bookkeeping
+
+After a **successful** send:
+
+1. Update the in-memory `conversation` object: set `last_action` to the action you executed
+   (`send_followup_message` or `send_connection_request`), `last_action_timestamp` to ISO 8601 UTC
+   **now**, and `planned_message` to `null` (and `connection_note` already set if applicable).
+2. **`upsert_conversation(prospect_id, json.dumps(conversation))`**.
+3. **`append_action_log(entry=json.dumps({...}))`** e.g.
+   `{ "action": "message_sent", "prospect_id": "<id>", "last_action": "<action>", "timestamp": "<ISO>" }`.
+4. If `conversation.outreach_stage` changed, merge the same `outreach_stage` into `prospect` and call
+   **`upsert_prospect(prospect_id, json.dumps(prospect))`**.
+5. If the pipeline uses the pending queue, **`remove_pending_queue_entry(prospect_id)`** when
+   appropriate.
+
+### Modes
+
+- **Full sequence (default):** Phase A → B → C (if applicable) → D.
+- **Plan-only:** Phase B only (no MCP); useful when Chrome is offline.
+- **Sync-only:** Phase A (+ state-updater logging) only; no PlannedMessage send.
+
+---
+
+## The Outreach Sequence
+
+The sequence has five steps. Each run sends **exactly one step** — never two.
+
+| Step | Name | Sequence step value | Outreach stage after send |
+|------|------|---------------------|---------------------------|
+| 1 | Intro | 1 | `pending_connection` (if connection request) or `engaged` |
+| 2 | Career Deep-Dive | 2 | `engaged` |
+| 3 | Career Plan | 3 | `engaged` |
+| 4 | The Ask | 4 | `engaged` |
+| 5 | The Close | 5 | `converted` → then `ended` |
+
+### Step 1 — Intro
+
+**Goal:** Introduce yourself using configured persona/org and invite them to explore the configured campaign goal/topic.
+
+- Introduce yourself using `persona.name` and `persona.organization`.
+- One sentence on what the organization does using `organization.description`.
+- Ask if they're open to exploring.
+- If `connection_status == "none"`: this message becomes the **connection request note** (≤ 300 characters hard limit).
+- If already connected: send as a regular DM (≤ 500 characters).
+- Reference one specific signal (post, career move, shared connection).
+
+### Step 2 — Career Deep-Dive
+
+**Goal:** Learn about their career journey and current focus.
+
+- Reference specific roles, companies, transitions, or posts from `recent_posts`.
+- Ask about their current work and what excites them most right now.
+- Conversational tone — not an interview.
+- ≤ 500 characters.
+
+### Step 3 — Career Plan
+
+**Goal:** Understand their trajectory and what they are looking for next relative to the configured campaign topic.
+
+- Build on their Step 2 reply.
+- Ask about future plans aligned with `campaign.topic` (for example startup roles, enterprise roles, advisory, or founder paths).
+- Keep it open-ended so they share honestly.
+- ≤ 500 characters.
+
+### Step 4 — The Ask
+
+**Goal:** Progress toward a configured preferred end goal.
+
+Choose based on conversation signals and `conversation_end_goals.preferred`.
+If `router.step4_path_priority` exists, treat it as the tie-break order for which preferred goal to
+ask for first.
+
+**Path A — Resume ask** (when `resume_received` or equivalent custom goal is preferred and they signal openness):
+- Ask if they would be willing to share their resume.
+- Frame it as helping match them with the right opportunities under `campaign.goal`.
+- ≤ 500 characters.
+
+**Path B — Email / call ask** (when call-oriented goal is preferred or they prefer a conversation):
+- Offer to schedule for a quick call.
+- Ask for their preferred email.
+- ≤ 500 characters.
+
+### Step 5 — The Close
+
+**Goal:** Confirm the handoff and end the sequence.
+
+**When `end_goal` is `schedule_meeting` (or the configured preferred goal is call-oriented):**
+
+Call **`schedule_meeting`** in the same run **before** composing the Step 5 close message when **both** are true:
+
+1. **Email** is known — from the merged thread, `conversation.email`, or prospect text (e.g. `alex.chen@example.com`).
+2. **Scheduling intent** is clear — prospect agreed to a call and gave a concrete time **or** you resolve ambiguous phrasing (“next week”, “anytime next week”) to a single ISO 8601 UTC instant (e.g. next Tuesday 15:00 UTC) and mention that time in the closing DM.
+
+Do **not** call `schedule_meeting` before email is known. Do **not** call it for `end_goal: obtain_resume` unless config explicitly maps to a call goal.
+
+**Step 5 workflow (call / meeting path — Option A, same run):**
+
+| Step | Action |
+|------|--------|
+| 1 | `schedule_meeting(email=..., datetime=..., prospect_id=...)` (or `profile_url` if id unknown) |
+| 2 | Parse JSON response → set `conversation.email`, `conversation.meeting_link` |
+| 3 | `upsert_conversation` |
+| 4 | Compose Step 5 close (reference calendar invite / `meeting_link` or “invite sent to &lt;email&gt;”) |
+| 5 | `send_message` (Phase C), then terminal fields + `ended_reason: call_scheduled` + report |
+
+On `error: ...` from the tool, do not claim the meeting is booked; fix inputs or end with an appropriate fallback reason.
+
+**If resume shared (or equivalent configured handoff artifact):**
+- Thank them and confirm you will review and connect them with relevant teams.
+- Set `ended_reason` to matching configured goal ID (default `"resume_received"`).
+
+**If email / call scheduled (or equivalent configured meeting goal):**
+- After `schedule_meeting` + `upsert_conversation`, confirm the calendar invite / intro is coming.
+- Note `scheduled_at` / `meeting_link` in `stage_history` when present.
+- Set `ended_reason` to matching configured goal ID (default `"call_scheduled"`).
+- In the outreach report **Outcome → Call**, use the scheduled time and `meeting_link` from the conversation — not “Not scheduled”.
+
+**If not interested:**
+- End warmly, leave the door open.
+- Set `ended_reason` to a configured fallback ID (default `"not_interested"`).
+
+---
+
+## State Machine
+
+Use the table below to determine which step to execute (or whether to end without sending).
+
+| Conversation state | `sequence_step` | Action |
+|--------------------|-----------------|--------|
+| No messages sent | null | Send Step 1 |
+| Step 1 sent, prospect replied positively | 1 | Send Step 2 |
+| Step 1 sent, no reply after ≥ timeout | 1 | End — `no_response` |
+| Step 2 sent, prospect replied | 2 | Send Step 3 |
+| Step 2 sent, no reply after ≥ timeout | 2 | End — `no_response` |
+| Step 3 sent, prospect replied | 3 | Send Step 4 |
+| Step 3 sent, no reply after ≥ timeout | 3 | End — `no_response` |
+| Step 4 sent, prospect replied | 4 | Send Step 5 |
+| Step 4 sent, no reply after ≥ timeout | 4 | End — `no_response` |
+| Step 5 sent or sequence naturally closed | 5 | End — appropriate reason |
+| Prospect expressed disinterest at any point | any | End — `not_interested` |
+| Resume / email / call captured | any | Send Step 5 (close) then End |
+
+"No reply after ≥ timeout" means `last_action_timestamp` is older than `router.step_timeout_hours`
+(default 48) before the current UTC time and there are no new prospect messages after that
+timestamp.
+
+### Router configuration (apply before defaults)
+
+Use `router.signal_routes` from config as an override map when signals are clear:
+
+- `disinterest` → mark as terminal (`next_action` / `ended_reason` from route config).
+- `no_response_timeout` → terminal timeout route from config.
+- `resume_or_artifact_received` → force Step 5 close with configured `preferred_goal_id`.
+- `email_or_call_intent` → route Step 4 toward call/email ask using configured goal ID.
+
+If route config is missing or incomplete for a signal, fall back to the default state machine and
+goal selection rules above.
+
+---
+
+## Tone & style examples (operator voice)
+
+`message_rules.tone`, `message_rules.tone_guidelines`, and
+`message_rules.style_examples[]` together describe how the **operator**
+actually writes. They override the generic tone defaults below whenever they
+are present.
+
+- `tone` — short comma-separated adjectives (e.g. `"warm, casual, direct"`).
+- `tone_guidelines` — optional longer prose: do/don't, sentence length,
+  punctuation habits, formality, emoji policy, etc.
+- `style_examples[]` — array of objects, each `{ label?, context?, incoming?, reply }`:
+  - `reply` (**required**) — a real or representative example of how the
+    operator would write a message. Mirror its rhythm, vocabulary, sentence
+    length, and punctuation.
+  - `incoming` (optional) — the prospect message the example is replying to.
+    `null` / empty means it is an outbound opener (Step 1, Step 2 cold ask).
+  - `context` / `label` (optional) — situational hints (e.g.
+    `"They asked what we do"`, `"Day-1 connect note"`).
+
+Treat `style_examples[]` as **canonical voice samples**: pattern-match against
+their cadence, contractions, capitalization, and phrasing instead of inventing
+your own. Do not copy them verbatim — adapt to the current prospect and signal.
+
+If `style_examples` is empty and `tone_guidelines` is blank, fall back to the
+short `tone` string and the generic guidance in *Composing the Message*.
+
+## Composing the Message
+
+Apply these rules to **every message**:
+
+- Reference at least one specific detail from `recent_posts` or `notes`.
+- Never open with "I came across your profile", "hope this message finds you", "reaching out to connect", or "touching base".
+- Do not use: "synergy", "I'd love to pick your brain", "circle back", "bandwidth".
+- Include the prospect's first name somewhere in the message.
+- Sound like a real person wrote it for this one person — not a template.
+- Tone: warm, professionally curious, low-pressure (override with
+  `message_rules.tone` / `tone_guidelines` / `style_examples[]` when present).
+- Before finalising: ask yourself *would a real person actually send this?* If it reads like a template, rewrite it.
+- Sanity check against `style_examples[]`: does this message read like
+  something the operator would actually have written?
+
+Character limits:
+- Connection request note (Step 1, `connection_status == "none"`): **≤ 300 characters** (LinkedIn hard limit — count exactly).
+- All other messages: **≤ 500 characters**.
+
+---
+
+## Side Effects (in-memory object → MCP persist; then Phase C send)
+
+Mutate a single **`conversation`** dict in memory, then persist with **`upsert_conversation`** — never
+by writing a path yourself. In a **full workflow**, apply the updates once the plan is final, emit
+PlannedMessage via **`append_planned_message_log`**, then run **Phase C–D**.
+
+### 1. Update the conversation record
+
+After composing the message, set on **`conversation`**:
+
+- `planned_message` → composed message text.
+- `next_action` → appropriate action:
+  - Step 1, `connection_status == "none"` → `"send_connection_request"`
+  - Step 1, already connected → `"send_followup_message"`
+  - Steps 2–4 → `"send_followup_message"`
+  - Step 5 (close) → `"send_followup_message"`
+  - End without sending → `"mark_ended"` or `"mark_dead"`
+- `next_action_after` → `null` unless a deliberate delay.
+- Step 1 + connection note → `connection_note` = message text.
+- Advance `outreach_stage` (see state machine).
+- Append to `stage_history`: `{ "stage": "<new_stage>", "entered_at": "<ISO UTC now>", "reason": "<brief reason>" }`.
+- `sequence_step` → step just planned.
+
+Then: **`upsert_conversation(prospect_id, json.dumps(conversation))`**.
+
+### 2. End-of-sequence side effects (only when ending)
+
+When the sequence ends (`ended_reason` is set; can be default or custom config value):
+
+a. **Terminal fields** on **`conversation`**:
+   - `ended_at`, `ended_reason`, `outreach_stage` → `"ended"` or `"dead"`, `next_action` → `null`,
+     `planned_message` → `null`
+
+b. **`save_outreach_report(prospect_id, content)`** with markdown body:
+
+```
+# LinkedIn Outreach Report: <Full Name>
+
+Profile:  <linkedin_url>
+Date:     <YYYY-MM-DD>
+Status:   <Ended — Resume Received | Ended — Call Scheduled | Ended — Not Interested | Ended — No Response>
+Sequence reached: Step <n>
+
+## Profile Summary
+- <headline / title>
+- <current role and company>
+- <key skills or domain expertise>
+
+## Conversation Summary
+<2–4 sentences summarising the thread: what was discussed, what signals emerged>
+
+## Career Plans
+<What the prospect shared about their next steps, if anything>
+
+## Outcome
+- Resume: <path to saved file or "Not shared">
+- Email: <their email or "Not shared">
+- Call: <scheduled details or "Not scheduled">
+
+## Notes
+<Any additional context useful for future outreach or handoff>
+```
+
+   - Set `report_path` on **`conversation`** to `outreach/storage/reports/<prospect_id>.md` (schema-relative string).
+   - **`upsert_conversation`** again with the updated object.
+
+c. **`append_action_log(entry=json.dumps({...}))`**:
+```json
+{ "action": "conversation_ended", "prospect_id": "<id>", "ended_reason": "<reason>", "sequence_step": <n>, "timestamp": "<ISO UTC>" }
+```
+
+d. Sync **`prospect.outreach_stage`** with **`upsert_prospect`** if needed.
+
+e. Mark the connection row complete: **`save_connection`** with the same `profile_url`, `name`, `title`, and `prospect_id` as the existing row, and **`connection_status`** → **`"ended"`**. The dashboard sweep skips rows already **`"ended"`**. (A terminal **`upsert_conversation`** also promotes the row when `outreach_stage` is **`"ended"`** or **`"dead"`**, but call **`save_connection`** explicitly so sweep filters stay correct even if conversation sync order varies.)
+
+---
+
+## Output — PlannedMessage
+
+Build the PlannedMessage object, then **`append_planned_message_log(entry=json.dumps(planned_message))`**.
+Optionally print the same JSON for the operator; file logging must go through the MCP tool.
+
+```json
+{
+  "prospect_id":    "<id>",
+  "stage":          "<outreach_stage after planning>",
+  "sequence_step":  <1–5 or null>,
+  "action":         "<next_action value>",
+  "message":        "<exact message text, or null if ending without a send>",
+  "end_conversation": <true | false>,
+  "ended_reason":   "<reason code or null>",
+  "generated_at":   "<ISO 8601 UTC>",
+  "char_count":     <integer or null>
+}
+```
+
+`message` is null only when `end_conversation` is true and there is no final closing message to send (e.g., prospect said not interested after the close was already sent).
+
+---
+
+## Example Invocations
+
+### Fresh prospect — Step 1
+
+```
+Run conversation-planner with prospect_id = "alex_chen_softeng"
+```
+
+Expected: Step 1 message (connection note ≤ 300 chars), `next_action = "send_connection_request"`.
+
+### Prospect replied — Step 2
+
+```
+Run conversation-planner with prospect_id = "alex_chen_softeng"
+# Phase A: fetch_chat_history → merge their reply into messages
+# Phase B–D: plan Step 2, send_message with planned text, update last_action
+```
+
+Expected: Step 2 career deep-dive message, `next_action = "send_followup_message"`, MCP `send_message` succeeds, bookkeeping completed.
+
+### No reply after 2 days
+
+```
+Run conversation-planner with prospect_id = "alex_chen_softeng"
+# (last_action_timestamp is > 48h ago, no new prospect messages)
+```
+
+Expected: `end_conversation = true`, `ended_reason = "no_response"`, `message = null`, report saved.
+
+---
+
+## Test and fixture data (do not corrupt)
+
+- **`tests/` is off-limits for outreach writes.** Under `tests/` — especially `tests/fixtures/` (e.g.
+  `tests/fixtures/conversation-planner/`) — files exist for automated tests. Do **not** edit, delete,
+  move, or overwrite them while running this skill unless the user explicitly asked you to change
+  **test code or fixtures**.
+- **Do not import fixtures into the live pipeline.** Never copy JSON from `tests/fixtures/` into
+  `upsert_conversation`, `upsert_prospect`, or browser sends. MCP persistence targets the operational
+  `outreach/` tree only; fixtures are outside that tree and are not loaded by `get_*` tools.
+- **Prospect IDs:** If an id matches a fixture basename used only in tests, confirm with the operator
+  before writing production pipeline data under that id.
+
+---
+
+## Important constraints
+
+- **One prospect per run.** `prospect_id` is required; if missing, abort with
+  a clear error rather than walking the connections list. Connection-list
+  fan-out is the dashboard sweep's job, not this skill's.
+- **LinkedIn MCP only for browser actions.** Use `mcp__linkedin__fetch_chat_history`,
+  `mcp__linkedin__send_message`, `mcp__linkedin__send_connection_request`, and
+  `mcp__linkedin__scrape_profile`. **Never** substitute another browser MCP
+  (`chrome-devtools`, `playwright`, `puppeteer`, `browser-use`, `browserbase`,
+  `gstack` browser, etc.), the "Claude in Chrome" extension, `WebFetch`, or
+  shell HTTP clients against `linkedin.com`. See **Browser tool policy** at
+  the top of this skill for the full enforcement rules.
+- **MCP only for outreach data I/O.** Use `get_*`, `upsert_*`, `append_*`,
+  `save_outreach_report`, `save_connection`,
+  `remove_pending_queue_entry` — **never** construct `outreach/...` paths or
+  use workspace file tools for these records.
+- **One outbound touch per run.** Never compose or send two sequence steps
+  in a single execution.
+- **Never skip a step.** Do not jump from Step 1 to Step 3.
+- **Never retry automatically** after an MCP failure; report the error and
+  stop or wait for operator input.
+- **Prospect stage:** When `conversation.outreach_stage` changes, update
+  `prospect` and **`upsert_prospect`** unless the operator forbids it.
