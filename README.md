@@ -87,7 +87,7 @@ No dashboard to learn. No per-seat fees. Each skill maps to something you alread
 | What you'd normally do | ebase skill | What happens |
 |---|---|---|
 | Research + connect with a candidate | `/send-connection-request` | Reads their profile, writes a personalized note in your voice, sends, logs to pipeline |
-| Check which requests got accepted | `/sync-pending-connections` | Verifies acceptance on LinkedIn, updates your connections list, queues follow-ups |
+| Check which requests got accepted | `/sync-pending-connection` | Verifies acceptance on LinkedIn, updates your connections list, queues follow-ups |
 | Write a multi-touch DM sequence | `/conversation-planner` | Plans the next message based on thread history, your persona, and their profile |
 | Set up your outreach voice | `/setup-outreach` | Scrapes your LinkedIn profile, builds your persona and tone config |
 | Engage on a prospect's post | `/reply-to-post` | Writes a comment in your voice, confirms with you, posts it |
@@ -103,15 +103,11 @@ Say what you want in plain English — each ask runs as a Claude skill:
 
 ### A day with ebase
 
-> **Morning** — Cron already synced last night's accepts and queued follow-ups. You didn't open LinkedIn.
+> **Morning** — "Connect to these 5 profiles from my shortlist." Five personalized connection requests go out in your voice. That's your only input.
 >
-> **10am** — "Connect to these 5 profiles from my shortlist." Five personalized connection requests go out in your voice.
+> **Overnight** — Routines sync accepts, plan follow-ups for each new connection, and drive conversations toward meetings — all while you sleep.
 >
-> **2pm** — "Plan outreach for everyone who accepted this week." `/conversation-planner` drafts the next message for each, grounded in their profile and your thread history.
->
-> **4pm** — "Send the first message to everyone in the queue." The queue worker executes, rate-limited, logged.
->
-> **You sourced a full pipeline without opening LinkedIn once.**
+> **Next morning** — Two meetings are on your calendar. You never opened LinkedIn again.
 
 ---
 
@@ -120,7 +116,7 @@ Say what you want in plain English — each ask runs as a Claude skill:
 | Component | Description |
 |-----------|-------------|
 | **LinkedIn MCP server** | 30 tools wrapping Playwright — structured profile scrapes, connect, message, engage, persist. Typed inputs, JSON outputs, no screenshot guessing. |
-| **Claude skills** | 7 chainable workflows in `~/.claude/skills` |
+| **Claude skills** | 5 chainable workflows in `~/.claude/skills` |
 | **Queue worker** | Batch automation from JSON queue files |
 | **Cron scheduler** | Auto-syncs accepts, plans follow-ups, respects rate limits |
 | **Per-user state** | Isolated prospects, threads, logs (JSON / JSONL) |
