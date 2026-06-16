@@ -1,0 +1,107 @@
+%% LinkedIn Outreach — High-Level Overview
+%% Architecture + 5-step sequence + exit conditions
+
+flowchart TB
+
+%% ─────────────────────────────────
+%% ARCHITECTURE LAYERS
+%% ─────────────────────────────────
+
+subgraph ARCH ["System Architecture"]
+  direction LR
+  L1["Claude + Skills\nOrchestration layer\nReads SKILL.md instructions\nComposes messages"]
+  L2["MCP Server\nFastMCP · Python\n20+ tools exposed\nAbstracts all I/O"]
+  L3["Playwright\nChrome via CDP\nHuman-like delays\nStealth mode"]
+  L4["LinkedIn\nProfiles · DMs\nConnection requests\nFeed · Posts"]
+  L1 -- "tool calls" --> L2
+  L2 -- "browser automation" --> L3
+  L3 -- "HTTP / DOM" --> L4
+end
+
+%% ─────────────────────────────────
+%% DATA LAYER
+%% ─────────────────────────────────
+
+subgraph DATA ["Persistence (via MCP filesystem tools)"]
+  direction LR
+  D1["prospects/\nOne JSON per prospect\nProfile · stage · notes"]
+  D2["conversations/\nOne JSON per thread\nMessages · state machine\nplanned_message"]
+  D3["connections.json\nMaster registry\nstatus · timestamps"]
+  D4["logs/\nactions.jsonl\nplanned_messages.jsonl\nFull audit trail"]
+  D5["storage/reports/\nEnd-of-sequence\nmarkdown reports"]
+end
+
+%% ─────────────────────────────────
+%% MAIN WORKFLOW
+%% ─────────────────────────────────
+
+START(["🚀 Start Outreach"]) --> DISCOVER
+
+DISCOVER["① Discover Prospect\nscrape-profile skill\nMCP: scrape_profile\nPlaywright extracts profile data\nCreates prospect.json (stage=cold)"]
+
+DISCOVER --> ROUTE{"Already\n1st-degree?"}
+ROUTE -- "No (2nd/3rd)" --> CONNECT
+ROUTE -- "Yes" --> ENGAGE
+
+CONNECT["② Send Connection Request\nsend-connection-request skill\nCompose note ≤ 300 chars\nMCP: send_connection_request\nPlaywright clicks Connect + Add Note\nPersist → stage=pending_connection"]
+
+CONNECT --> WAIT["③ Wait for Acceptance\nsync-pending-connections skill\nMCP: is_first_degree_connection\nPlaywright checks badge"]
+
+WAIT --> ACC{"Accepted?"}
+ACC -- "No (> 48h)" --> DEAD["Mark Dead\nended_reason = no_response"]
+DEAD --> REPORT
+ACC -- "Yes" --> ENGAGE
+
+ENGAGE["④ Run Conversation Sequence\nconversation-planner skill\n4 phases per cycle"]
+
+subgraph SEQ ["5-Step Outreach Sequence"]
+  direction LR
+  S1["Step 1\nIntro\n300–500ch"]
+  S2["Step 2\nCareer\nDeep-Dive\n≤500ch"]
+  S3["Step 3\nCareer\nPlan\n≤500ch"]
+  S4["Step 4\nThe Ask\nResume/call\n≤500ch"]
+  S5["Step 5\nThe Close\n≤500ch"]
+  S1 -- "positive\nreply" --> S2
+  S2 -- "positive\nreply" --> S3
+  S3 -- "positive\nreply" --> S4
+  S4 -- "positive\nreply" --> S5
+end
+
+ENGAGE --> SEQ
+
+subgraph CYCLE ["Each Cycle (conversation-planner)"]
+  direction TB
+  CA["Phase A · Sync\nfetch_chat_history\nMerge new messages\nDeduplicate thread"]
+  CB["Phase B · Plan\nLoad state via MCP\nState machine evaluates\nCompose next message\nLog PlannedMessage"]
+  CC["Phase C · Deliver\nsend_message via MCP\nPlaywright types + sends\nHuman-like timing"]
+  CD["Phase D · Persist\nupsert_conversation\nupsert_prospect\nappend_action_log"]
+  CA --> CB --> CC --> CD
+end
+
+SEQ --> CYCLE
+
+%% ─────────────────────────────────
+%% EXIT CONDITIONS
+%% ─────────────────────────────────
+
+subgraph EXITS ["Exit Conditions (from any step)"]
+  direction LR
+  E1["No reply ≥ 48h\nno_response"]
+  E2["Prospect declines\nnot_interested"]
+  E3["Resume shared\nresume_received"]
+  E4["Call scheduled\ncall_scheduled"]
+  E5["Step 5 delivered\nsequence complete"]
+end
+
+CYCLE --> EXITS
+
+EXITS --> REPORT["⑤ End + Report\nGenerate markdown report\nMCP: save_outreach_report\nupsert_conversation (final)\nupsert_prospect (stage=ended)\nappend_action_log (ended)"]
+
+REPORT --> DONE(["✅ Outreach Complete"])
+
+%% ─────────────────────────────────
+%% BATCH MODE
+%% ─────────────────────────────────
+
+BATCH(["📋 Batch Mode"]) --> BFLOW["Load all connections\nFilter actionable ones\nRun one cycle per prospect\nLog batch summary"]
+BFLOW --> CYCLE

@@ -1,0 +1,84 @@
+{
+  "prospect_id": "alex_chen_softeng",
+  "outreach_stage": "converted",
+  "messages": [
+    {
+      "sender": "operator",
+      "text": "Hey Alex — your post on event-driven architecture at Stripe was great. I'm Nova from Embedding VC, we back early-stage AI startups and connect top talent. Open to exploring?",
+      "timestamp": "2026-03-24T10:00:00Z",
+      "sequence_step": 1,
+      "attachments": []
+    },
+    {
+      "sender": "prospect",
+      "text": "Thanks Nova! Yeah I'm always curious what's out there.",
+      "timestamp": "2026-03-25T09:15:00Z",
+      "sequence_step": null,
+      "attachments": []
+    },
+    {
+      "sender": "operator",
+      "text": "Your jump from Google to Stripe is fascinating. What's been keeping you most engaged lately?",
+      "timestamp": "2026-03-25T14:00:00Z",
+      "sequence_step": 2,
+      "attachments": []
+    },
+    {
+      "sender": "prospect",
+      "text": "I love the scale but I've been itching to work on something earlier stage. Been looking at some ML infra teams.",
+      "timestamp": "2026-03-26T11:30:00Z",
+      "sequence_step": null,
+      "attachments": []
+    },
+    {
+      "sender": "operator",
+      "text": "Are you leaning toward joining an early startup or thinking about building something yourself?",
+      "timestamp": "2026-03-26T16:00:00Z",
+      "sequence_step": 3,
+      "attachments": []
+    },
+    {
+      "sender": "prospect",
+      "text": "Joining for now — ideally a Series A company where I can own infra. Definitely open to hearing what's in your network.",
+      "timestamp": "2026-03-27T10:00:00Z",
+      "sequence_step": null,
+      "attachments": []
+    },
+    {
+      "sender": "operator",
+      "text": "That's great context, Alex. Would you be open to sharing your resume? It'd help me match you with the right teams in our portfolio.",
+      "timestamp": "2026-03-27T14:00:00Z",
+      "sequence_step": 4,
+      "attachments": []
+    },
+    {
+      "sender": "prospect",
+      "text": "Sure, here you go!",
+      "timestamp": "2026-03-28T09:00:00Z",
+      "sequence_step": null,
+      "attachments": [
+        { "type": "resume", "url": "https://linkedin.com/dms/alex_chen_resume.pdf", "filename": "alex_chen_resume.pdf" }
+      ]
+    }
+  ],
+  "last_action": "send_followup_message",
+  "last_action_timestamp": "2026-03-27T14:00:00Z",
+  "next_action": "send_followup_message",
+  "next_action_after": null,
+  "planned_message": null,
+  "connection_note": "Hey Alex — your post on event-driven architecture at Stripe was great. I'm Nova from Embedding VC, we back early-stage AI startups and connect top talent. Open to exploring?",
+  "resume_path": null,
+  "email": null,
+  "meeting_link": null,
+  "ended_at": null,
+  "ended_reason": null,
+  "report_path": null,
+  "sequence_step": 4,
+  "stage_history": [
+    { "stage": "cold", "entered_at": "2026-03-24T00:00:00Z", "reason": "prospect added to queue" },
+    { "stage": "pending_connection", "entered_at": "2026-03-24T10:00:00Z", "reason": "connection request sent" },
+    { "stage": "engaged", "entered_at": "2026-03-24T10:01:00Z", "reason": "connection accepted" },
+    { "stage": "replied", "entered_at": "2026-03-25T09:15:00Z", "reason": "prospect replied positively" },
+    { "stage": "converted", "entered_at": "2026-03-28T09:00:00Z", "reason": "resume shared" }
+  ]
+}

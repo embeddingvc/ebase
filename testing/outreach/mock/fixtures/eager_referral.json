@@ -1,0 +1,72 @@
+{
+  "case_id": "eager_referral",
+  "description": "High-intent prospect: one career exchange, then shares resume when asked. Planner should close with resume_received (shorter than happy_path, still logical).",
+  "profile_url": "https://www.linkedin.com/in/marcus-webb-infra/",
+  "prospect_id": "marcus_webb_infra",
+  "connection_accepted": true,
+  "end_condition": "resume_received",
+  "repeat_final": true,
+  "prospect": {
+    "linkedin_url": "https://www.linkedin.com/in/marcus-webb-infra/",
+    "name": "Marcus Webb",
+    "title": "Engineering Manager, Infrastructure",
+    "company": "Figma",
+    "location": "New York, NY",
+    "connection_degree": 2,
+    "mutual_connections": ["Alex Chen", "Jordan Park"],
+    "about": "Infra EM who still codes. Interested in early-stage founding-engineer and first-infra-hire roles.",
+    "recent_posts": [
+      {
+        "text": "Hiring tip: the best infra candidates ask about your deploy frequency before your stack.",
+        "likes": 112,
+        "timestamp": "2026-03-22"
+      }
+    ],
+    "connection_status": "none",
+    "outreach_stage": "cold",
+    "end_goal": "resume_received",
+    "outreach_topic": "Series A infra and platform lead roles",
+    "target_action": null,
+    "notes": "High intent; moves quickly once fit is clear but expects a proper ask before sharing resume.",
+    "scraped_at": "2026-03-24T00:00:00Z"
+  },
+  "replies": [
+    {
+      "text": "Thanks for connecting Nova! I'm actively exploring infra leadership roles at Series A companies — would love to hear what's in your network."
+    },
+    {
+      "text": "That sounds nice, would you like to view my resume? I am interested in working at a Series A company where I can own the platform while the product still moves fast."
+    },
+    {
+      "text": "Sure, here you go!",
+      "attachments": [
+        {
+          "type": "resume",
+          "url": "https://linkedin.com/dms/marcus_webb_resume.pdf",
+          "filename": "marcus_webb_resume.pdf"
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "id": "er_r0_step1",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "er_r1_step2_resume_ask",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "er_r2_step3_close",
+      "allowed_actions": ["send_followup_message", "mark_ended"],
+      "allowed_stages": ["engaged", "ended", "converted"]
+    }
+  ],
+  "terminal": {
+    "ended_reason": "resume_received",
+    "require_resume_attachment": true
+  }
+}

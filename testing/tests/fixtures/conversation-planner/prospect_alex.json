@@ -1,0 +1,29 @@
+{
+  "id": "alex_chen_softeng",
+  "linkedin_url": "https://www.linkedin.com/in/alex-chen-softeng/",
+  "name": "Alex Chen",
+  "title": "Senior Software Engineer",
+  "company": "Stripe",
+  "location": "San Francisco, CA",
+  "connection_degree": 2,
+  "mutual_connections": ["Jordan Park", "Sam Liu"],
+  "recent_posts": [
+    {
+      "text": "Just wrapped up migrating our payment service to a new event-driven architecture. The latency improvements were worth every painful debugging session. Distributed systems are hard but beautiful.",
+      "likes": 142,
+      "timestamp": "2026-03-20"
+    },
+    {
+      "text": "Hot take: the best engineers I've worked with all have a habit of writing things down. Docs, ADRs, post-mortems — it compounds over time.",
+      "likes": 89,
+      "timestamp": "2026-03-15"
+    }
+  ],
+  "connection_status": "none",
+  "outreach_stage": "cold",
+  "end_goal": "schedule_meeting",
+  "outreach_topic": "AI startup opportunities and career exploration",
+  "target_action": null,
+  "notes": "Strong distributed systems background. Mentioned open to new roles in a comment 3 weeks ago.",
+  "profile_fetched_at": "2026-03-24T00:00:00Z"
+}

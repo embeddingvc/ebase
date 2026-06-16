@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinkedIn Outreach — Full Workflow Diagram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 24px 32px 16px;
+    border-bottom: 1px solid #1e293b;
+  }
+  header h1 { font-size: 22px; font-weight: 600; color: #f8fafc; }
+  header p { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+  .legend {
+    display: flex; gap: 20px; padding: 12px 32px; flex-wrap: wrap;
+    border-bottom: 1px solid #1e293b; background: #0f172a;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1;
+  }
+  .legend-dot {
+    width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+  }
+  .dot-mcp { background: #2563eb; }
+  .dot-playwright { background: #7c3aed; }
+  .dot-skill { background: #059669; }
+  .dot-logic { background: #d97706; }
+  .dot-state { background: #dc2626; }
+  .dot-data { background: #64748b; }
+  #diagram-container {
+    flex: 1; overflow: auto; padding: 24px;
+  }
+  .mermaid {
+    display: flex; justify-content: center;
+  }
+  .mermaid svg { max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LinkedIn Outreach — Full Workflow</h1>
+  <p>send_connection_request → conversation sequence → mark_ended &nbsp;|&nbsp; Skills · MCP · Playwright · Business Logic</p>
+</header>
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot dot-skill"></div>Skill (Claude instruction)</div>
+  <div class="legend-item"><div class="legend-dot dot-mcp"></div>MCP Tool call</div>
+  <div class="legend-item"><div class="legend-dot dot-playwright"></div>Playwright / Browser</div>
+  <div class="legend-item"><div class="legend-dot dot-logic"></div>Business Logic</div>
+  <div class="legend-item"><div class="legend-dot dot-state"></div>State Machine decision</div>
+  <div class="legend-item"><div class="legend-dot dot-data"></div>Data mutation</div>
+</div>
+<div id="diagram-container">
+<pre class="mermaid">
+flowchart TD
+
+    START(["Outreach Triggered"])
+    START --> SCRAPE_SKILL
+
+    subgraph DISCOVERY ["1  Prospect Discovery"]
+        direction TB
+        SCRAPE_SKILL["scrape-profile skill\nClaude reads SKILL.md"]
+        SCRAPE_SKILL --> MCP_SCRAPE["MCP  scrape_profile url"]
+        MCP_SCRAPE --> PW_SCRAPE["Playwright\nNavigate profile page\nExtract name  title  location\nconnection_degree  about  posts"]
+        PW_SCRAPE --> PROSPECT_JSON["Create prospect.json\noutreach_stage = cold"]
+        PROSPECT_JSON --> MCP_UPSERT_P1["MCP  upsert_prospect"]
+    end
+
+    MCP_UPSERT_P1 --> DEGREE_CHECK{"connection_degree?"}
+    DEGREE_CHECK -- "2nd or 3rd" --> CONN_REQ_SKILL
+    DEGREE_CHECK -- "1st  already connected" --> SKIP_TO_DM["Skip to Step 1 DM\n500 char max"]
+    SKIP_TO_DM --> LOAD_STATE
+
+    subgraph CONNREQ ["2  Send Connection Request"]
+        direction TB
+        CONN_REQ_SKILL["send-connection-request skill"]
+        CONN_REQ_SKILL --> COMPOSE_NOTE["Business Logic  Compose Note\n300 char limit\nReference posts or role\nUse first name\nNo banned phrases"]
+        COMPOSE_NOTE --> MCP_SEND_CONN["MCP  send_connection_request\nurl  note"]
+        MCP_SEND_CONN --> PW_CONN["Playwright\n1 Navigate profile\n2 Click Connect\n3 Add a note\n4 Type note\n5 Click Send\nRandom 500-1500ms delays"]
+    end
+
+    PW_CONN --> CONN_OK{"Send OK?"}
+    CONN_OK -- "Error" --> LOG_ERROR["MCP  append_action_log\nconnection_request_failed\nKeep planned_message for retry"]
+    CONN_OK -- "Success" --> PERSIST_A
+
+    subgraph PERSIST_A ["3  Persist Connection State"]
+        direction TB
+        SAVE_C["MCP  save_connection\nstatus = pending"]
+        SAVE_C --> BUILD_CONV["Build conversation\nAppend operator msg  step 1\noutreach_stage = pending_connection\nsequence_step = 1"]
+        BUILD_CONV --> UC1["MCP  upsert_conversation"]
+        UC1 --> AL1["MCP  append_action_log\nconnection_request_sent"]
+        AL1 --> PL1["MCP  append_planned_message_log"]
+        PL1 --> RQ1["MCP  remove_pending_queue_entry"]
+    end
+
+    RQ1 --> WAIT_ACCEPT
+
+    subgraph PENDING ["4  Await Connection Acceptance"]
+        direction TB
+        WAIT_ACCEPT["Wait for prospect\nto accept request"]
+        WAIT_ACCEPT --> SYNC_SKILL["sync-pending-connections skill\nperiodic or manual"]
+        SYNC_SKILL --> MCP_IS_1ST["MCP  is_first_degree_connection"]
+        MCP_IS_1ST --> PW_CHECK["Playwright\nNavigate profile\nCheck connection badge"]
+    end
+
+    PW_CHECK --> ACCEPTED{"Accepted?"}
+    ACCEPTED -- "Still pending over 48h" --> MARK_DEAD["outreach_stage = dead\nended_reason = no_response"]
+    MARK_DEAD --> END_SEQ
+    ACCEPTED -- "Connected" --> UPD_CONN["MCP  save_connection\nstatus = connected\noutreach_stage = engaged"]
+    UPD_CONN --> FETCH_HIST
+
+    subgraph PLANNER ["5  Conversation Planner  Orchestrator"]
+        direction TB
+
+        subgraph PA ["Phase A  Sync Thread"]
+            direction TB
+            FETCH_HIST["MCP  fetch_chat_history url"]
+            FETCH_HIST --> PW_FETCH["Playwright\nOpen messaging thread\nRead all visible bubbles"]
+            PW_FETCH --> MERGE["Business Logic  Merge\nself true = operator\nself false = prospect\nDeduplicate\nAssign ISO timestamps"]
+            MERGE --> UC_SYNC["MCP  upsert_conversation\nsynced thread"]
+        end
+
+        subgraph PB ["Phase B  Plan Next Action"]
+            direction TB
+            LOAD_STATE["MCP  get_prospect\nMCP  get_conversation"]
+            LOAD_STATE --> SM{"State Machine\nEvaluate"}
+
+            SM -- "Positive reply" --> ADV["Advance step\nsequence_step += 1"]
+            SM -- "No reply >= 48h" --> TOUT["mark_ended\nno_response"]
+            SM -- "Not interested" --> DECL["mark_ended\nnot_interested"]
+            SM -- "Resume or email\nor calendar shared" --> CONV["outreach_stage = converted\nCapture artifact\nAdvance to Step 5"]
+            SM -- "Step 5 sent" --> FIN["mark_ended\nSet reason"]
+            SM -- "No reply under 48h" --> WAIT_MORE["next_action = null\nToo soon - wait"]
+
+            ADV --> COMPOSE["Business Logic  Compose Message\nStep 2  Career Deep-Dive  500ch\nStep 3  Career Plan  500ch\nStep 4  The Ask  500ch\nStep 5  The Close  500ch\nReference posts  use first name"]
+            CONV --> COMPOSE
+            COMPOSE --> SET_PLAN["Set planned_message\nnext_action = send_followup_message"]
+            SET_PLAN --> PML["MCP  append_planned_message_log"]
+            PML --> UC_PLAN["MCP  upsert_conversation\nwith planned_message"]
+        end
+
+        subgraph PC ["Phase C  Deliver"]
+            direction TB
+            CHK{"next_action?"}
+            CHK -- "send_followup_message" --> MCP_MSG["MCP  send_message\nurl  text"]
+            MCP_MSG --> PW_SEND["Playwright\nOpen thread\nType message\nPress Send\nHuman-like delays"]
+            CHK -- "mark_ended or mark_dead" --> SKIP["Skip delivery\nGo to Phase D"]
+            CHK -- "null  wait" --> EXIT_W["Exit  nothing to do"]
+        end
+
+        subgraph PD ["Phase D  Bookkeeping"]
+            direction TB
+            UPD_CONV["Update conversation\nlast_action = action taken\nlast_action_timestamp = now\nplanned_message = null\nAppend to stage_history"]
+            UPD_CONV --> UC_D["MCP  upsert_conversation"]
+            UC_D --> AL_D["MCP  append_action_log\nmessage_sent"]
+            AL_D --> UP_D["MCP  upsert_prospect\nSync outreach_stage"]
+        end
+
+        UC_SYNC --> LOAD_STATE
+        UC_PLAN --> CHK
+        PW_SEND --> UPD_CONV
+        SKIP --> END_SEQ
+    end
+
+    UP_D --> MORE{"More steps?"}
+    MORE -- "Yes  steps 2-4" --> WAIT_REPLY["Wait for prospect reply\nCheck again later"]
+    WAIT_REPLY --> FETCH_HIST
+    MORE -- "No  ending" --> END_SEQ
+    EXIT_W --> WAIT_REPLY
+
+    subgraph ENDING ["6  End Sequence"]
+        direction TB
+        END_SEQ["End Conversation"]
+        END_SEQ --> SET_END["Set conversation\nended_at = now\nended_reason = reason\noutreach_stage = ended\nnext_action = null"]
+        SET_END --> GEN_RPT["Generate Outreach Report\nProfile Summary\nConversation Summary\nCareer Plans\nOutcome\nHandoff Notes"]
+        GEN_RPT --> MCP_RPT["MCP  save_outreach_report\nid  markdown"]
+        MCP_RPT --> RPT_PATH["Set report_path"]
+        RPT_PATH --> UC_END["MCP  upsert_conversation\nfinal state"]
+        UC_END --> UP_END["MCP  upsert_prospect\noutreach_stage = ended"]
+        UP_END --> AL_END["MCP  append_action_log\nconversation_ended"]
+    end
+
+    AL_END --> DONE(["Outreach Complete"])
+
+    subgraph BATCHMODE ["Batch Mode  Optional"]
+        direction TB
+        BSTART(["Batch Planner Run"])
+        BSTART --> BGET["MCP  get_connections"]
+        BGET --> BFILT["Business Logic  Filter\nExclude pending  ended  dead"]
+        BFILT --> BLOOP["For each actionable connection\nRun Phases A B C D\nOne touch per prospect max"]
+        BLOOP --> BLOG["MCP  append_action_log\nbatch_plan_run"]
+        BLOG --> BDONE(["Batch Summary"])
+    end
+
+    classDef mcp fill:#2563eb,stroke:#1d4ed8,color:#fff,font-weight:bold
+    classDef pw fill:#7c3aed,stroke:#6d28d9,color:#fff,font-weight:bold
+    classDef sk fill:#059669,stroke:#047857,color:#fff,font-weight:bold
+    classDef bl fill:#d97706,stroke:#b45309,color:#fff,font-weight:bold
+    classDef sm fill:#dc2626,stroke:#b91c1c,color:#fff,font-weight:bold
+    classDef dt fill:#475569,stroke:#334155,color:#fff
+
+    class MCP_SCRAPE,MCP_UPSERT_P1,MCP_SEND_CONN,SAVE_C,UC1,AL1,PL1,RQ1,MCP_IS_1ST,FETCH_HIST,UC_SYNC,MCP_MSG,UC_D,AL_D,UP_D,UC_PLAN,PML,MCP_RPT,UC_END,UP_END,AL_END,BGET,LOAD_STATE mcp
+    class PW_SCRAPE,PW_CONN,PW_CHECK,PW_FETCH,PW_SEND pw
+    class SCRAPE_SKILL,CONN_REQ_SKILL,SYNC_SKILL sk
+    class COMPOSE_NOTE,COMPOSE,MERGE,BFILT bl
+    class SM,ADV,TOUT,DECL,CONV,FIN,WAIT_MORE sm
+    class PROSPECT_JSON,BUILD_CONV,UPD_CONV,SET_END,SET_PLAN,RPT_PATH,UPD_CONN dt
+</pre>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.4.1/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    flowchart: {
+      curve: 'basis',
+      padding: 16,
+      nodeSpacing: 30,
+      rankSpacing: 40,
+      useMaxWidth: false
+    },
+    themeVariables: {
+      darkMode: true,
+      background: '#0f172a',
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#334155',
+      lineColor: '#64748b',
+      secondaryColor: '#1e293b',
+      tertiaryColor: '#0f172a',
+      fontSize: '13px'
+    }
+  });
+</script>
+</body>
+</html>

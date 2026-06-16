@@ -1,0 +1,55 @@
+.DS_Store
+.env
+
+# Python cache/bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test/tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local logs
+*.log
+logs/
+
+# Local outreach identity (copy persona.json.example → persona.json)
+outreach/config/persona.json
+
+# Outreach runtime data (per-user; not shared across teammates)
+outreach/prospects/
+outreach/conversations/
+outreach/logs/
+outreach/storage/
+
+# Mock LinkedIn session store (testing/ only; persisted across MCP subprocesses)
+testing/outreach/mock/mock_linkedin_sessions.json
+
+# Local generated/user-specific outreach data (keep committed fixtures)
+outreach/connections.json
+outreach/generated/
+testing/outreach/mock/connections.json
+testing/outreach/mock/conversations/*.json
+testing/outreach/mock/prospects/*.json
+testing/outreach/mock/logs/
+testing/outreach/mock/storage/
+
+# gstack artifacts (per-machine)
+.gstack/
+.context/
+
+# Claude Desktop config (copy claude_desktop_config.json.example → claude_desktop_config.json)
+claude_desktop_config.json
+
+# Claude Code local config + gstack skills (per-machine)
+.claude/
+CLAUDE.md
+
+# Claude Code project-scoped MCP (paths are machine-specific; created by install.sh / make claude-install)
+.mcp.json
+outreach/config/dashboard_routines.json
+testing/outreach/mock/config/dashboard_routines.json

@@ -1,0 +1,58 @@
+{
+  "case_id": "ghosted_cold",
+  "description": "Connection is accepted but the prospect never replies to the note or DMs. Planner should mark the thread dead after follow-ups.",
+  "profile_url": "https://www.linkedin.com/in/priya-sharma-sre/",
+  "prospect_id": "priya_sharma_sre",
+  "connection_accepted": true,
+  "end_condition": "no_response",
+  "repeat_final": false,
+  "prospect": {
+    "linkedin_url": "https://www.linkedin.com/in/priya-sharma-sre/",
+    "name": "Priya Sharma",
+    "title": "Site Reliability Engineer",
+    "company": "Airbnb",
+    "location": "San Francisco, CA",
+    "connection_degree": 2,
+    "mutual_connections": ["Sam Liu"],
+    "about": "SRE with a focus on observability and incident response at scale.",
+    "recent_posts": [
+      {
+        "text": "Runbooks don't replace on-call empathy — they just buy you time to think.",
+        "likes": 54,
+        "timestamp": "2026-03-08"
+      }
+    ],
+    "connection_status": "none",
+    "outreach_stage": "cold",
+    "end_goal": "schedule_meeting",
+    "outreach_topic": "Early-stage platform/SRE lead roles",
+    "target_action": null,
+    "notes": "Accepts invites but rarely engages in DMs.",
+    "scraped_at": "2026-03-24T00:00:00Z"
+  },
+  "replies": [
+    null,
+    null,
+    null
+  ],
+  "rounds": [
+    {
+      "id": "gc_r0_step1",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "gc_r1_step2",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "gc_r2_mark_dead",
+      "allowed_actions": ["mark_dead", "mark_ended", "send_followup_message"],
+      "allowed_stages": ["engaged", "ended", "dead"]
+    }
+  ],
+  "terminal": {
+    "accept_actions": ["mark_dead", "mark_ended"]
+  }
+}

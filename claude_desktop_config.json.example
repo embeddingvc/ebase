@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "linkedin": {
+      "command": "/path/to/uv",
+      "args": [
+        "run",
+        "--project",
+        "/path/to/ebase",
+        "/path/to/ebase/tools/server.py"
+      ]
+    }
+  }
+}

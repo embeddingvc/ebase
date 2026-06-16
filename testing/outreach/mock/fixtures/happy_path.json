@@ -1,0 +1,91 @@
+{
+  "case_id": "happy_path",
+  "description": "Full 4-turn conversation. Prospect is curious about career options, discusses early-stage ML infra ambitions, and ultimately shares resume.",
+  "profile_url": "https://www.linkedin.com/in/alex-chen-softeng/",
+  "prospect_id": "alex_chen_softeng",
+  "connection_accepted": true,
+  "end_condition": "meeting_scheduled",
+  "repeat_final": true,
+  "prospect": {
+    "linkedin_url": "https://www.linkedin.com/in/alex-chen-softeng/",
+    "name": "Alex Chen",
+    "title": "Senior Software Engineer",
+    "company": "Stripe",
+    "location": "San Francisco, CA",
+    "connection_degree": 2,
+    "mutual_connections": ["Jordan Park", "Sam Liu"],
+    "about": "Distributed systems engineer with 6 years at Google and Stripe. Passionate about high-scale infrastructure, event-driven architectures, and developer tooling.",
+    "recent_posts": [
+      {
+        "text": "Just wrapped up migrating our payment service to a new event-driven architecture. The latency improvements were worth every painful debugging session. Distributed systems are hard but beautiful.",
+        "likes": 142,
+        "timestamp": "2026-03-20"
+      },
+      {
+        "text": "Hot take: the best engineers I've worked with all have a habit of writing things down. Docs, ADRs, post-mortems — it compounds over time.",
+        "likes": 89,
+        "timestamp": "2026-03-15"
+      }
+    ],
+    "connection_status": "none",
+    "outreach_stage": "cold",
+    "end_goal": "schedule_meeting",
+    "outreach_topic": "Series A ML infra roles in the portfolio",
+    "target_action": null,
+    "notes": "Strong distributed systems background. Mentioned open to new roles in a comment 3 weeks ago.",
+    "scraped_at": "2026-03-24T00:00:00Z"
+  },
+  "replies": [
+    {
+      "text": "Thanks Nova! Yeah I'm always curious what's out there. What kind of companies are you working with?"
+    },
+    {
+      "text": "Honestly I love the scale problems at Stripe but I've been itching to work on something earlier stage. The architecture migration was fun but I miss the 0-to-1 feeling. Been looking at some ML infra teams."
+    },
+    {
+      "text": "Joining for now — I want to learn the ML side more before starting something. Ideally a Series A company where I can own a big chunk of the infra. Definitely open to hearing about what's in your network."
+    },
+    {
+      "text": "Hey I would love to meet sometime for a more thorough conversation. I'm available anytime next week."
+    },
+    {
+      "text": "Sure my email is alex.chen@example.com. Let's schedule a call next week."
+    }
+  ],
+  "rounds": [
+    {
+      "id": "hp_r0_step1",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "hp_r1_step2",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "hp_r1_step3",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "hp_r1_step4",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "hp_r2_step5_schedule",
+      "allowed_actions": ["confirm_meeting", "send_followup_message"],
+      "allowed_stages": ["engaged", "ended"]
+    },
+    {
+      "id": "hp_r3_step6_close",
+      "allowed_actions": ["send_followup_message", "mark_ended"],
+      "allowed_stages": ["engaged", "ended"],
+      "assert_meeting": true
+    }
+  ],
+  "terminal": {
+    "ended_reason": "call_scheduled"
+  }
+}

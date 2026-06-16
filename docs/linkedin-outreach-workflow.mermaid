@@ -1,0 +1,197 @@
+%% LinkedIn Outreach — Full Workflow Diagram
+%% From send_connection_request → mark_ended
+%% Layers: Skills (Claude) → MCP Tools → Playwright/Browser → LinkedIn
+
+flowchart TD
+
+    %% ═══════════════════════════════════════════════
+    %% ENTRY POINTS
+    %% ═══════════════════════════════════════════════
+    START([🚀 Outreach Triggered])
+    START --> SCRAPE_SKILL
+
+    subgraph PROSPECT_DISCOVERY ["① Prospect Discovery"]
+        direction TB
+        SCRAPE_SKILL["<b>scrape-profile skill</b><br/>Claude reads SKILL.md instructions"]
+        SCRAPE_SKILL --> MCP_SCRAPE["<b>MCP: scrape_profile(url)</b>"]
+        MCP_SCRAPE --> PW_SCRAPE["<b>Playwright</b><br/>Navigate to profile page<br/>Extract: name, title, location,<br/>connection_degree, about, recent_posts"]
+        PW_SCRAPE --> PROSPECT_JSON["Create/update<br/><b>prospect.json</b><br/>outreach_stage = cold"]
+        PROSPECT_JSON --> MCP_UPSERT_P1["<b>MCP: upsert_prospect(id, json)</b>"]
+    end
+
+    MCP_UPSERT_P1 --> DEGREE_CHECK
+
+    %% ═══════════════════════════════════════════════
+    %% CONNECTION DEGREE ROUTING
+    %% ═══════════════════════════════════════════════
+    DEGREE_CHECK{"connection_degree?"}
+    DEGREE_CHECK -- "2nd / 3rd" --> CONN_REQ_SKILL
+    DEGREE_CHECK -- "1st (already connected)" --> SKIP_TO_DM["Skip to Step 1 DM<br/>(≤ 500 chars)"]
+    SKIP_TO_DM --> PHASE_B
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 1a: SEND CONNECTION REQUEST
+    %% ═══════════════════════════════════════════════
+    subgraph CONN_REQUEST ["② Send Connection Request"]
+        direction TB
+        CONN_REQ_SKILL["<b>send-connection-request skill</b><br/>Claude reads SKILL.md"]
+        CONN_REQ_SKILL --> COMPOSE_NOTE["<b>Business Logic: Compose Note</b><br/>• ≤ 300 chars (LinkedIn limit)<br/>• Reference prospect's posts/role<br/>• Use first name<br/>• No banned phrases<br/>• 'Would a real person send this?'"]
+        COMPOSE_NOTE --> MCP_SEND_CONN["<b>MCP: send_connection_request(url, note)</b>"]
+        MCP_SEND_CONN --> PW_CONN["<b>Playwright</b><br/>1. Navigate to profile<br/>2. Click 'Connect' button<br/>3. Click 'Add a note'<br/>4. Type note text<br/>5. Click 'Send'<br/><i>Random 500-1500ms delays</i>"]
+    end
+
+    PW_CONN --> CONN_SUCCESS{"Send<br/>succeeded?"}
+    CONN_SUCCESS -- "❌ Error" --> LOG_ERROR["<b>MCP: append_action_log</b><br/>action: connection_request_failed<br/>Leave planned_message for retry"]
+    CONN_SUCCESS -- "✅ OK" --> PERSIST_CONN
+
+    %% ═══════════════════════════════════════════════
+    %% POST-CONNECTION PERSISTENCE
+    %% ═══════════════════════════════════════════════
+    subgraph PERSIST_CONN ["③ Persist Connection State"]
+        direction TB
+        MCP_SAVE_CONN["<b>MCP: save_connection</b><br/>connection_status = pending"]
+        MCP_SAVE_CONN --> BUILD_CONV["Build conversation object<br/>• Append operator message (step 1)<br/>• outreach_stage = pending_connection<br/>• sequence_step = 1<br/>• next_action = null"]
+        BUILD_CONV --> MCP_UPSERT_CONV1["<b>MCP: upsert_conversation(id, json)</b>"]
+        MCP_UPSERT_CONV1 --> MCP_ACTION_LOG1["<b>MCP: append_action_log</b><br/>action: connection_request_sent"]
+        MCP_ACTION_LOG1 --> MCP_PLANNED1["<b>MCP: append_planned_message_log</b><br/>PlannedMessage JSON"]
+        MCP_PLANNED1 --> MCP_REMOVE_Q["<b>MCP: remove_pending_queue_entry</b>"]
+    end
+
+    MCP_REMOVE_Q --> WAIT_ACCEPT
+
+    %% ═══════════════════════════════════════════════
+    %% WAITING FOR ACCEPTANCE
+    %% ═══════════════════════════════════════════════
+    subgraph PENDING_SYNC ["④ Await Connection Acceptance"]
+        direction TB
+        WAIT_ACCEPT["⏳ Wait for prospect<br/>to accept request"]
+        WAIT_ACCEPT --> SYNC_SKILL["<b>sync-pending-connections skill</b><br/>(periodic or manual trigger)"]
+        SYNC_SKILL --> MCP_IS_1ST["<b>MCP: is_first_degree_connection(url)</b>"]
+        MCP_IS_1ST --> PW_CHECK["<b>Playwright</b><br/>Navigate profile → check<br/>connection badge"]
+    end
+
+    PW_CHECK --> ACCEPTED{"Accepted?"}
+    ACCEPTED -- "❌ Still pending<br/>(> 48h)" --> MARK_DEAD["outreach_stage = dead<br/>ended_reason = no_response"]
+    MARK_DEAD --> END_FLOW
+    ACCEPTED -- "✅ Connected!" --> UPDATE_CONN["<b>MCP: save_connection</b><br/>connection_status = connected<br/>Update prospect:<br/>outreach_stage = engaged"]
+
+    UPDATE_CONN --> CONV_PLANNER
+
+    %% ═══════════════════════════════════════════════
+    %% CONVERSATION PLANNER — MAIN ORCHESTRATOR
+    %% ═══════════════════════════════════════════════
+    subgraph CONV_PLANNER ["⑤ Conversation Planner (Orchestrator)"]
+        direction TB
+
+        subgraph PHASE_A ["Phase A — Sync Thread"]
+            direction TB
+            FETCH_HIST["<b>MCP: fetch_chat_history(url)</b>"]
+            FETCH_HIST --> PW_FETCH["<b>Playwright</b><br/>Open messaging thread<br/>Read all visible bubbles"]
+            PW_FETCH --> MERGE_MSGS["<b>Business Logic: Merge</b><br/>• self:true → sender:operator<br/>• self:false → sender:prospect<br/>• Deduplicate by text<br/>• Assign ISO timestamps"]
+            MERGE_MSGS --> MCP_UPSERT_SYNC["<b>MCP: upsert_conversation</b><br/>(synced thread)"]
+        end
+
+        subgraph PHASE_B ["Phase B — Plan Next Action"]
+            direction TB
+            LOAD_STATE["<b>MCP: get_prospect + get_conversation</b><br/>Load current state"]
+            LOAD_STATE --> STATE_MACHINE
+
+            subgraph STATE_MACHINE ["Business Logic: State Machine"]
+                direction TB
+                SM_CHECK{"Evaluate<br/>current state"}
+
+                SM_CHECK -- "Prospect replied<br/>positively" --> ADVANCE["Advance to next step<br/>sequence_step += 1"]
+                SM_CHECK -- "No reply ≥ 48h" --> TIMEOUT["next_action = mark_ended<br/>ended_reason = no_response"]
+                SM_CHECK -- "'Not interested'<br/>detected" --> DECLINE["next_action = mark_ended<br/>ended_reason = not_interested"]
+                SM_CHECK -- "Resume / email /<br/>calendar shared" --> CONVERT["outreach_stage = converted<br/>Capture artifact path<br/>Advance to Step 5 close"]
+                SM_CHECK -- "Step 5 already sent" --> FINALIZE["next_action = mark_ended<br/>Set ended_reason"]
+                SM_CHECK -- "No reply < 48h" --> DO_NOTHING["next_action = null<br/>(wait — too soon)"]
+            end
+
+            ADVANCE --> COMPOSE_MSG
+            CONVERT --> COMPOSE_MSG
+
+            subgraph COMPOSE_MSG ["Business Logic: Compose Message"]
+                direction TB
+                MSG_RULES["<b>Message Composition Rules</b><br/>• Step 2: Career Deep-Dive (≤500ch)<br/>• Step 3: Career Plan (≤500ch)<br/>• Step 4: The Ask — resume or call (≤500ch)<br/>• Step 5: The Close (≤500ch)<br/>• Reference posts/background<br/>• Use first name<br/>• No banned phrases"]
+                MSG_RULES --> SET_PLANNED["Set conversation.planned_message<br/>+ next_action = send_followup_message"]
+            end
+
+            SET_PLANNED --> MCP_PLANNED_B["<b>MCP: append_planned_message_log</b>"]
+            MCP_PLANNED_B --> MCP_UPSERT_PLAN["<b>MCP: upsert_conversation</b><br/>(with planned_message + next_action)"]
+        end
+
+        subgraph PHASE_C ["Phase C — Deliver Message"]
+            direction TB
+            CHECK_ACTION{"next_action?"}
+            CHECK_ACTION -- "send_followup_message" --> MCP_SEND_MSG["<b>MCP: send_message(url, text)</b>"]
+            MCP_SEND_MSG --> PW_SEND["<b>Playwright</b><br/>1. Open messaging thread<br/>2. Type message<br/>3. Press Send<br/><i>Human-like delays</i>"]
+            CHECK_ACTION -- "mark_ended /<br/>mark_dead" --> SKIP_SEND["Skip delivery →<br/>go to Phase D"]
+            CHECK_ACTION -- "null (wait)" --> EXIT_WAIT["Exit — nothing to do"]
+        end
+
+        subgraph PHASE_D ["Phase D — Post-Delivery Bookkeeping"]
+            direction TB
+            UPDATE_CONV["Update conversation:<br/>• last_action = action taken<br/>• last_action_timestamp = now<br/>• planned_message = null<br/>• Append to stage_history"]
+            UPDATE_CONV --> MCP_UPSERT_D["<b>MCP: upsert_conversation</b>"]
+            MCP_UPSERT_D --> MCP_LOG_D["<b>MCP: append_action_log</b><br/>action: message_sent"]
+            MCP_LOG_D --> SYNC_PROSPECT["Sync outreach_stage to prospect<br/><b>MCP: upsert_prospect</b>"]
+        end
+
+        MCP_UPSERT_SYNC --> LOAD_STATE
+        PW_SEND --> UPDATE_CONV
+        SKIP_SEND --> END_SEQUENCE
+    end
+
+    SYNC_PROSPECT --> NEXT_CYCLE{"More steps<br/>remaining?"}
+    NEXT_CYCLE -- "Yes (steps 2-4)" --> WAIT_REPLY["⏳ Wait for prospect reply<br/>(check again later)"]
+    WAIT_REPLY --> PHASE_A
+    NEXT_CYCLE -- "No — ending" --> END_SEQUENCE
+    EXIT_WAIT --> WAIT_REPLY
+
+    %% ═══════════════════════════════════════════════
+    %% ENDING SEQUENCE
+    %% ═══════════════════════════════════════════════
+    subgraph END_FLOW ["⑥ End Sequence"]
+        direction TB
+        END_SEQUENCE["<b>End Conversation</b>"]
+        END_SEQUENCE --> SET_ENDED["Set conversation fields:<br/>• ended_at = ISO now<br/>• ended_reason = reason<br/>• outreach_stage = ended<br/>• next_action = null<br/>• planned_message = null"]
+        SET_ENDED --> GEN_REPORT["<b>Generate Outreach Report</b><br/>Markdown with sections:<br/>• Profile Summary<br/>• Conversation Summary<br/>• Career Plans<br/>• Outcome (resume/email/call)<br/>• Handoff Notes"]
+        GEN_REPORT --> MCP_REPORT["<b>MCP: save_outreach_report(id, md)</b><br/>→ outreach/storage/reports/id.md"]
+        MCP_REPORT --> SET_REPORT_PATH["conversation.report_path =<br/>outreach/storage/reports/id.md"]
+        SET_REPORT_PATH --> MCP_UPSERT_END["<b>MCP: upsert_conversation</b><br/>(final state)"]
+        MCP_UPSERT_END --> MCP_UPSERT_P_END["<b>MCP: upsert_prospect</b><br/>outreach_stage = ended"]
+        MCP_UPSERT_P_END --> MCP_LOG_END["<b>MCP: append_action_log</b><br/>action: conversation_ended<br/>ended_reason: ..."]
+    end
+
+    MCP_LOG_END --> DONE([✅ Outreach Complete])
+
+    %% ═══════════════════════════════════════════════
+    %% BATCH MODE (side flow)
+    %% ═══════════════════════════════════════════════
+    subgraph BATCH ["Batch Mode (Optional)"]
+        direction TB
+        BATCH_START(["Batch Planner Run"])
+        BATCH_START --> MCP_GET_CONNS["<b>MCP: get_connections()</b>"]
+        MCP_GET_CONNS --> FILTER["<b>Business Logic: Filter</b><br/>Exclude: pending, ended, dead"]
+        FILTER --> LOOP["For each actionable connection:<br/>Run Phases A → B → C → D<br/><i>(one touch per prospect max)</i>"]
+        LOOP --> BATCH_LOG["<b>MCP: append_action_log</b><br/>action: batch_plan_run<br/>total, sent, errors, ended"]
+        BATCH_LOG --> BATCH_DONE(["Batch Summary Printed"])
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STYLING
+    %% ═══════════════════════════════════════════════
+    classDef mcp fill:#2563eb,stroke:#1d4ed8,color:#fff,font-weight:bold
+    classDef playwright fill:#7c3aed,stroke:#6d28d9,color:#fff,font-weight:bold
+    classDef skill fill:#059669,stroke:#047857,color:#fff,font-weight:bold
+    classDef logic fill:#d97706,stroke:#b45309,color:#fff,font-weight:bold
+    classDef state fill:#dc2626,stroke:#b91c1c,color:#fff,font-weight:bold
+    classDef data fill:#64748b,stroke:#475569,color:#fff
+
+    class MCP_SCRAPE,MCP_UPSERT_P1,MCP_SEND_CONN,MCP_SAVE_CONN,MCP_UPSERT_CONV1,MCP_ACTION_LOG1,MCP_PLANNED1,MCP_REMOVE_Q,MCP_IS_1ST,FETCH_HIST,MCP_UPSERT_SYNC,MCP_SEND_MSG,MCP_UPSERT_D,MCP_LOG_D,MCP_UPSERT_PLAN,MCP_PLANNED_B,MCP_REPORT,MCP_UPSERT_END,MCP_UPSERT_P_END,MCP_LOG_END,MCP_GET_CONNS,LOAD_STATE mcp
+    class PW_SCRAPE,PW_CONN,PW_CHECK,PW_FETCH,PW_SEND playwright
+    class SCRAPE_SKILL,CONN_REQ_SKILL,SYNC_SKILL skill
+    class COMPOSE_NOTE,MSG_RULES,MERGE_MSGS,FILTER logic
+    class SM_CHECK,ADVANCE,TIMEOUT,DECLINE,CONVERT,FINALIZE,DO_NOTHING state
+    class PROSPECT_JSON,BUILD_CONV,UPDATE_CONV,SET_ENDED,SET_PLANNED,SET_REPORT_PATH,UPDATE_CONN data

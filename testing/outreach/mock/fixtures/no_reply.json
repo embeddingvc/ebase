@@ -1,0 +1,61 @@
+{
+  "case_id": "no_reply",
+  "description": "Prospect replies once after the connection note then goes silent. Planner should time out with no_response.",
+  "profile_url": "https://www.linkedin.com/in/sam-liu-platform/",
+  "prospect_id": "sam_liu_platform",
+  "connection_accepted": true,
+  "end_condition": "no_response",
+  "repeat_final": true,
+  "prospect": {
+    "linkedin_url": "https://www.linkedin.com/in/sam-liu-platform/",
+    "name": "Sam Liu",
+    "title": "Principal Platform Engineer",
+    "company": "Coinbase",
+    "location": "San Francisco, CA",
+    "connection_degree": 2,
+    "mutual_connections": ["Jordan Park"],
+    "about": "Backend and platform engineer building high-throughput trading infrastructure.",
+    "recent_posts": [
+      {
+        "text": "Latency budgets are a product feature. If your API p99 isn't on the roadmap, it should be.",
+        "likes": 76,
+        "timestamp": "2026-03-12"
+      }
+    ],
+    "connection_status": "none",
+    "outreach_stage": "cold",
+    "end_goal": "schedule_meeting",
+    "outreach_topic": "Series A infra lead roles",
+    "target_action": null,
+    "notes": "Engaged briefly then tends to go quiet on follow-ups.",
+    "scraped_at": "2026-03-24T00:00:00Z"
+  },
+  "replies": [
+    {
+      "text": "Thanks Nova! Yeah I'm always curious what's out there."
+    },
+    null,
+    null,
+    null
+  ],
+  "rounds": [
+    {
+      "id": "nr_r0_step1",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "nr_r1_step2",
+      "allowed_actions": ["send_followup_message"],
+      "allowed_stages": ["engaged"]
+    },
+    {
+      "id": "nr_r2_timeout",
+      "allowed_actions": ["mark_dead", "mark_ended", "send_followup_message"],
+      "allowed_stages": ["engaged", "ended", "dead"]
+    }
+  ],
+  "terminal": {
+    "ended_reasons": ["no_response", "no_response_timeout"]
+  }
+}

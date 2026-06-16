@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Check version sync
+        run: make check-version
+
+      - name: Run CI-safe tests
+        run: |
+          uv run pytest testing/tests -v \
+            --ignore=testing/tests/test_regression_workflow.py \
+            --ignore=testing/tests/test_conversation_planner.py \
+            --ignore=testing/tests/test_playwright_exploration.py

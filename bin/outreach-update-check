@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# outreach-update-check — periodic version check for outreach skills.
+#
+# Output (one line, or nothing):
+#   UPGRADE_AVAILABLE <local> <remote>
+#   UPGRADED <old> <remote>
+#   JUST_UPGRADED <old> <local>
+#   UP_TO_DATE <version>
+#
+# Flags:
+#   --force   bust cache and snooze
+#   --apply   run upgrade when an update is available
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+STATE_DIR="${OUTREACH_STATE_DIR:-$HOME/.ebase}"
+CACHE_FILE="$STATE_DIR/last-update-check"
+MARKER_FILE="$STATE_DIR/just-upgraded-from"
+SNOOZE_FILE="$STATE_DIR/update-snoozed"
+CONFIG_BIN="${OUTREACH_CONFIG_BIN:-$SCRIPT_DIR/outreach-config}"
+UPGRADE_BIN="${OUTREACH_UPGRADE_BIN:-$SCRIPT_DIR/outreach-upgrade}"
+REMOTE_BRANCH="${OUTREACH_REMOTE_BRANCH:-main}"
+
+FORCE=0
+APPLY=0
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    --apply) APPLY=1 ;;
+  esac
+done
+
+if [[ "$FORCE" -eq 1 ]]; then
+  rm -f "$CACHE_FILE" "$SNOOZE_FILE"
+fi
+
+resolve_repo_root() {
+  if [[ -n "${OUTREACH_REPO_ROOT:-}" ]]; then
+    printf '%s' "$OUTREACH_REPO_ROOT"
+    return 0
+  fi
+  local root
+  root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$root" ]] && [[ -f "${root}/pyproject.toml" ]] \
+      && grep -q 'name = "ebase"' "${root}/pyproject.toml" 2>/dev/null; then
+    printf '%s' "$root"
+    return 0
+  fi
+  if [[ -f "${DEFAULT_REPO_ROOT}/pyproject.toml" ]] \
+      && grep -q 'name = "ebase"' "${DEFAULT_REPO_ROOT}/pyproject.toml" 2>/dev/null; then
+    printf '%s' "$DEFAULT_REPO_ROOT"
+    return 0
+  fi
+  return 1
+}
+
+check_snooze() {
+  local remote_ver="$1"
+  [[ -f "$SNOOZE_FILE" ]] || return 1
+  local snoozed_ver snoozed_level snoozed_epoch
+  snoozed_ver="$(awk '{print $1}' "$SNOOZE_FILE" 2>/dev/null || true)"
+  snoozed_level="$(awk '{print $2}' "$SNOOZE_FILE" 2>/dev/null || true)"
+  snoozed_epoch="$(awk '{print $3}' "$SNOOZE_FILE" 2>/dev/null || true)"
+  [[ -n "$snoozed_ver" && -n "$snoozed_level" && -n "$snoozed_epoch" ]] || return 1
+  case "$snoozed_level" in *[!0-9]*) return 1 ;; esac
+  case "$snoozed_epoch" in *[!0-9]*) return 1 ;; esac
+  [[ "$snoozed_ver" == "$remote_ver" ]] || return 1
+  local duration now expires
+  case "$snoozed_level" in
+    1) duration=86400 ;;
+    2) duration=172800 ;;
+    *) duration=604800 ;;
+  esac
+  now="$(date +%s)"
+  expires=$((snoozed_epoch + duration))
+  [[ "$now" -lt "$expires" ]]
+}
+
+read_version() {
+  local repo="$1" ref="${2:-}"
+  if [[ -n "$ref" ]]; then
+    git -C "$repo" show "${ref}:VERSION" 2>/dev/null | tr -d '[:space:]' || true
+    return 0
+  fi
+  if [[ -f "${repo}/VERSION" ]]; then
+    tr -d '[:space:]' <"${repo}/VERSION"
+    return 0
+  fi
+  printf ''
+}
+
+REPO_ROOT=""
+if ! REPO_ROOT="$(resolve_repo_root)"; then
+  exit 0
+fi
+
+if [[ -x "$CONFIG_BIN" ]]; then
+  _UC="$("$CONFIG_BIN" get update_check 2>/dev/null || true)"
+  if [[ "$_UC" == "false" ]]; then
+    exit 0
+  fi
+fi
+
+VERSION_FILE="${REPO_ROOT}/VERSION"
+LOCAL="$(read_version "$REPO_ROOT")"
+if [[ -z "$LOCAL" ]]; then
+  exit 0
+fi
+
+if [[ -f "$MARKER_FILE" ]]; then
+  OLD="$(tr -d '[:space:]' <"$MARKER_FILE" 2>/dev/null || true)"
+  rm -f "$MARKER_FILE" "$SNOOZE_FILE"
+  if [[ -n "$OLD" ]]; then
+    echo "JUST_UPGRADED $OLD $LOCAL"
+  fi
+fi
+
+if [[ -f "$CACHE_FILE" ]]; then
+  CACHED="$(cat "$CACHE_FILE" 2>/dev/null || true)"
+  CACHE_TTL=0
+  case "$CACHED" in
+    UP_TO_DATE*) CACHE_TTL=60 ;;
+    UPGRADE_AVAILABLE*) CACHE_TTL=720 ;;
+  esac
+  if [[ "$CACHE_TTL" -gt 0 ]]; then
+    STALE="$(find "$CACHE_FILE" -mmin +"$CACHE_TTL" 2>/dev/null || true)"
+    if [[ -z "$STALE" ]]; then
+      case "$CACHED" in
+        UP_TO_DATE*)
+          CACHED_VER="$(echo "$CACHED" | awk '{print $2}')"
+          if [[ "$CACHED_VER" == "$LOCAL" ]]; then
+            exit 0
+          fi
+          ;;
+        UPGRADE_AVAILABLE*)
+          CACHED_OLD="$(echo "$CACHED" | awk '{print $2}')"
+          if [[ "$CACHED_OLD" == "$LOCAL" ]]; then
+            CACHED_NEW="$(echo "$CACHED" | awk '{print $3}')"
+            if check_snooze "$CACHED_NEW"; then
+              exit 0
+            fi
+            if [[ "$APPLY" -eq 1 ]]; then
+              OUTREACH_REPO_ROOT="$REPO_ROOT" "$UPGRADE_BIN" "$CACHED_OLD" "$CACHED_NEW"
+              exit $?
+            fi
+            echo "$CACHED"
+            exit 0
+          fi
+          ;;
+      esac
+    fi
+  fi
+fi
+
+mkdir -p "$STATE_DIR"
+
+if [[ ! -d "${REPO_ROOT}/.git" ]]; then
+  echo "UP_TO_DATE $LOCAL" >"$CACHE_FILE"
+  exit 0
+fi
+
+REMOTE=""
+if GIT_TERMINAL_PROMPT=0 GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=5 \
+   git -C "$REPO_ROOT" fetch origin "$REMOTE_BRANCH" --quiet 2>/dev/null; then
+  REMOTE="$(read_version "$REPO_ROOT" "origin/${REMOTE_BRANCH}")"
+fi
+
+if [[ -z "$REMOTE" ]] || ! echo "$REMOTE" | grep -qE '^[0-9]+\.[0-9.]+$'; then
+  echo "UP_TO_DATE $LOCAL" >"$CACHE_FILE"
+  exit 0
+fi
+
+if [[ "$LOCAL" == "$REMOTE" ]]; then
+  echo "UP_TO_DATE $LOCAL" >"$CACHE_FILE"
+  exit 0
+fi
+
+_HIGHER="$(printf '%s\n%s\n' "$LOCAL" "$REMOTE" | sort -V | tail -1)"
+if [[ "$_HIGHER" != "$REMOTE" ]]; then
+  echo "UP_TO_DATE $LOCAL" >"$CACHE_FILE"
+  exit 0
+fi
+
+echo "UPGRADE_AVAILABLE $LOCAL $REMOTE" >"$CACHE_FILE"
+if check_snooze "$REMOTE"; then
+  exit 0
+fi
+
+if [[ "$APPLY" -eq 1 ]]; then
+  OUTREACH_REPO_ROOT="$REPO_ROOT" "$UPGRADE_BIN" "$LOCAL" "$REMOTE"
+  exit $?
+fi
+
+echo "UPGRADE_AVAILABLE $LOCAL $REMOTE"

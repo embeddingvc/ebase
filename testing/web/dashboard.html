@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OutreachPro Dashboard</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/dashboard.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: "#005d8f",
+            "primary-container": "#0077b5",
+            "on-primary": "#ffffff",
+            "secondary-container": "#d5e0f8",
+            "on-secondary-container": "#586377",
+            background: "#f7f9fb",
+            surface: "#f7f9fb",
+            "surface-container-low": "#f2f4f6",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-high": "#e6e8ea",
+            "outline-variant": "#bfc7d1",
+            "on-surface": "#191c1e",
+            "on-surface-variant": "#404850",
+            error: "#ba1a1a",
+          },
+          spacing: {
+            sidebar_width: "260px",
+            margin_desktop: "32px",
+            gutter: "24px",
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="bg-background text-on-surface min-h-screen">
+  <header class="bg-surface/80 backdrop-blur-md sticky top-0 z-50 border-b border-outline-variant flex justify-between items-center w-full px-4 md:px-8 h-16">
+    <div class="flex items-center gap-4">
+      <span class="text-xl font-bold text-primary">OutreachPro</span>
+      <span id="mode-badge" class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container">—</span>
+    </div>
+    <div class="flex items-center gap-1 bg-surface-container-low border border-outline-variant rounded-full p-1" role="tablist" aria-label="Data view">
+      <a id="scope-link-live" href="/" class="scope-link scope-link--active px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+        <span class="material-symbols-outlined text-[14px]">public</span>Live
+      </a>
+      <a id="scope-link-mock" href="/mock" class="scope-link px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+        <span class="material-symbols-outlined text-[14px]">science</span>Mock
+      </a>
+    </div>
+  </header>
+
+  <div class="flex min-h-[calc(100vh-4rem)]">
+    <aside class="bg-surface-container-low border-r border-outline-variant fixed left-0 top-16 h-[calc(100vh-4rem)] w-[260px] hidden md:flex flex-col p-3 gap-6 z-30">
+      <div class="px-2 py-2">
+        <div class="text-lg font-black tracking-tight text-primary">Outreach Engine</div>
+        <div class="text-[11px] text-on-surface-variant uppercase tracking-wider">Automation</div>
+      </div>
+      <nav class="flex-grow flex flex-col gap-1">
+        <button type="button" data-tab="connections" class="nav-item nav-item--active flex items-center p-3 gap-3 rounded-lg transition-all hover:translate-x-0.5">
+          <span class="material-symbols-outlined">group</span>
+          <span class="text-xs font-semibold tracking-wide">Connections</span>
+        </button>
+        <button type="button" data-tab="routines" class="nav-item text-on-surface-variant flex items-center p-3 gap-3 rounded-lg hover:bg-surface-container-high transition-all">
+          <span class="material-symbols-outlined">bolt</span>
+          <span class="text-xs font-semibold tracking-wide">Routines</span>
+        </button>
+        <button type="button" data-tab="meetings" class="nav-item text-on-surface-variant flex items-center p-3 gap-3 rounded-lg hover:bg-surface-container-high transition-all">
+          <span class="material-symbols-outlined">calendar_month</span>
+          <span class="text-xs font-semibold tracking-wide">Meetings</span>
+        </button>
+        <button type="button" data-tab="conversation" class="nav-item nav-item--mock text-on-surface-variant flex items-center p-3 gap-3 rounded-lg hover:bg-surface-container-high transition-all" hidden>
+          <span class="material-symbols-outlined">forum</span>
+          <span class="text-xs font-semibold tracking-wide">Conversation</span>
+        </button>
+        <button type="button" data-tab="regression" class="nav-item nav-item--mock text-on-surface-variant flex items-center p-3 gap-3 rounded-lg hover:bg-surface-container-high transition-all" hidden>
+          <span class="material-symbols-outlined">play_circle</span>
+          <span class="text-xs font-semibold tracking-wide">Regression</span>
+        </button>
+      </nav>
+      <p id="campaign-goal" class="text-[11px] text-on-surface-variant px-2 border-t border-outline-variant pt-4"></p>
+    </aside>
+
+    <main class="md:ml-[260px] xl:mr-64 flex-grow p-4 md:p-8 max-w-[1440px] w-full">
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+        <div>
+          <h1 id="page-title" class="text-2xl md:text-3xl font-bold text-on-surface">Prospect Performance</h1>
+          <p id="page-subtitle" class="text-sm text-on-surface-variant mt-1">Active connections and outreach stages.</p>
+        </div>
+        <div class="flex flex-col items-end gap-1">
+          <span id="last-synced" class="text-[11px] text-on-surface-variant hidden">Last synced at —</span>
+          <button type="button" onclick="refreshCurrentTab()" class="px-4 py-2 bg-primary text-on-primary rounded-lg text-sm font-bold hover:brightness-110">Refresh</button>
+        </div>
+      </div>
+
+      <p id="error-connections" class="text-error text-sm mb-4" hidden></p>
+      <p id="error-routines" class="text-error text-sm mb-4" hidden></p>
+      <p id="error-meetings" class="text-error text-sm mb-4" hidden></p>
+      <p id="error-conversation" class="text-error text-sm mb-4" hidden></p>
+      <p id="error-regression" class="text-error text-sm mb-4" hidden></p>
+
+      <section class="tab-panel" data-tab="connections">
+        <div class="bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
+          <div class="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low gap-3 flex-wrap">
+            <h2 class="text-lg font-semibold">Active Prospects</h2>
+            <div class="flex items-center gap-3">
+              <span id="connections-count" class="text-[11px] text-on-surface-variant uppercase tracking-widest">—</span>
+              <button type="button" id="btn-add-connection" class="px-3 py-2 bg-primary text-on-primary rounded-lg text-xs font-bold hover:brightness-110 flex items-center gap-1">
+                <span class="material-symbols-outlined text-base">person_add</span>
+                Add connection
+              </button>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full border-collapse min-w-[760px]">
+              <thead class="bg-surface-container-low">
+                <tr>
+                  <th class="text-left py-3 px-4 text-xs font-semibold text-on-surface-variant border-b border-outline-variant">Name</th>
+                  <th class="text-left py-3 px-4 text-xs font-semibold text-on-surface-variant border-b border-outline-variant">Role</th>
+                  <th class="text-left py-3 px-4 text-xs font-semibold text-on-surface-variant border-b border-outline-variant">Stage</th>
+                  <th class="text-left py-3 px-4 text-xs font-semibold text-on-surface-variant border-b border-outline-variant">Last Action</th>
+                  <th class="text-left py-3 px-4 text-xs font-semibold text-on-surface-variant border-b border-outline-variant">Schedule</th>
+                  <th class="text-right py-3 px-4 text-xs font-semibold text-on-surface-variant border-b border-outline-variant"></th>
+                </tr>
+              </thead>
+              <tbody id="connections-tbody" class="divide-y divide-outline-variant">
+                <tr><td colspan="6" class="py-8 text-center text-on-surface-variant">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-tab="routines" hidden>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+          <div class="bg-white p-5 rounded-xl border border-outline-variant flex items-center gap-4">
+            <div class="w-12 h-12 bg-emerald-50 text-emerald-700 rounded-full flex items-center justify-center">
+              <span class="material-symbols-outlined">task_alt</span>
+            </div>
+            <div>
+              <p class="text-xs text-on-surface-variant uppercase">Success Rate</p>
+              <p id="stat-success" class="text-xl font-bold">—</p>
+            </div>
+          </div>
+          <div class="bg-white p-5 rounded-xl border border-outline-variant flex items-center gap-4">
+            <div class="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center">
+              <span class="material-symbols-outlined">history</span>
+            </div>
+            <div>
+              <p class="text-xs text-on-surface-variant uppercase">Total Events</p>
+              <p id="stat-events" class="text-xl font-bold">—</p>
+            </div>
+          </div>
+          <div class="bg-white p-5 rounded-xl border border-outline-variant flex items-center gap-4">
+            <div class="w-12 h-12 bg-amber-50 text-amber-700 rounded-full flex items-center justify-center">
+              <span class="material-symbols-outlined">schedule</span>
+            </div>
+            <div>
+              <p class="text-xs text-on-surface-variant uppercase">Pending</p>
+              <p id="stat-pending" class="text-xl font-bold">—</p>
+            </div>
+          </div>
+          <div class="bg-white p-5 rounded-xl border border-outline-variant flex items-center gap-4">
+            <div class="w-12 h-12 bg-red-50 text-error rounded-full flex items-center justify-center">
+              <span class="material-symbols-outlined">error_outline</span>
+            </div>
+            <div>
+              <p class="text-xs text-on-surface-variant uppercase">Failures</p>
+              <p id="stat-failures" class="text-xl font-bold">—</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden mb-6">
+          <div class="p-4 border-b border-outline-variant">
+            <h2 class="text-lg font-semibold">Routine Run History</h2>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full table-fixed">
+              <colgroup>
+                <col style="width:24%">
+                <col style="width:20%">
+                <col style="width:9%">
+                <col style="width:12%">
+                <col style="width:35%">
+              </colgroup>
+              <thead>
+                <tr class="bg-surface-container-low border-b border-outline-variant">
+                  <th class="px-4 py-3 text-xs font-semibold text-on-surface-variant text-left overflow-hidden">Routine</th>
+                  <th class="px-4 py-3 text-xs font-semibold text-on-surface-variant text-left overflow-hidden">Started</th>
+                  <th class="px-3 py-3 text-xs font-semibold text-on-surface-variant text-left overflow-hidden">Dur.</th>
+                  <th class="px-3 py-3 text-xs font-semibold text-on-surface-variant text-left overflow-hidden">Status</th>
+                  <th class="px-4 py-3 text-xs font-semibold text-on-surface-variant text-left overflow-hidden">Note</th>
+                </tr>
+              </thead>
+              <tbody id="execution-tbody" class="divide-y divide-outline-variant"></tbody>
+            </table>
+          </div>
+          <div class="bg-surface-container-low px-6 py-3">
+            <p id="execution-pagination" class="text-[11px] text-on-surface-variant"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-tab="conversation" hidden>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
+          <div class="xl:col-span-2 bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
+            <div class="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low gap-3 flex-wrap">
+              <div class="flex items-center gap-3">
+                <h2 class="text-lg font-semibold">Live mock thread</h2>
+                <span id="mock-conv-session-badge" class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container">no session</span>
+              </div>
+              <div class="flex items-center gap-3 flex-wrap justify-end">
+                <span id="mock-conv-meta" class="text-[11px] text-on-surface-variant">—</span>
+                <select id="mock-conv-case-select" class="text-xs border border-outline-variant rounded-md px-2 py-1 min-w-[11rem]" aria-label="Test case"></select>
+              </div>
+            </div>
+            <div class="p-4 bg-surface-container-low border-b border-outline-variant flex flex-wrap gap-3 text-[11px] text-on-surface-variant">
+              <div><span class="font-bold text-on-surface">Stage:</span> <span id="mock-conv-stage">—</span></div>
+              <div><span class="font-bold text-on-surface">Next action:</span> <span id="mock-conv-next-action">—</span></div>
+              <div><span class="font-bold text-on-surface">Email:</span> <span id="mock-conv-email">—</span></div>
+              <div><span class="font-bold text-on-surface">Meeting:</span> <span id="mock-conv-meeting">—</span></div>
+            </div>
+            <div id="mock-conv-thread" class="px-4 py-5 space-y-3 max-h-[60vh] overflow-y-auto">
+              <p class="text-sm text-on-surface-variant">Waiting for a mock session…</p>
+            </div>
+          </div>
+
+          <aside class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 space-y-4">
+            <div>
+              <h3 class="text-base font-semibold mb-1">Test case</h3>
+              <p id="mock-conv-case-id" class="text-xs font-bold text-primary">—</p>
+              <p id="mock-conv-case-desc" class="text-[11px] text-on-surface-variant mt-1 leading-relaxed">—</p>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[11px] text-on-surface-variant">
+              <div class="bg-surface-container-low rounded-lg p-2">
+                <div class="uppercase font-bold text-[10px] tracking-wider">Operator turns</div>
+                <div id="mock-conv-stat-op" class="text-base font-bold text-on-surface">—</div>
+              </div>
+              <div class="bg-surface-container-low rounded-lg p-2">
+                <div class="uppercase font-bold text-[10px] tracking-wider">Prospect replies</div>
+                <div id="mock-conv-stat-prospect" class="text-base font-bold text-on-surface">—</div>
+              </div>
+              <div class="bg-surface-container-low rounded-lg p-2">
+                <div class="uppercase font-bold text-[10px] tracking-wider">Reply slots</div>
+                <div id="mock-conv-stat-slots" class="text-base font-bold text-on-surface">—</div>
+              </div>
+              <div class="bg-surface-container-low rounded-lg p-2">
+                <div class="uppercase font-bold text-[10px] tracking-wider">Ended</div>
+                <div id="mock-conv-stat-ended" class="text-base font-bold text-on-surface">—</div>
+              </div>
+            </div>
+            <div>
+              <h3 class="text-base font-semibold mb-1">Stage history</h3>
+              <ol id="mock-conv-stage-history" class="space-y-1 text-[11px] text-on-surface-variant"></ol>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-tab="regression" hidden>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-1 bg-surface-container-lowest rounded-xl border border-outline-variant p-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <h2 class="text-lg font-semibold">Regression run</h2>
+              <span id="regression-status-badge" class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container">idle</span>
+            </div>
+            <p class="text-[11px] text-on-surface-variant leading-relaxed">
+              Spawns <code>pytest tests/test_regression_workflow.py</code> with
+              <code>OUTREACH_MOCK=1</code>. Watch the Conversation tab to see the
+              mock DM thread tick forward as the harness sends each turn.
+            </p>
+            <label class="block text-xs font-semibold text-on-surface-variant mb-1" for="regression-case-select">Test case</label>
+            <select id="regression-case-select" class="w-full border border-outline-variant rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="">Loading…</option>
+            </select>
+            <p id="regression-case-detail" class="text-[11px] text-on-surface-variant"></p>
+            <div class="flex flex-col gap-2">
+              <button type="button" id="btn-regression-run" class="w-full px-4 py-2 bg-primary text-on-primary rounded-lg text-sm font-bold hover:brightness-110 flex items-center justify-center gap-2">
+                <span id="regression-run-spinner" class="material-symbols-outlined text-base animate-spin hidden">progress_activity</span>
+                <span class="material-symbols-outlined text-base">play_arrow</span>
+                Run regression
+              </button>
+              <button type="button" id="btn-regression-stop" class="w-full px-4 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-sm font-bold hover:bg-surface-container-high flex items-center justify-center gap-2" disabled>
+                <span class="material-symbols-outlined text-base">stop</span>
+                Stop run
+              </button>
+            </div>
+            <div class="border-t border-outline-variant pt-3 space-y-1 text-[11px] text-on-surface-variant">
+              <div><span class="font-bold text-on-surface">Started:</span> <span id="regression-started">—</span></div>
+              <div><span class="font-bold text-on-surface">Finished:</span> <span id="regression-finished">—</span></div>
+              <div><span class="font-bold text-on-surface">PID:</span> <span id="regression-pid">—</span></div>
+              <div><span class="font-bold text-on-surface">Exit code:</span> <span id="regression-exit-code">—</span></div>
+              <div id="regression-error" class="text-error" hidden></div>
+            </div>
+          </div>
+
+          <div class="lg:col-span-2 bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+              <div>
+                <h2 class="text-lg font-semibold">Live log</h2>
+                <p id="regression-log-path" class="text-[10px] text-on-surface-variant"></p>
+              </div>
+              <button type="button" id="btn-regression-clear" class="text-[11px] font-bold text-on-surface-variant hover:text-primary">Clear view</button>
+            </div>
+            <pre id="regression-log" class="regression-log px-4 py-4 text-[11px] leading-snug overflow-y-auto bg-[#0b1c30] text-emerald-200 font-mono whitespace-pre-wrap min-h-[60vh] max-h-[70vh]">No regression run yet — press <span class="text-amber-300">Run regression</span> to start.</pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-tab="meetings" hidden>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div class="bg-white p-5 rounded-xl border border-outline-variant">
+            <span class="text-xs font-semibold text-on-surface-variant uppercase">Meeting interest</span>
+            <p id="meetings-total" class="text-xl font-bold mt-1">—</p>
+          </div>
+          <div class="bg-white p-5 rounded-xl border border-outline-variant">
+            <span class="text-xs font-semibold text-on-surface-variant uppercase">With link</span>
+            <p id="meetings-with-link" class="text-xl font-bold mt-1">—</p>
+          </div>
+          <div class="bg-white p-5 rounded-xl border border-outline-variant">
+            <span class="text-xs font-semibold text-on-surface-variant uppercase">With email</span>
+            <p id="meetings-with-email" class="text-xl font-bold mt-1">—</p>
+          </div>
+        </div>
+        <h2 class="text-lg font-semibold mb-4 px-1">Upcoming &amp; interested</h2>
+        <div id="meetings-list" class="space-y-4">
+          <p class="text-sm text-on-surface-variant">Loading…</p>
+        </div>
+      </section>
+    </main>
+
+    <aside class="bg-surface border-l border-outline-variant fixed right-0 top-16 h-[calc(100vh-4rem)] w-64 hidden xl:flex flex-col p-4 gap-4 z-30">
+      <h3 class="text-lg font-semibold px-2">System Health</h3>
+      <div id="health-list" class="space-y-3 flex-grow overflow-y-auto">
+        <p class="text-sm text-on-surface-variant">Checking…</p>
+      </div>
+      <div class="border-t border-outline-variant pt-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-on-surface-variant">Queue load</span>
+          <span id="queue-load" class="text-xs font-bold text-primary">—</span>
+        </div>
+        <div class="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden">
+          <div id="queue-bar" class="bg-primary h-full transition-all" style="width:0%"></div>
+        </div>
+        <p id="queue-detail" class="text-[10px] text-on-surface-variant mt-2"></p>
+      </div>
+      <div class="p-3 rounded-xl bg-primary-container text-white">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-symbols-outlined text-[18px]">info</span>
+          <span class="text-[11px] font-bold uppercase">System tip</span>
+        </div>
+        <p id="system-tip" class="text-[11px] leading-relaxed opacity-90"></p>
+      </div>
+    </aside>
+  </div>
+
+  <nav class="md:hidden fixed bottom-0 left-0 w-full bg-surface-container-low border-t border-outline-variant flex justify-around items-center h-14 z-40">
+    <button type="button" data-tab="connections" class="nav-item nav-item--active flex flex-col items-center gap-0.5 text-primary text-[10px] font-bold">
+      <span class="material-symbols-outlined text-xl">group</span>Connections
+    </button>
+    <button type="button" data-tab="routines" class="nav-item flex flex-col items-center gap-0.5 text-on-surface-variant text-[10px]">
+      <span class="material-symbols-outlined text-xl">bolt</span>Routines
+    </button>
+    <button type="button" data-tab="meetings" class="nav-item flex flex-col items-center gap-0.5 text-on-surface-variant text-[10px]">
+      <span class="material-symbols-outlined text-xl">calendar_month</span>Meetings
+    </button>
+    <button type="button" data-tab="conversation" class="nav-item nav-item--mock flex flex-col items-center gap-0.5 text-on-surface-variant text-[10px]" hidden>
+      <span class="material-symbols-outlined text-xl">forum</span>DMs
+    </button>
+    <button type="button" data-tab="regression" class="nav-item nav-item--mock flex flex-col items-center gap-0.5 text-on-surface-variant text-[10px]" hidden>
+      <span class="material-symbols-outlined text-xl">play_circle</span>Regress
+    </button>
+  </nav>
+
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div id="connection-modal" class="modal-panel" hidden>
+      <h3 class="text-lg font-bold mb-1">Add connection</h3>
+      <p class="text-sm text-on-surface-variant mb-4">LinkedIn profile URL. Runs send-connection-request via Claude.</p>
+      <label class="block text-xs font-semibold text-on-surface-variant mb-1" for="connection-url-input">Profile URL</label>
+      <input id="connection-url-input" type="url" class="w-full border border-outline-variant rounded-lg px-3 py-2 text-sm mb-4" placeholder="https://www.linkedin.com/in/username/" />
+      <p id="connection-modal-error" class="text-error text-sm mb-3" hidden></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" id="connection-modal-cancel" class="px-4 py-2 rounded-lg border border-outline-variant text-sm font-bold">Cancel</button>
+        <button type="button" id="connection-modal-submit" class="px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-bold min-w-[7rem] flex items-center justify-center gap-2">
+          <span id="connection-modal-spinner" class="material-symbols-outlined text-base animate-spin hidden">progress_activity</span>
+          <span id="connection-modal-submit-label">Send invite</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>

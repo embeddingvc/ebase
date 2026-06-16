@@ -1,0 +1,111 @@
+{
+  "campaign": {
+    "goal": "Recruit strong AI and software talent for portfolio opportunities.",
+    "topic": "AI startup opportunities and career exploration",
+    "value_proposition": "high-context introductions to startups where candidate background maps to real needs"
+  },
+  "conversation_end_goals": {
+    "preferred": [
+      {
+        "id": "resume_received",
+        "label": "Collect resume",
+        "description": "Prospect shares resume for matching."
+      },
+      {
+        "id": "call_scheduled",
+        "label": "Schedule meeting",
+        "description": "Prospect agrees to a call and shares scheduling details."
+      }
+    ],
+    "fallback": [
+      {
+        "id": "not_interested",
+        "label": "Prospect not interested"
+      },
+      {
+        "id": "no_response",
+        "label": "No response timeout"
+      }
+    ]
+  },
+  "message_rules": {
+    "connection_note_char_limit": 200,
+    "followup_char_limit": 300,
+    "must_include_first_name": true,
+    "banned_phrases": [
+      "I came across your profile",
+      "I'd love to pick your brain",
+      "synergy",
+      "hope this message finds you",
+      "reaching out to connect",
+      "touching base",
+      "circle back",
+      "bandwidth"
+    ],
+    "tone": "warm, specific, curious, low-pressure",
+    "tone_guidelines": "lowercase; short sentences; casual; never",
+    "style_examples": [
+      {
+        "reply": "Hey your experience in this startup seems cool, can I join your network?",
+        "label": "cold opener",
+        "context": "day-1 cold connect note"
+      },
+      {
+        "reply": "I am working with many founders and VC firms, love to help startup to grow",
+        "label": "what we do reply",
+        "context": "prospect asked what we do",
+        "incoming": "What do you do? / What kind of opportunities are these?"
+      },
+      {
+        "reply": "Great, let's schedule a time to discuss what interest you the most.",
+        "label": "career follow-up",
+        "context": "career deep-dive after warm reply",
+        "incoming": "Yeah I'm open to chatting — I've been at Acme for a few years working on infra."
+      },
+      {
+        "reply": "Let meet next week, can you share your email?",
+        "label": "next steps",
+        "context": "prospect asked about next steps",
+        "incoming": "Sounds interesting — what would the next step look like?"
+      },
+      {
+        "reply": "Sure, let me know if you change your mind.",
+        "label": "lukewarm reply",
+        "context": "prospect lukewarm or busy",
+        "incoming": "Maybe later — pretty slammed right now."
+      },
+      {
+        "reply": "Sounds good, let's schedule a call next week!",
+        "label": "resume or call ask",
+        "context": "the ask — resume or call",
+        "incoming": "Yeah I'd be curious to hear more about what's out there."
+      }
+    ]
+  },
+  "router": {
+    "default_plan_mode": "full_sequence",
+    "step_timeout_hours": 48,
+    "step4_path_priority": [
+      "resume_received",
+      "call_scheduled"
+    ],
+    "signal_routes": {
+      "disinterest": {
+        "next_action": "mark_dead",
+        "ended_reason": "not_interested"
+      },
+      "no_response_timeout": {
+        "next_action": "mark_dead",
+        "ended_reason": "no_response"
+      },
+      "resume_or_artifact_received": {
+        "force_sequence_step": 5,
+        "preferred_goal_id": "resume_received"
+      },
+      "email_or_call_intent": {
+        "force_sequence_step": 4,
+        "preferred_goal_id": "call_scheduled"
+      }
+    }
+  }
+}

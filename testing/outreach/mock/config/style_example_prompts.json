@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "tone_questions": [
+    {
+      "id": "tone_adjectives",
+      "question": "Pick 3–5 adjectives that describe how you write on LinkedIn (comma-separated).",
+      "example": "warm, casual, direct, no jargon",
+      "maps_to": "message_rules.tone"
+    },
+    {
+      "id": "casing",
+      "question": "Casing: lowercase, sentence case, or mixed?",
+      "example": "sentence case, contractions ok"
+    },
+    {
+      "id": "length",
+      "question": "Typical reply length?",
+      "example": "1–2 short sentences; connection notes under 200 chars"
+    },
+    {
+      "id": "formality",
+      "question": "Formality level?",
+      "example": "professional-casual — friendly but not buddy-buddy"
+    },
+    {
+      "id": "emoji",
+      "question": "Emoji policy?",
+      "example": "never, or rarely for a thumbs-up only"
+    }
+  ],
+  "style_example_prompts": [
+    {
+      "id": "cold_opener",
+      "label": "cold opener",
+      "question": "You're sending a connection request or first DM to someone you want to talk to. Write the message exactly as you would send it.",
+      "context": "day-1 cold connect note",
+      "incoming": null,
+      "hint": "≤200 characters if it's a connection note. Reference one specific signal (post, role, company) when you can."
+    },
+    {
+      "id": "what_we_do",
+      "label": "what we do reply",
+      "question": "They replied asking what you do or what kind of opportunities you mean. Write your answer.",
+      "context": "prospect asked what we do",
+      "incoming": "What do you do? / What kind of opportunities are these?",
+      "hint": "One or two sentences. Concrete — not pitch-deck language."
+    },
+    {
+      "id": "career_followup",
+      "label": "career follow-up",
+      "question": "They shared a bit about their background and said they're open to chatting. Write your follow-up to learn more about their path and current focus.",
+      "context": "career deep-dive after warm reply",
+      "incoming": "Yeah I'm open to chatting — I've been at Acme for a few years working on infra.",
+      "hint": "Conversational, not an interview. Reference something specific they mentioned."
+    },
+    {
+      "id": "next_steps",
+      "label": "next steps",
+      "question": "They're interested and want to know what happens next. Write your reply.",
+      "context": "prospect asked about next steps",
+      "incoming": "Sounds interesting — what would the next step look like?",
+      "hint": "Low pressure. One clear ask (resume, quick call, or intro)."
+    },
+    {
+      "id": "lukewarm",
+      "label": "lukewarm reply",
+      "question": "They're polite but not committing — busy, not sure, or 'maybe later'. Write how you'd reply.",
+      "context": "prospect lukewarm or busy",
+      "incoming": "Maybe later — pretty slammed right now.",
+      "hint": "Respect the boundary. Leave the door open without pushing."
+    },
+    {
+      "id": "resume_or_call_ask",
+      "label": "resume or call ask",
+      "question": "The conversation is going well and you're ready to ask for a resume or a short call. Write that message.",
+      "context": "the ask — resume or call",
+      "incoming": "Yeah I'd be curious to hear more about what's out there.",
+      "hint": "Frame why it helps them match with the right opportunities, not why you need it."
+    }
+  ]
+}
