@@ -38,7 +38,8 @@ testing/outreach/mock/prospects/*.json
 testing/outreach/mock/logs/
 testing/outreach/mock/storage/
 
-# gstack retro artifacts (per-machine)
+# gstack artifacts (per-machine)
+.gstack/
 .context/
 
 # Claude Desktop config (copy claude_desktop_config.json.example → claude_desktop_config.json)
