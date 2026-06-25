@@ -1225,6 +1225,7 @@ class LinkedInBrowser:
         Poll LinkedIn UI after submit.  Returns ``None`` when verified, else an error.
         """
         await self._page.evaluate("window.scrollTo(0, 0)")
+        await self._page.wait_for_timeout(500)
         deadline = asyncio.get_running_loop().time() + _INVITE_VERIFY_TIMEOUT_S
         while asyncio.get_running_loop().time() < deadline:
             failure = await self._connection_invite_failure_on_page()
