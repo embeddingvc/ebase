@@ -138,6 +138,12 @@ _CONNECT_NOT_FOUND_MSG = (
     "connection, have a pending request, or the button is hidden behind "
     "the More menu."
 )
+_FOLLOWERS_ONLY_MSG = (
+    "Connection request could not be sent. "
+    "This profile appears to be followers-only (primary CTA is Follow, "
+    "not Connect). Connect may be unavailable — try following and using "
+    "Message instead."
+)
 _INVITE_VERIFY_FAILED_MSG = (
     "Could not verify the connection invitation was sent. "
     "LinkedIn did not show a confirmation or Pending state — "
@@ -1426,6 +1432,162 @@ class LinkedInBrowser:
         )
         return _INVITE_VERIFY_FAILED_MSG
 
+    async def _find_direct_connect_control(self, workspace: Locator) -> Locator | None:
+        """Return a visible top-card Connect control, if any."""
+        _invite_connect = re.compile(r"Invite .+ to connect", re.I)
+        _connect_only = re.compile(r"^Connect$", re.I)
+        candidates = (
+            workspace.locator("a[href*='custom-invite']:has-text('Connect')").first,
+            workspace.locator("a[href*='custom-invite']").first,
+            workspace.get_by_role("button", name=_invite_connect).first,
+            workspace.get_by_role("link", name=_invite_connect).first,
+            workspace.locator(
+                "button[aria-label*='Invite'][aria-label*='to connect' i]"
+            ).first,
+            workspace.get_by_role("button", name=_connect_only).first,
+            workspace.get_by_role("link", name=_connect_only).first,
+            workspace.locator("button.artdeco-button--primary").filter(
+                has_text=_connect_only
+            ).first,
+            self._page.get_by_role("button", name=_invite_connect).first,
+            self._page.get_by_role("button", name=_connect_only).first,
+        )
+        for cand in candidates:
+            if not await cand.count():
+                continue
+            try:
+                if await cand.is_visible():
+                    return cand
+            except Exception:
+                continue
+        return None
+
+    async def _find_profile_more_button(self, workspace: Locator) -> Locator | None:
+        """Profile action-row overflow (SDUI uses aria-label='More')."""
+        candidates = (
+            workspace.locator("button[aria-label='More']").first,
+            workspace.locator("button[aria-label='More actions']").first,
+            workspace.locator("button[aria-label*='More actions' i]").first,
+            workspace.get_by_role(
+                "button", name=re.compile(r"^More( actions)?$", re.I)
+            ).first,
+            self._page.locator("button[aria-label='More']").last,
+            self._page.locator("button[aria-label='More actions']").last,
+            self._page.locator("button[aria-label*='More actions' i]").last,
+            self._page.get_by_role(
+                "button", name=re.compile(r"^More( actions)?$", re.I)
+            ).last,
+        )
+        for cand in candidates:
+            if not await cand.count():
+                continue
+            try:
+                if await cand.is_visible():
+                    return cand
+            except Exception:
+                continue
+        return None
+
+    async def _find_connect_control_in_open_menu(self) -> Locator | None:
+        """
+        Find Connect anywhere visible after the profile More menu opens.
+
+        SDUI menus often skip legacy ``artdeco-dropdown`` containers, so search
+        the whole page (same pattern as :meth:`download_profile_pdf`).
+        """
+        _invite_connect = re.compile(r"Invite .+ to connect", re.I)
+        _invite_label = re.compile(r"^Invite\b.*\bto connect\b", re.I)
+        _connect_only = re.compile(r"^Connect$", re.I)
+        _connect_word = re.compile(r"\bConnect\b", re.I)
+        candidates = (
+            self._page.locator("a[href*='custom-invite']:visible").first,
+            self._page.locator(
+                "[aria-label^='Invite '][aria-label*='to connect' i]:visible"
+            ).first,
+            self._page.get_by_role("menuitem", name=_invite_label).first,
+            self._page.get_by_role("menuitem", name=_connect_word).first,
+            self._page.get_by_role("button", name=_invite_connect).first,
+            self._page.get_by_role("button", name=_connect_only).first,
+            self._page.get_by_role("link", name=_connect_only).first,
+            self._page.locator("[role='menuitem']:visible").filter(
+                has_text=_connect_word
+            ).first,
+            self._page.locator("[role='button']:visible").filter(
+                has_text=_connect_only
+            ).first,
+            self._page.locator("a:visible").filter(has_text=_connect_only).first,
+            self._page.locator("button:visible, a:visible").filter(
+                has_text=_connect_word
+            ).first,
+        )
+        for cand in candidates:
+            if not await cand.count():
+                continue
+            try:
+                if await cand.is_visible():
+                    return cand
+            except Exception:
+                continue
+        return None
+
+    async def _profile_has_follow_primary_cta(self, workspace: Locator) -> bool:
+        """True when the profile top card shows Follow instead of Connect."""
+        _follow_only = re.compile(r"^Follow$", re.I)
+        candidates = (
+            workspace.get_by_role("button", name=_follow_only),
+            workspace.locator("button[aria-label^='Follow ' i]"),
+            workspace.locator("button[aria-label^='Follow' i]"),
+        )
+        for cand in candidates:
+            if not await cand.count():
+                continue
+            try:
+                if await cand.first.is_visible():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _open_more_and_find_connect(
+        self,
+        workspace: Locator,
+        profile_url: str,
+    ) -> tuple[Locator | None, str | None]:
+        """Open profile More overflow and return a Connect control or error."""
+        more_btn = await self._find_profile_more_button(workspace)
+        if more_btn is None:
+            logger.warning(
+                "send_connection_request: no Connect button and no profile "
+                "'More' overflow button found on %s",
+                profile_url,
+            )
+            return None, _CONNECT_NOT_FOUND_MSG
+
+        logger.info(
+            "send_connection_request: Connect not directly visible; opening "
+            "More overflow menu for %s",
+            profile_url,
+        )
+        await _human_click(self._page, more_btn)
+        await _human_pause(0.2, 0.5)
+
+        deadline = asyncio.get_running_loop().time() + (EL_TIMEOUT / 1000.0)
+        while asyncio.get_running_loop().time() < deadline:
+            connect_btn = await self._find_connect_control_in_open_menu()
+            if connect_btn is not None:
+                return connect_btn, None
+            await self._page.wait_for_timeout(150)
+
+        logger.warning(
+            "send_connection_request: Connect option not present in More "
+            "menu on %s — profile may already be a connection, have a "
+            "pending invite, be followers-only, or be restricted to InMail.",
+            profile_url,
+        )
+        if await self._profile_has_follow_primary_cta(workspace):
+            return None, _FOLLOWERS_ONLY_MSG
+        return None, _CONNECT_NOT_FOUND_MSG
+
     async def send_connection_request(self, profile_url: str, note: str = "") -> str | None:
         """
         Send a connection request to a LinkedIn profile.
@@ -1459,132 +1621,13 @@ class LinkedInBrowser:
 
         workspace = self._page.locator("main, #workspace")
 
-        # SDUI invite CTA variants:
-        #   • <a href="/preload/custom-invite/...">Connect</a>
-        #   • <button aria-label="Invite {name} to connect"><span>Connect</span></button>
-        # Playwright uses the accessible name (aria-label wins over inner text), so
-        # get_by_role(..., name="Connect") misses the common button form above.
-        _invite_connect = re.compile(r"Invite .+ to connect", re.I)
-        _connect_only = re.compile(r"^Connect$", re.I)
-
-        connect_btn = None
-        direct_connect_candidates = (
-            workspace.locator("a[href*='custom-invite']:has-text('Connect')").first,
-            workspace.locator("a[href*='custom-invite']").first,
-            workspace.get_by_role("button", name=_invite_connect).first,
-            workspace.get_by_role("link", name=_invite_connect).first,
-            workspace.locator(
-                "button[aria-label*='Invite'][aria-label*='to connect' i]"
-            ).first,
-            workspace.get_by_role("button", name=_connect_only).first,
-            workspace.get_by_role("link", name=_connect_only).first,
-            workspace.locator("button.artdeco-button--primary").filter(
-                has_text=_connect_only
-            ).first,
-            self._page.get_by_role("button", name=_invite_connect).first,
-            self._page.get_by_role("button", name=_connect_only).first,
-        )
-        for cand in direct_connect_candidates:
-            if await cand.count():
-                connect_btn = cand
-                break
-
-        # Fall back to the profile-level "More" overflow → Connect.
-        # LinkedIn renders this button with aria-label="More actions" (the
-        # visible glyph is just "···"), so a name=/^More$/ search misses it.
+        connect_btn = await self._find_direct_connect_control(workspace)
         if connect_btn is None:
-            more_candidates = (
-                workspace.locator("button[aria-label='More actions']").first,
-                workspace.locator("button[aria-label*='More actions' i]").first,
-                workspace.get_by_role(
-                    "button", name=re.compile(r"^More( actions)?$", re.I)
-                ).first,
-                self._page.locator("button[aria-label='More actions']").last,
-                self._page.locator("button[aria-label*='More actions' i]").last,
-                self._page.get_by_role(
-                    "button", name=re.compile(r"^More( actions)?$", re.I)
-                ).last,
+            connect_btn, err = await self._open_more_and_find_connect(
+                workspace, profile_url
             )
-            more_btn = None
-            for cand in more_candidates:
-                if await cand.count():
-                    more_btn = cand
-                    break
-            if more_btn is None:
-                logger.warning(
-                    "send_connection_request: no Connect button and no profile "
-                    "'More' overflow button found on %s",
-                    profile_url,
-                )
-                return _CONNECT_NOT_FOUND_MSG
-
-            logger.info(
-                "send_connection_request: Connect not directly visible; opening "
-                "More overflow menu for %s",
-                profile_url,
-            )
-            await _human_click(self._page, more_btn)
-
-            # Wait for the dropdown panel to actually render before searching it.
-            menu_root = None
-            menu_selectors = (
-                ".artdeco-dropdown__content--is-open:visible",
-                "[role='menu']:visible",
-                "div.artdeco-dropdown__content:visible",
-            )
-            menu_deadline = asyncio.get_running_loop().time() + (EL_TIMEOUT / 1000.0)
-            while asyncio.get_running_loop().time() < menu_deadline:
-                for sel in menu_selectors:
-                    loc = self._page.locator(sel).first
-                    try:
-                        if await loc.count() and await loc.is_visible():
-                            menu_root = loc
-                            break
-                    except Exception:
-                        continue
-                if menu_root is not None:
-                    break
-                await self._page.wait_for_timeout(150)
-            if menu_root is None:
-                logger.warning(
-                    "send_connection_request: More menu did not open on %s",
-                    profile_url,
-                )
-                return (
-                    "Connection request could not be sent. "
-                    "The profile More menu did not open."
-                )
-
-            # In the overflow menu LinkedIn typically renders Connect as
-            # <div role="button"> or <button>, not role=menuitem, and often with
-            # aria-label="Invite <name> to connect".
-            _connect_word = re.compile(r"\bConnect\b", re.I)
-            _invite_label = re.compile(r"^Invite\b.*\bto connect\b", re.I)
-            connect_candidates = (
-                menu_root.locator("[aria-label^='Invite '][aria-label*='to connect' i]").first,
-                menu_root.get_by_role("menuitem", name=_invite_label).first,
-                menu_root.get_by_role("menuitem", name=_connect_word).first,
-                menu_root.get_by_role("button", name=_connect_word).first,
-                menu_root.locator("div[role='button']").filter(has_text=_connect_word).first,
-                menu_root.locator("button, a, [role='button']").filter(
-                    has_text=_connect_word
-                ).first,
-                self._page.get_by_role("menuitem", name=_invite_label).first,
-                self._page.get_by_role("menuitem", name=_connect_word).first,
-            )
-            connect_btn = None
-            for cand in connect_candidates:
-                if await cand.count():
-                    connect_btn = cand
-                    break
-            if connect_btn is None:
-                logger.warning(
-                    "send_connection_request: Connect option not present in More "
-                    "menu on %s — profile may already be a connection, have a "
-                    "pending invite, or be restricted to Premium InMail.",
-                    profile_url,
-                )
-                return _CONNECT_NOT_FOUND_MSG
+            if err:
+                return err
 
         try:
             await expect(connect_btn).to_be_visible(timeout=EL_TIMEOUT)
