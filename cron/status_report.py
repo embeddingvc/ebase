@@ -214,8 +214,8 @@ def probe_cron_server(*, base: Path | None = None) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(url, timeout=2) as resp:
             body = json.loads(resp.read().decode("utf-8"))
+        reachable = True
         if isinstance(body, dict):
-            reachable = bool(body.get("ok"))
             scheduler = body.get("scheduler")
     except urllib.error.URLError as exc:
         health_error = str(exc.reason or exc)
