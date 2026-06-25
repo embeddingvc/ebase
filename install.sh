@@ -809,6 +809,14 @@ start_cron_server() {
   export WEB_HOST WEB_PORT CRON_LOG
   export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 
+  if port_in_use "${WEB_PORT}"; then
+    warn "Port ${WEB_PORT} is already in use — cron server may fail to bind."
+    warn "Free the port first, then re-run: make cron"
+    note "warn: port ${WEB_PORT} in use — cron server not started"
+    step_done "Cron server (port conflict)"
+    return 0
+  fi
+
   info "Running bin/cron-service install…"
   if ! "${svc}" install; then
     warn "launchd/systemd install unavailable; starting cron via nohup fallback"
