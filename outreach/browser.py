@@ -96,11 +96,76 @@ NAV_TIMEOUT = 30_000   # ms
 # Shorter timeout when waiting for a UI element to appear.
 EL_TIMEOUT  = 10_000   # ms
 
+# Post-submit connection-invite verification
+_INVITE_VERIFY_TIMEOUT_S = 8.0
+_INVITE_FAILURE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"weekly invitation limit", re.I),
+        "LinkedIn weekly invitation limit reached.",
+    ),
+    (
+        re.compile(r"restrict the number of invitations", re.I),
+        "LinkedIn restricted invitation sends.",
+    ),
+    (
+        re.compile(r"verify it(?:'s| is) really you", re.I),
+        "LinkedIn requested identity verification before sending invitations.",
+    ),
+    (
+        re.compile(r"security verification", re.I),
+        "LinkedIn requested security verification before sending invitations.",
+    ),
+    (
+        re.compile(r"something went wrong", re.I),
+        "LinkedIn reported an error while sending the invitation.",
+    ),
+    (
+        re.compile(r"unable to send", re.I),
+        "LinkedIn could not send the invitation.",
+    ),
+    (
+        re.compile(r"try again later", re.I),
+        "LinkedIn asked to try again later.",
+    ),
+]
+_INVITE_SUCCESS_TOAST = re.compile(
+    r"(invitation sent|your invitation .{0,120} was sent)",
+    re.I,
+)
+_CONNECT_NOT_FOUND_MSG = (
+    "Connection request could not be sent. "
+    "The Connect button was not found — the profile may already be a "
+    "connection, have a pending request, or the button is hidden behind "
+    "the More menu."
+)
+_INVITE_VERIFY_FAILED_MSG = (
+    "Could not verify the connection invitation was sent. "
+    "LinkedIn did not show a confirmation or Pending state — "
+    "check the profile manually before saving pipeline state."
+)
+
 # Paths
 STORAGE_DIR = Path(__file__).parent / "storage"
 STORAGE_DIR.mkdir(exist_ok=True)
 
 # ── Stealth helpers ───────────────────────────────────────────────────────────
+
+def connection_invite_failure_reason(text: str) -> str | None:
+    """Return a user-facing failure reason when *text* matches a known LinkedIn block."""
+    if not (text or "").strip():
+        return None
+    for pattern, reason in _INVITE_FAILURE_PATTERNS:
+        if pattern.search(text):
+            return reason
+    return None
+
+
+def connection_invite_success_in_text(text: str) -> bool:
+    """Return True when *text* looks like a LinkedIn invitation-sent confirmation."""
+    if not (text or "").strip():
+        return False
+    return bool(_INVITE_SUCCESS_TOAST.search(text))
+
 
 _STEALTH_SCRIPT = """
 // Remove the webdriver flag that LinkedIn (and most bot-detection services) check.
@@ -1068,7 +1133,134 @@ class LinkedInBrowser:
 
     # ── Connection request ────────────────────────────────────────────────────
 
-    async def send_connection_request(self, profile_url: str, note: str = "") -> bool:
+    async def _visible_locator_texts(self, locator: Locator, *, limit: int = 15) -> list[str]:
+        texts: list[str] = []
+        count = min(await locator.count(), limit)
+        for i in range(count):
+            el = locator.nth(i)
+            try:
+                if not await el.is_visible():
+                    continue
+                text = (await el.inner_text()).strip()
+                if text:
+                    texts.append(text)
+            except Exception:
+                continue
+        return texts
+
+    async def _connection_invite_failure_on_page(self) -> str | None:
+        roots = (
+            self._page.locator("[role='dialog']:visible"),
+            self._page.locator(".artdeco-modal:visible"),
+            self._page.locator("[aria-modal='true']:visible"),
+            self._page.locator(".artdeco-toast-item"),
+            self._page.locator("[role='alert']"),
+        )
+        for root in roots:
+            for text in await self._visible_locator_texts(root):
+                reason = connection_invite_failure_reason(text)
+                if reason:
+                    return reason
+        return None
+
+    async def _profile_has_pending_invite_cta(self) -> bool:
+        workspace = self._page.locator("main, #workspace")
+        _pending_name = re.compile(r"^(Pending|Withdraw invitation)$", re.I)
+        _pending_label = re.compile(r"(Pending|Withdraw invitation)", re.I)
+        candidates = (
+            workspace.get_by_role("button", name=_pending_name),
+            workspace.get_by_role("button", name=_pending_label),
+            workspace.locator("button[aria-label*='Pending' i]"),
+            workspace.locator("button[aria-label*='Withdraw invitation' i]"),
+            self._page.get_by_role("button", name=_pending_name),
+            self._page.get_by_role("button", name=_pending_label),
+        )
+        for cand in candidates:
+            if not await cand.count():
+                continue
+            try:
+                if await cand.first.is_visible():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _connection_invite_success_on_page(self) -> bool:
+        toast_roots = (
+            self._page.locator(".artdeco-toast-item"),
+            self._page.locator(".artdeco-toast-item__message"),
+            self._page.locator("[role='alert']"),
+        )
+        for root in toast_roots:
+            for text in await self._visible_locator_texts(root):
+                if connection_invite_success_in_text(text):
+                    return True
+        return await self._profile_has_pending_invite_cta()
+
+    async def _invite_dialog_still_awaiting_send(self) -> bool:
+        dialog = self._page.locator(
+            "[role='dialog']:visible, .artdeco-modal:visible, [aria-modal='true']:visible"
+        ).first
+        if not await dialog.count():
+            return False
+        try:
+            if not await dialog.is_visible():
+                return False
+        except Exception:
+            return False
+        _send = re.compile(
+            r"^(Send(\s+invitation)?|Send\s+without\s+a\s+note)$",
+            re.I,
+        )
+        send_btn = dialog.get_by_role("button", name=_send)
+        if not await send_btn.count():
+            return False
+        try:
+            return await send_btn.first.is_visible()
+        except Exception:
+            return False
+
+    async def _verify_connection_request_sent(self, profile_url: str) -> str | None:
+        """
+        Poll LinkedIn UI after submit.  Returns ``None`` when verified, else an error.
+        """
+        await self._page.evaluate("window.scrollTo(0, 0)")
+        deadline = asyncio.get_event_loop().time() + _INVITE_VERIFY_TIMEOUT_S
+        while asyncio.get_event_loop().time() < deadline:
+            failure = await self._connection_invite_failure_on_page()
+            if failure:
+                logger.warning(
+                    "send_connection_request: LinkedIn blocked invite for %s: %s",
+                    profile_url,
+                    failure,
+                )
+                return failure
+
+            if await self._connection_invite_success_on_page():
+                return None
+
+            if await self._invite_dialog_still_awaiting_send():
+                logger.warning(
+                    "send_connection_request: invite dialog still open for %s",
+                    profile_url,
+                )
+                return (
+                    "LinkedIn invite dialog is still open after clicking Send — "
+                    "the invitation may not have been submitted."
+                )
+
+            await self._page.wait_for_timeout(400)
+
+        if await self._connection_invite_success_on_page():
+            return None
+
+        logger.warning(
+            "send_connection_request: could not verify invite for %s",
+            profile_url,
+        )
+        return _INVITE_VERIFY_FAILED_MSG
+
+    async def send_connection_request(self, profile_url: str, note: str = "") -> str | None:
         """
         Send a connection request to a LinkedIn profile.
 
@@ -1082,8 +1274,8 @@ class LinkedInBrowser:
 
         Returns
         -------
-        bool
-            True on success, False if the button wasn't found or request failed.
+        str | None
+            ``None`` on verified success, or a user-facing error description.
         """
         if len(note) > 300:
             raise ValueError(f"Connection note too long: {len(note)} chars (LinkedIn limit: 300)")
@@ -1158,7 +1350,7 @@ class LinkedInBrowser:
                     "'More' overflow button found on %s",
                     profile_url,
                 )
-                return False
+                return _CONNECT_NOT_FOUND_MSG
 
             logger.info(
                 "send_connection_request: Connect not directly visible; opening "
@@ -1192,7 +1384,10 @@ class LinkedInBrowser:
                     "send_connection_request: More menu did not open on %s",
                     profile_url,
                 )
-                return False
+                return (
+                    "Connection request could not be sent. "
+                    "The profile More menu did not open."
+                )
 
             # In the overflow menu LinkedIn typically renders Connect as
             # <div role="button"> or <button>, not role=menuitem, and often with
@@ -1223,13 +1418,16 @@ class LinkedInBrowser:
                     "pending invite, or be restricted to Premium InMail.",
                     profile_url,
                 )
-                return False
+                return _CONNECT_NOT_FOUND_MSG
 
         try:
             await expect(connect_btn).to_be_visible(timeout=EL_TIMEOUT)
         except Exception:
             logger.warning("Connect control not visible on %s", profile_url)
-            return False
+            return (
+                "Connection request could not be sent. "
+                "The Connect control was not visible on the profile."
+            )
 
         await _human_click(self._page, connect_btn)
 
@@ -1314,13 +1512,20 @@ class LinkedInBrowser:
                 )
             if not await send_btn.count():
                 logger.warning("Send button not found after opening invite flow.")
-                return False
+                return (
+                    "Connection request could not be sent. "
+                    "The Send button was not found in the invite dialog."
+                )
 
             await expect(send_btn.first).to_be_visible(timeout=EL_TIMEOUT)
             await _human_click(self._page, send_btn.first)
-        await _human_pause(1.0, 2.0)
-        logger.info("Connection request sent to %s", profile_url)
-        return True
+
+        verify_err = await self._verify_connection_request_sent(profile_url)
+        if verify_err:
+            return verify_err
+
+        logger.info("Connection request sent and verified for %s", profile_url)
+        return None
 
     async def is_first_degree_connection(self, profile_url: str) -> bool:
         """

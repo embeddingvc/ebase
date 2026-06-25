@@ -397,17 +397,13 @@ async def send_connection_request(
     )
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
-        success = await li.send_connection_request(profile_url, note=note)
-    if success:
+        err = await li.send_connection_request(profile_url, note=note)
+    if err is None:
         rate_limit("connection_request", profile_url=profile_url, record=True)
         logger.info("send_connection_request finished  url=%s", profile_url)
         return "ok"
-    return (
-        "Connection request could not be sent. "
-        "The Connect button was not found — the profile may already be a "
-        "connection, have a pending request, or the button is hidden behind "
-        "the More menu."
-    )
+    logger.warning("send_connection_request failed  url=%s  err=%s", profile_url, err)
+    return err
 
 
 @mcp.tool()
