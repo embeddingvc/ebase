@@ -144,6 +144,12 @@ CRON_SVC="${REPO_ROOT}/bin/cron-service"
 if [[ -f "$CRON_SVC" ]]; then
   chmod +x "$CRON_SVC" 2>/dev/null || true
   export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
+  # Stop gracefully before reinstalling to avoid SIGKILL mid-sweep.
+  if OUTREACH_REPO_ROOT="$REPO_ROOT" "$CRON_SVC" is-managed 2>/dev/null; then
+    echo "[outreach-upgrade] Stopping cron service gracefully before upgrade…"
+    OUTREACH_REPO_ROOT="$REPO_ROOT" "$CRON_SVC" stop 2>/dev/null || true
+    sleep 2
+  fi
   if OUTREACH_REPO_ROOT="$REPO_ROOT" "$CRON_SVC" install; then
     echo "[outreach-upgrade] Refreshed cron auto-start (bin/cron-service install)"
   else
