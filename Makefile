@@ -1,20 +1,13 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # ebase — Makefile
 #
-#  make run        Start Chrome + worker (the only command you need day-to-day)
 #  make browser    Start Chrome with CDP debugging port (keeps existing profile)
-#  make server     Start the queue-draining worker (requires Chrome running)
-#  make stop       Kill the worker process
+#  make cron       Scheduler + health API (http://127.0.0.1:3847/health)
+#  make stop-cron  Stop cron server started by install.sh or background uvicorn
 #  make test       Run the pytest suite (delegates to testing/)
-#  make regression Run local conversation-planner regression (delegates to testing/)
 #  make install    Install Python dependencies + Playwright browsers
 #  make claude-install   Sync skills + register MCP (default: user scope + ~/.claude/skills; LOCAL=1: local MCP only)
-#  make claude-cleanup   Remove linkedin MCP from user/local/project scopes; does not delete skill dirs
-#  make cron         Scheduler + health API (http://127.0.0.1:3847/health)
-#  make stop-cron    Stop cron server started by install.sh or background uvicorn
-#  make logs       Tail the worker output log
-#  make queue      Pretty-print the pending job queue
-#  make status     Show whether Chrome + worker are running
+#  make status     Show whether Chrome and cron are running
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ── Config (override via env or command-line) ─────────────────────────────────
@@ -22,7 +15,6 @@
 CDP_PORT      ?= 9222
 CDP_URL       ?= http://localhost:$(CDP_PORT)
 CHROME_PROFILE?= $(HOME)/.linkedin-chrome-profile
-POLL_INTERVAL ?= 5
 
 # Resolve the Chrome binary across macOS and Linux.
 CHROME_MAC    := /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
@@ -34,10 +26,6 @@ else
   CHROME := $(CHROME_LINUX)
 endif
 
-# Paths
-LOG_DIR  := outreach/logs
-LOG_FILE := $(LOG_DIR)/worker.log
-PID_FILE := outreach/storage/worker.pid
 WEB_HOST ?= 127.0.0.1
 WEB_PORT ?= 3847
 CRON_PID_FILE := outreach/storage/cron.pid
@@ -55,21 +43,8 @@ ifneq ($(LOCAL),)
 override CLAUDE_INSTALL_LOCAL := $(LOCAL)
 endif
 
-.PHONY: run browser server stop stop-cron stop-web test test_conversation regression smoke install upgrade uninstall logs queue status help cron \
+.PHONY: browser stop-cron stop-web test test_conversation regression smoke install upgrade uninstall status help cron \
 	claude-install claude-cleanup sync-version check-version check-repo-url
-
-# ── Default target ────────────────────────────────────────────────────────────
-
-run: ## Start Chrome + worker (all-in-one)
-	@echo "▶  Starting Chrome..."
-	@$(MAKE) --no-print-directory browser
-	@echo "▶  Waiting for Chrome to open CDP port $(CDP_PORT)..."
-	@for i in $$(seq 1 20); do \
-	  curl -sf http://localhost:$(CDP_PORT)/json/version > /dev/null && break; \
-	  sleep 0.5; \
-	done
-	@echo "▶  Starting worker..."
-	@$(MAKE) --no-print-directory server
 
 # ── Browser ───────────────────────────────────────────────────────────────────
 
@@ -89,25 +64,7 @@ browser: ## Launch Chrome with remote debugging (stays open after make exits)
 	  echo "[browser] Launched (pid=$$!)"; \
 	fi
 
-# ── Worker / server ───────────────────────────────────────────────────────────
-
-server: ## Start the queue-draining worker in the foreground
-	@mkdir -p $(LOG_DIR) outreach/storage
-	@echo "[worker] Logging to $(LOG_FILE)"
-	CDP_URL=$(CDP_URL) POLL_INTERVAL=$(POLL_INTERVAL) \
-	  uv run outreach/worker.py 2>&1 | tee -a $(LOG_FILE)
-
 # ── Stop ──────────────────────────────────────────────────────────────────────
-
-stop: ## Kill the running worker process
-	@if [ -f $(PID_FILE) ]; then \
-	  PID=$$(cat $(PID_FILE)); \
-	  echo "[worker] Stopping pid=$$PID"; \
-	  kill $$PID 2>/dev/null && echo "[worker] Stopped." || echo "[worker] Process not found."; \
-	  rm -f $(PID_FILE); \
-	else \
-	  echo "[worker] No PID file found — worker may not be running."; \
-	fi
 
 stop-cron: ## Kill the cron scheduler server (uvicorn)
 	@if [ -f $(CRON_PID_FILE) ]; then \
@@ -208,20 +165,7 @@ claude-cleanup: ## Remove linkedin MCP from user/local/project scopes; does not 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
-logs: ## Tail the worker log
-	@mkdir -p $(LOG_DIR)
-	@touch $(LOG_FILE)
-	tail -f $(LOG_FILE)
-
-queue: ## Pretty-print the pending job queue
-	@echo "── Pending ──────────────────────────────"
-	@cat outreach/queue/pending.json 2>/dev/null | python3 -m json.tool || echo "(empty)"
-	@echo "── Completed ────────────────────────────"
-	@cat outreach/queue/completed.json 2>/dev/null | python3 -m json.tool || echo "(empty)"
-	@echo "── Failed ───────────────────────────────"
-	@cat outreach/queue/failed.json 2>/dev/null | python3 -m json.tool || echo "(empty)"
-
-status: ## Show whether Chrome, worker, and dashboard are running
+status: ## Show whether Chrome and cron are running
 	@echo "── Chrome (CDP port $(CDP_PORT)) ─────────────────"
 	@curl -sf http://localhost:$(CDP_PORT)/json/version \
 	  && echo "  ✅  Running" \
@@ -232,15 +176,6 @@ status: ## Show whether Chrome, worker, and dashboard are running
 	  || echo "  ❌  Not running  (start with: make cron or ./install.sh)"
 	@if [ -f $(CRON_PID_FILE) ]; then \
 	  echo "      pid=$$(cat $(CRON_PID_FILE))  log=$(CRON_LOG)"; \
-	fi
-	@echo "── Worker ───────────────────────────────────────"
-	@if [ -f $(PID_FILE) ]; then \
-	  PID=$$(cat $(PID_FILE)); \
-	  kill -0 $$PID 2>/dev/null \
-	    && echo "  ✅  Running  (pid=$$PID)" \
-	    || echo "  ❌  PID file exists but process is gone  (stale: $(PID_FILE))"; \
-	else \
-	  echo "  ❌  Not running  (start with: make server)"; \
 	fi
 
 cron: ## Start the scheduler + health API in foreground (WEB_HOST / WEB_PORT)

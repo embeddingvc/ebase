@@ -571,7 +571,7 @@ prompt_linkedin_login() {
   printf '%s\n' "  2. Sign in with your LinkedIn account."
   printf '%s\n' "  3. Confirm you see your feed or home — not the login page."
   printf '%s\n' ""
-  printf '%s\n' "  The outreach engine (MCP, worker, scheduler, skills) uses this"
+  printf '%s\n' "  The outreach engine (MCP, scheduler, skills) uses this"
   printf '%s\n' "  browser session only. Do not use a different Chrome profile."
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   printf '\n'
@@ -1033,7 +1033,7 @@ print_final_summary() {
   else
     printf '  • MCP is registered for all projects; skills live in %s/\n' "${USER_CLAUDE_SKILLS}"
   fi
-  printf '  • Day-to-day: make browser   make cron   make run\n'
+  printf '  • Day-to-day: make browser   make cron\n'
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 

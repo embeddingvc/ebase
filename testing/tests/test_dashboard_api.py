@@ -19,7 +19,6 @@ def outreach_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     base = tmp_path / "outreach"
     (base / "prospects").mkdir(parents=True)
     (base / "conversations").mkdir(parents=True)
-    (base / "queue").mkdir(parents=True)
     (base / "logs").mkdir(parents=True)
     (base / "config").mkdir(parents=True)
 
@@ -49,25 +48,6 @@ def outreach_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     }
     (base / "conversations" / "jane_doe.json").write_text(json.dumps(conv), encoding="utf-8")
 
-    (base / "queue" / "pending.json").write_text(
-        json.dumps({"queue": [{"action": "send_followup_message", "prospect_id": "jane_doe", "added_at": "2026-05-03T10:00:00+00:00"}]}),
-        encoding="utf-8",
-    )
-    (base / "queue" / "completed.json").write_text(
-        json.dumps(
-            {
-                "completed": [
-                    {
-                        "action": "send_connection_request",
-                        "prospect_id": "jane_doe",
-                        "added_at": "2026-05-01T09:00:00+00:00",
-                        "finished_at": "2026-05-01T09:01:00+00:00",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
     (base / "config" / "conversation_planner.json").write_text(
         json.dumps({"campaign": {"goal": "Test campaign"}}),
         encoding="utf-8",
@@ -230,5 +210,3 @@ def test_get_health_structure(monkeypatch: pytest.MonkeyPatch) -> None:
     health = dd.get_health()
     assert "claude_cli" in health
     assert "cdp_browser" in health
-    assert "queue" in health
-    assert "worker" not in health

@@ -23,7 +23,6 @@ TESTING_ROOT = WEB_DIR.parent
 REPO_ROOT = TESTING_ROOT.parent  # core repo root (live outreach/ tree)
 
 CDP_URL = os.environ.get("CDP_URL", "http://localhost:9222")
-QUEUE_DIR = "queue"
 LOGS_DIR = "logs"
 
 MEETING_END_REASONS = frozenset({"call_scheduled"})
@@ -155,23 +154,6 @@ def _linkedin_session_status(
     return {"status": "offline", "detail": "Start Chrome with make browser"}
 
 
-def _queue_counts(base: Path) -> dict[str, int]:
-    pending = _read_json(base / QUEUE_DIR / "pending.json", {"queue": []})
-    completed = _read_json(base / QUEUE_DIR / "completed.json", {"completed": []})
-    failed = _read_json(base / QUEUE_DIR / "failed.json", {"failed": []})
-    p = len(pending.get("queue") or [])
-    c = len(completed.get("completed") or [])
-    f = len(failed.get("failed") or [])
-    total = p + c + f
-    load_pct = round(100 * p / total) if total else 0
-    return {
-        "pending": p,
-        "completed": c,
-        "failed": f,
-        "load_pct": load_pct,
-    }
-
-
 def _resolved_mcp_mode(scope: str | None) -> str:
     if scope == "mock":
         return "mock"
@@ -183,7 +165,6 @@ def _resolved_mcp_mode(scope: str | None) -> str:
 def get_health(scope: str | None = None) -> dict[str, Any]:
     cdp_online, cdp_info = _chrome_running()
     base = outreach_base(scope)
-    queue = _queue_counts(base)
     mode = _resolved_mcp_mode(scope)
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),
@@ -201,7 +182,6 @@ def get_health(scope: str | None = None) -> dict[str, Any]:
         "linkedin_session": _linkedin_session_status(
             base, cdp_online, force_mock=mode == "mock"
         ),
-        "queue": queue,
     }
 
 
@@ -613,6 +593,5 @@ def get_summary(scope: str | None = None) -> dict[str, Any]:
         "connections_pending": pending_conn,
         "meetings_total": meetings["total"],
         "active_routines": sum(1 for r in routines["routines"] if r.get("active")),
-        "queue_pending": health["queue"]["pending"],
         "mcp_mode": health["mcp_mode"],
     }

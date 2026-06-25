@@ -5,7 +5,7 @@ This repo wires Claude (via the MCP protocol) to a real LinkedIn session and a s
 ## Components
 
 - A **LinkedIn MCP server** (`tools/server.py`) that exposes LinkedIn actions as tools. Playwright attaches to a real Chrome session via CDP.
-- A **queue-draining worker** (`outreach/worker.py`) for "run jobs from JSON queue files" automation.
+- A **cron scheduler** (`cron/server.py`) that runs connection-sync and per-prospect conversation-planning sweeps.
 - A **message planner** (`outreach/planner.py`) that can generate copy in **API mode** (Anthropic) or **stub mode** (offline).
 - Claude **skills** under `outreach/skills/` that orchestrate end-to-end outreach using MCP tools (including **`setup-outreach`** for first-run profile configuration).
 
@@ -27,7 +27,7 @@ This repo wires Claude (via the MCP protocol) to a real LinkedIn session and a s
   - `reply_to_post`
   - `browse_forever` (background "human-like" feed browsing)
 - **Outreach persistence (server-managed filesystem I/O)**
-  - `get_*`, `upsert_*`, `append_*`, `save_connection`, `save_outreach_report`, `remove_pending_queue_entry`
+  - `get_*`, `upsert_*`, `append_*`, `save_connection`, `save_outreach_report`
 
 ## High-level architecture
 
@@ -44,12 +44,13 @@ flowchart TB
     L3 -->|"UI interactions"| L4
   end
 
-  subgraph WORKER ["Optional automation path"]
+  subgraph CRON ["Cron scheduler"]
     direction LR
-    W1["Queue files\n(outreach/queue/*.json)"]
-    W2["Worker\n(outreach/worker.py)"]
-    W3["Planner\n(outreach/planner.py)"]
-    W1 --> W2 --> W3
+    C1["cron/server.py"]
+    C2["connection_sync_sweep"]
+    C3["conversation_plan_sweep"]
+    C1 --> C2
+    C1 --> C3
   end
 
   subgraph DATA ["Data (repo-local)"]

@@ -47,7 +47,6 @@ A mock-capable fork of this server (scripted responses, no browser) lives in
     append_action_log         Append one JSON line to .../logs/actions.jsonl.
     append_planned_message_log Append one JSON line to planned_messages.jsonl.
     save_outreach_report      Write .../storage/reports/<id>.md.
-    remove_pending_queue_entry Remove a prospect from .../queue/pending.json.
 """
 
 from __future__ import annotations
@@ -1670,36 +1669,6 @@ async def save_outreach_report(
         return f"ok — saved {path}"
     except Exception as exc:
         logger.exception("save_outreach_report failed")
-        return f"error: {exc}"
-
-
-@mcp.tool()
-async def remove_pending_queue_entry(prospect_id: str) -> str:
-    """
-    Remove every queue item with matching ``prospect_id`` from queue/pending.json under the active outreach root.
-    No-op if the file is missing or the id is not present.
-    """
-    path = _outreach_base() / "queue" / "pending.json"
-    try:
-        if not path.exists():
-            return "ok — no pending queue file"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        queue = data.get("queue")
-        if not isinstance(queue, list):
-            return "error: pending.json missing a list at key 'queue'"
-        before = len(queue)
-        data["queue"] = [
-            item
-            for item in queue
-            if not (isinstance(item, dict) and item.get("prospect_id") == prospect_id)
-        ]
-        if len(data["queue"]) == before:
-            return "ok — prospect not in queue (no change)"
-        _atomic_write_json(path, data)
-        logger.info("remove_pending_queue_entry: removed %s", prospect_id)
-        return "ok"
-    except Exception as exc:
-        logger.exception("remove_pending_queue_entry failed")
         return f"error: {exc}"
 
 

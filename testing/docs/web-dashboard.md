@@ -73,7 +73,7 @@ Prospects with meeting interest from conversation files (meeting link, email, or
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/` | Dashboard HTML |
-| GET | `/api/dashboard/health` | Chrome CDP, Claude CLI, queue counts, LinkedIn session hint |
+| GET | `/api/dashboard/health` | Chrome CDP, Claude CLI, LinkedIn session hint |
 | GET | `/api/dashboard/connections` | Connection rows (see above) |
 | POST | `/api/dashboard/connections` | Body: `{ "profile_url": "..." }` — send connection skill |
 | GET | `/api/dashboard/routines` | Routines list + campaign goal |

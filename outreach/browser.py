@@ -595,8 +595,8 @@ class LinkedInBrowser:
         Return True if the attached Chrome session is already logged in to LinkedIn.
 
         Login is always done manually by the user in the browser window.
-        Run `make browser`, log in once, and every subsequent `make run` will
-        reuse the session from the Chrome profile directory.
+        Run `make browser`, log in once, and every subsequent session will
+        reuse the profile from the Chrome profile directory.
         """
         return True  # avoid refresh, assume user is logged in
         await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT)
@@ -612,7 +612,7 @@ class LinkedInBrowser:
                 "Not logged in to LinkedIn.\n"
                 "  1. Run `make browser` to open Chrome.\n"
                 "  2. Log in to LinkedIn manually in that window.\n"
-                "  3. Re-run `make server` (or `make run`)."
+                "  3. Retry the action."
             )
 
     async def _read_connection_degree_on_page(self) -> int | None:

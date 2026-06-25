@@ -115,9 +115,8 @@ Say what you want in plain English — each ask runs as a Claude skill:
 
 | Component | Description |
 |-----------|-------------|
-| **LinkedIn MCP server** | 30 tools wrapping Playwright — structured profile scrapes, connect, message, engage, persist. Typed inputs, JSON outputs, no screenshot guessing. |
+| **LinkedIn MCP server** | MCP tools wrapping Playwright — structured profile scrapes, connect, message, engage, persist. Typed inputs, JSON outputs, no screenshot guessing. |
 | **Claude skills** | 5 chainable workflows in `~/.claude/skills` |
-| **Queue worker** | Batch automation from JSON queue files |
 | **Cron scheduler** | Auto-syncs accepts, plans follow-ups, respects rate limits |
 | **Per-user state** | Isolated prospects, threads, logs (JSON / JSONL) |
 | **One-command installer** | uv · Playwright · MCP register |
@@ -135,7 +134,7 @@ Say what you want in plain English — each ask runs as a Claude skill:
 
 ## Documentation
 
-- **[Quickstart (live + mock)](docs/quickstart.md)** — `make run`, live mode checklist, example prompts
+- **[Quickstart (live + mock)](docs/quickstart.md)** — `make browser` + `make cron`, live mode checklist, example prompts
 - **[Architecture & capabilities](docs/architecture.md)** — components, MCP tool inventory, workflow diagrams
 - **[Claude skills](docs/skills.md)** — `setup-outreach`, `conversation-planner`, `send-connection-request`, and more
 - **[Manual install & Claude Desktop MCP](docs/install.md)** — prerequisites, `make install`, `claude_desktop_config.json`
