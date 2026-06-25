@@ -48,22 +48,6 @@ endif
 
 # ── Browser ───────────────────────────────────────────────────────────────────
 
-browser: ## Launch Chrome with remote debugging (stays open after make exits)
-	@echo "[browser] Profile: $(CHROME_PROFILE)"
-	@echo "[browser] CDP port: $(CDP_PORT)"
-	@if curl -sf http://localhost:$(CDP_PORT)/json/version > /dev/null 2>&1; then \
-	  echo "[browser] Chrome already running on port $(CDP_PORT) — skipping launch."; \
-	else \
-	  "$(CHROME)" \
-	    --remote-debugging-port=$(CDP_PORT) \
-	    --user-data-dir="$(CHROME_PROFILE)" \
-	    --no-first-run \
-	    --no-default-browser-check \
-	    --disable-extensions-except= \
-	    > /dev/null 2>&1 & \
-	  echo "[browser] Launched (pid=$$!)"; \
-	fi
-
 browser: ## Install/start Chrome CDP via launchd/systemd (or direct fallback)
 	@chmod +x bin/browser-service 2>/dev/null || true
 	@OUTREACH_REPO_ROOT="$(CURDIR)" CDP_PORT="$(CDP_PORT)" CHROME_PROFILE="$(CHROME_PROFILE)" \
