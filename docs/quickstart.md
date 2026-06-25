@@ -12,7 +12,7 @@ That will:
 - Start Chrome (if not already running) with a dedicated profile and CDP port.
 - Start the cron scheduler (connection sync + conversation planning sweeps).
 
-`install.sh` starts Chrome and cron during setup; after that you usually only need `make browser` if Chrome was closed.
+`install.sh` starts Chrome and cron during setup; after that you usually only need `make browser` if Chrome was closed. **Cron does not auto-start after reboot** — run `make cron` or `./install.sh` again.
 
 Then log into LinkedIn in the Chrome window (first time per profile) and use either:
 

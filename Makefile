@@ -177,6 +177,8 @@ status: ## Show whether Chrome and cron are running
 	@if [ -f $(CRON_PID_FILE) ]; then \
 	  echo "      pid=$$(cat $(CRON_PID_FILE))  log=$(CRON_LOG)"; \
 	fi
+	@echo "── Cron sweeps ────────────────────────────────────"
+	@cd "$(CURDIR)" && uv run python -m cron.status_report
 
 cron: ## Start the scheduler + health API in foreground (WEB_HOST / WEB_PORT)
 	@mkdir -p outreach/storage logs

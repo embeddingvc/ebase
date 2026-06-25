@@ -59,6 +59,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     append_action_log         Append one JSON line to .../logs/actions.jsonl.
     append_planned_message_log Append one JSON line to planned_messages.jsonl.
     save_outreach_report      Write .../storage/reports/<id>.md.
+    get_cron_status           Cron scheduler health, sweep config, and recent activity (JSON).
 
 ── Mock logic ────────────────────────────────────────────────────────────────
 
@@ -1708,6 +1709,25 @@ async def save_outreach_report(
         return f"ok — saved {path}"
     except Exception as exc:
         logger.exception("save_outreach_report failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def get_cron_status() -> str:
+    """
+    Return cron scheduler health, per-sweep configuration, and recent tick/run
+    activity as JSON.
+
+    Includes whether the cron HTTP server is reachable, configured sweeps
+    (connection sync and conversation plan), and a note that cron does not
+    auto-start after reboot (run ``make cron`` or ``./install.sh``).
+    """
+    try:
+        from cron.status_report import build_cron_status
+
+        return json.dumps(build_cron_status(), indent=2, ensure_ascii=False)
+    except Exception as exc:
+        logger.exception("get_cron_status failed")
         return f"error: {exc}"
 
 

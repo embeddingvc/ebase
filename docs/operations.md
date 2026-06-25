@@ -17,6 +17,12 @@ Example: copy `.env.example` to `.env` and fill your values (never commit `.env`
 
 Mock mode (`OUTREACH_MOCK`) and the dev dashboard are `testing/` concerns; see [`testing/docs/web-dashboard.md`](../testing/docs/web-dashboard.md).
 
+## Cron persistence
+
+The cron scheduler is started by `./install.sh` or `make cron` as a background `nohup` process. It **survives closing the terminal** but **does not auto-start after reboot or logout**. After a restart, run `make cron` or `./install.sh` again (install is idempotent and will skip if cron is already healthy).
+
+Check status from the shell with `make status` or via the MCP tool `get_cron_status`.
+
 ## Operational data layout
 
 - **Pipeline records**
@@ -40,7 +46,7 @@ Run `make help` to see all targets. Common ones:
 - `make browser`: start Chrome with CDP enabled
 - `make cron`: start the cron scheduler server in the foreground
 - `make stop-cron`: stop the cron scheduler server
-- `make status`: check if Chrome and cron are running
+- `make status`: check if Chrome and cron are running (includes sweep job summary)
 - `make test`: run the test suite (delegates to `make -C testing test`)
 - `make test_conversation`: run conversation-planner tests (needs `ANTHROPIC_API_KEY`)
 - `make sync-version`: copy `VERSION` into `pyproject.toml`

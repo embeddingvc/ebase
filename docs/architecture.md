@@ -27,7 +27,7 @@ This repo wires Claude (via the MCP protocol) to a real LinkedIn session and a s
   - `reply_to_post`
   - `browse_forever` (background "human-like" feed browsing)
 - **Outreach persistence (server-managed filesystem I/O)**
-  - `get_*`, `upsert_*`, `append_*`, `save_connection`, `save_outreach_report`
+  - `get_*`, `upsert_*`, `append_*`, `save_connection`, `save_outreach_report`, `get_cron_status`
 
 ## High-level architecture
 
