@@ -167,6 +167,51 @@ def connection_invite_success_in_text(text: str) -> bool:
     return bool(_INVITE_SUCCESS_TOAST.search(text))
 
 
+def connection_accepted_from_signals(
+    *,
+    degree: int | None,
+    has_pending_invite: bool,
+    has_connect_cta: bool,
+) -> bool:
+    """
+  Return True only when profile signals confirm an accepted 1st-degree connection.
+
+    Used by the connection-sync sweep — intentionally stricter than
+    :func:`connection_dm_ready_from_signals`, which may fall back to a profile
+    Message CTA when the degree badge is missing.
+    """
+    if has_pending_invite or has_connect_cta:
+        return False
+    return degree == 1
+
+
+def pending_invite_aria_label_matches(text: str) -> bool:
+    """Return True for LinkedIn outbound-invite Pending controls."""
+    label = (text or "").strip()
+    if not label:
+        return False
+    if re.search(r"^Pending\b", label, re.I):
+        return True
+    return bool(re.search(r"withdraw invitation", label, re.I))
+
+
+def connection_dm_ready_from_signals(
+    *,
+    degree: int | None,
+    has_pending_invite: bool,
+    has_connect_cta: bool,
+    has_profile_message_cta: bool,
+) -> bool:
+    """Return True when the operator can likely DM without InMail."""
+    if has_pending_invite or has_connect_cta:
+        return False
+    if degree == 1:
+        return True
+    if degree is not None:
+        return False
+    return has_profile_message_cta
+
+
 _STEALTH_SCRIPT = """
 // Remove the webdriver flag that LinkedIn (and most bot-detection services) check.
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -1166,14 +1211,24 @@ class LinkedInBrowser:
     async def _profile_has_pending_invite_cta(self) -> bool:
         workspace = self._page.locator("main, #workspace")
         _pending_name = re.compile(r"^(Pending|Withdraw invitation)$", re.I)
-        _pending_label = re.compile(r"(Pending|Withdraw invitation)", re.I)
+        _pending_link = re.compile(r"^Pending\b", re.I)
+        _withdraw_invite = re.compile(r"withdraw invitation", re.I)
         candidates = (
+            # SDUI (2024+): Pending is often an <a>, not a <button>.
+            workspace.get_by_role("link", name=_pending_name),
+            workspace.get_by_role("link", name=_pending_link),
+            workspace.get_by_role("link", name=_withdraw_invite),
+            workspace.locator("a[aria-label^='Pending' i]"),
+            workspace.locator("a[aria-label*='withdraw invitation' i]"),
             workspace.get_by_role("button", name=_pending_name),
-            workspace.get_by_role("button", name=_pending_label),
+            workspace.get_by_role("button", name=_withdraw_invite),
             workspace.locator("button[aria-label*='Pending' i]"),
             workspace.locator("button[aria-label*='Withdraw invitation' i]"),
+            workspace.locator("span.pvs-sticky-header-profile-actions__text").filter(
+                has_text=_pending_name
+            ),
+            self._page.get_by_role("link", name=_pending_link),
             self._page.get_by_role("button", name=_pending_name),
-            self._page.get_by_role("button", name=_pending_label),
         )
         for cand in candidates:
             if not await cand.count():
@@ -1184,6 +1239,116 @@ class LinkedInBrowser:
             except Exception:
                 continue
         return False
+
+    async def _profile_has_connect_cta(self) -> bool:
+        """True when the profile top card still offers Connect (not yet connected)."""
+        workspace = self._page.locator("main, #workspace")
+        _invite_connect = re.compile(r"Invite .+ to connect", re.I)
+        _connect_only = re.compile(r"^Connect$", re.I)
+        candidates = (
+            workspace.locator("a[href*='custom-invite']:has-text('Connect')").first,
+            workspace.locator("a[href*='custom-invite']").first,
+            workspace.get_by_role("button", name=_invite_connect).first,
+            workspace.get_by_role("link", name=_invite_connect).first,
+            workspace.locator(
+                "button[aria-label*='Invite'][aria-label*='to connect' i]"
+            ).first,
+            workspace.get_by_role("button", name=_connect_only).first,
+            workspace.get_by_role("link", name=_connect_only).first,
+            workspace.locator("button.artdeco-button--primary").filter(
+                has_text=_connect_only
+            ).first,
+        )
+        for cand in candidates:
+            if not await cand.count():
+                continue
+            try:
+                if await cand.first.is_visible():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _profile_has_dm_message_cta(self) -> bool:
+        """
+        True when the profile top card exposes a direct Message CTA.
+
+        Intentionally narrow — avoids false positives from global nav links or
+        activity-section copy that mention messaging.
+        """
+        workspace = self._page.locator("main, #workspace")
+        _msg_strict = re.compile(r"^Message$", re.I)
+
+        async def _any_visible(multi: Locator) -> bool:
+            n = await multi.count()
+            for i in range(min(n, 12)):
+                el = multi.nth(i)
+                try:
+                    if await el.is_visible():
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        trials = [
+            workspace.locator("a[href*='/messaging/compose/']:has-text('Message')"),
+            workspace.locator("a[href*='messaging/compose']"),
+            workspace.get_by_role("link", name=_msg_strict),
+            workspace.get_by_role("button", name=_msg_strict),
+            workspace.locator("button[aria-label^='Message ' i]"),
+            workspace.locator("a[aria-label^='Message ' i]"),
+            workspace.locator("[role='button'][aria-label^='Message ' i]"),
+        ]
+        for trial in trials:
+            if await _any_visible(trial):
+                return True
+        return False
+
+    async def _prepare_profile_connection_check(self, profile_url: str) -> None:
+        await self._ensure_profile_tab(profile_url)
+        try:
+            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+            await _human_pause(0.4, 0.9)
+        except Exception:
+            logger.warning(
+                "_prepare_profile_connection_check: main/workspace not ready for %s",
+                profile_url,
+            )
+        await self._page.evaluate("window.scrollTo(0, 0)")
+        await _human_mouse_move(self._page)
+
+    async def _read_profile_connection_signals(self) -> dict[str, Any]:
+        return {
+            "degree": await self._read_connection_degree_on_page(),
+            "has_pending_invite": await self._profile_has_pending_invite_cta(),
+            "has_connect_cta": await self._profile_has_connect_cta(),
+            "has_profile_message_cta": await self._profile_has_dm_message_cta(),
+        }
+
+    async def is_connection_accepted(self, profile_url: str) -> bool:
+        """
+        Return True when LinkedIn shows an *accepted* 1st-degree connection.
+
+        Stricter than :meth:`is_first_degree_connection` — used by the
+        connection-sync sweep so a pending outbound invite is never promoted
+        because a generic messaging link appeared elsewhere on the page.
+        """
+        await self._prepare_profile_connection_check(profile_url)
+        signals = await self._read_profile_connection_signals()
+        accepted = connection_accepted_from_signals(
+            degree=signals["degree"],
+            has_pending_invite=signals["has_pending_invite"],
+            has_connect_cta=signals["has_connect_cta"],
+        )
+        if not accepted:
+            logger.info(
+                "is_connection_accepted  url=%s  degree=%s  pending=%s  connect=%s",
+                profile_url,
+                signals["degree"],
+                signals["has_pending_invite"],
+                signals["has_connect_cta"],
+            )
+        return accepted
 
     async def _connection_invite_success_on_page(self) -> bool:
         toast_roots = (
@@ -1533,67 +1698,19 @@ class LinkedInBrowser:
         Return True if the signed-in member is a 1st-degree connection of the
         profile at ``profile_url`` (i.e. you can DM them without InMail).
 
-        Uses the same degree badge heuristics as :meth:`scrape_profile`.  If the
-        badge cannot be read, falls back to detecting a primary **Message** CTA
-        on the profile top card (same entry points as :meth:`send_message`).
+        Uses the same degree badge heuristics as :meth:`scrape_profile`.  When the
+        badge cannot be read, falls back to a profile top-card **Message** CTA
+        (never global nav / activity links).  Pending or Connect CTAs always
+        return False.
         """
-        await self._ensure_profile_tab(profile_url)
-        try:
-            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
-            await _human_pause(0.4, 0.9)
-        except Exception:
-            logger.warning(
-                "is_first_degree_connection: main/workspace not ready for %s",
-                profile_url,
-            )
-
-        await self._page.evaluate("window.scrollTo(0, 0)")
-        await _human_mouse_move(self._page)
-
-        degree = await self._read_connection_degree_on_page()
-        if degree == 1:
-            return True
-        if degree is not None:
-            return False
-
-        workspace = self._page.locator("main, #workspace")
-        main_el = self._page.locator("main").first
-        _msg_strict = re.compile(r"^Message$", re.I)
-        _msg_loose = re.compile(r"\bMessage\b", re.I)
-
-        async def _any_visible(multi: Locator) -> bool:
-            n = await multi.count()
-            for i in range(min(n, 40)):
-                el = multi.nth(i)
-                try:
-                    if await el.is_visible():
-                        return True
-                except Exception:
-                    continue
-            return False
-
-        async def _has_message_cta(root: Locator) -> bool:
-            trials = [
-                root.locator("a[href*='/messaging/compose/']:has-text('Message')"),
-                root.locator("a[href*='messaging/compose']"),
-                root.locator("a[href*='/messaging/thread']"),
-                root.get_by_role("link", name=_msg_strict),
-                root.get_by_role("button", name=_msg_strict),
-                root.get_by_role("link", name=_msg_loose),
-                root.get_by_role("button", name=_msg_loose),
-                root.locator("button[aria-label*='Message' i]"),
-                root.locator("a[aria-label*='Message' i]"),
-                root.locator("[role='button'][aria-label*='Message' i]"),
-            ]
-            for trial in trials:
-                if await _any_visible(trial):
-                    return True
-            return await _any_visible(root.locator("a[href*='/messaging/']"))
-
-        if await _has_message_cta(workspace) or await _has_message_cta(main_el):
-            return True
-
-        return False
+        await self._prepare_profile_connection_check(profile_url)
+        signals = await self._read_profile_connection_signals()
+        return connection_dm_ready_from_signals(
+            degree=signals["degree"],
+            has_pending_invite=signals["has_pending_invite"],
+            has_connect_cta=signals["has_connect_cta"],
+            has_profile_message_cta=signals["has_profile_message_cta"],
+        )
 
     # ── Messaging ─────────────────────────────────────────────────────────────
 
