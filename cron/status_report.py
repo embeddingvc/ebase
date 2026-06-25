@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import sys
 import urllib.error
 import urllib.request
@@ -25,12 +26,9 @@ _SWEEPS: tuple[tuple[str, str], ...] = (
     (routines_config.ROUTINE_KIND_CONVERSATION_PLAN, "Conversation plan"),
 )
 
+_LAUNCHD_LABEL = "com.embeddingvc.ebase.cron"
+_SYSTEMD_UNIT = "ebase-cron.service"
 _CRON_PID_FILE = "storage/cron.pid"
-_PERSISTENCE_NOTE = (
-    "Cron is started by install.sh or make cron (background nohup). "
-    "It survives closing the terminal but does not auto-start after reboot "
-    "or logout — run make cron or ./install.sh again."
-)
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -144,6 +142,34 @@ def _event_summary(row: dict[str, Any] | None, *, now: datetime | None = None) -
     }
 
 
+def _cron_service_managed() -> tuple[bool, str | None, Path | None]:
+    home = Path.home()
+    system = platform.system()
+    if system == "Darwin":
+        path = home / "Library/LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
+        return path.is_file(), "launchd" if path.is_file() else None, path if path.is_file() else None
+    if system == "Linux":
+        path = home / ".config/systemd/user" / _SYSTEMD_UNIT
+        return path.is_file(), "systemd" if path.is_file() else None, path if path.is_file() else None
+    return False, None, None
+
+
+def _persistence_notes(*, managed: bool, backend: str | None) -> list[str]:
+    if managed and backend == "launchd":
+        return [
+            "Cron auto-start is enabled via launchd (starts at login and after reboot).",
+        ]
+    if managed and backend == "systemd":
+        return [
+            "Cron auto-start is enabled via systemd user service (starts at login).",
+            "For headless hosts without a login session, run: loginctl enable-linger $USER",
+        ]
+    return [
+        "Cron is not registered with launchd/systemd. "
+        "Run ./install.sh or bin/cron-service install for reboot persistence.",
+    ]
+
+
 def _cron_health_url() -> str:
     host = os.environ.get("WEB_HOST", "127.0.0.1")
     port = os.environ.get("WEB_PORT", "3847")
@@ -197,6 +223,10 @@ def probe_cron_server(*, base: Path | None = None) -> dict[str, Any]:
         health_error = str(exc)
 
     running = reachable and scheduler == "running"
+    managed, backend, unit_path = _cron_service_managed()
+    restart_hint = "bin/cron-service start"
+    if not managed:
+        restart_hint = "bin/cron-service install  (or ./install.sh)"
     return {
         "url": url,
         "reachable": reachable,
@@ -205,8 +235,11 @@ def probe_cron_server(*, base: Path | None = None) -> dict[str, Any]:
         "pid": pid,
         "pid_alive": pid_alive,
         "health_error": health_error,
-        "auto_start_on_reboot": False,
-        "restart_hint": "make cron  (or re-run ./install.sh)",
+        "managed": managed,
+        "service_backend": backend,
+        "service_unit_path": str(unit_path) if unit_path else None,
+        "auto_start_on_reboot": managed,
+        "restart_hint": restart_hint,
     }
 
 
@@ -281,6 +314,8 @@ def build_cron_status(*, now: datetime | None = None) -> dict[str, Any]:
                 }
             )
 
+    managed = bool(server.get("managed"))
+    backend = server.get("service_backend")
     return {
         "checked_at": now.isoformat(),
         "data_root": str(base),
@@ -288,7 +323,7 @@ def build_cron_status(*, now: datetime | None = None) -> dict[str, Any]:
         "tick_seconds": routine_scheduler.TICK_SECONDS,
         "server": server,
         "sweeps": sweeps,
-        "notes": [_PERSISTENCE_NOTE],
+        "notes": _persistence_notes(managed=managed, backend=backend),
     }
 
 
@@ -303,13 +338,19 @@ def format_sweep_lines(*, now: datetime | None = None) -> list[str]:
     if server.get("running"):
         pid = server.get("pid")
         pid_s = f"  pid={pid}" if pid else ""
-        lines.append(f"  cron server  running{pid_s}  ({server['url']})")
+        backend = server.get("service_backend")
+        managed_s = f"  via {backend}" if backend else ""
+        lines.append(f"  cron server  running{pid_s}{managed_s}  ({server['url']})")
     else:
         err = server.get("health_error")
-        hint = server.get("restart_hint", "make cron")
+        hint = server.get("restart_hint", "bin/cron-service install")
         extra = f" — {err}" if err else ""
         lines.append(f"  cron server  not running{extra}")
         lines.append(f"    restart: {hint}")
+    if server.get("managed"):
+        lines.append(f"    auto-start  {server.get('service_backend')}  ({server.get('service_unit_path')})")
+    elif server.get("auto_start_on_reboot") is False:
+        lines.append("    auto-start  not registered (run bin/cron-service install)")
 
     for sweep in status["sweeps"]:
         active = "yes" if sweep.get("active") else "no"

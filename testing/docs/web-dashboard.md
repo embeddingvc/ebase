@@ -168,7 +168,7 @@ covers the old defaults. Add custom loop routines (for `reply-to-post`,
 - `claude` must be on the PATH of whichever shell started `uvicorn`. `install.sh` inherits the user's PATH, so this normally works out of the box.
 - LinkedIn rate limits (`tools/rate_limits.py`) apply per `tools/server.py` subprocess; back-to-back routine runs are safe.
 - When `schedule_meeting` fires inside a routine run, the operator gets an SMTP email reminder if `OPERATOR_EMAIL` / `SMTP_HOST` are set in `.env` (see `.env.example`).
-- The cron process does **not** survive reboot today. After a reboot, re-run `./install.sh` (or `make cron`) to bring the scheduler back. A `launchd` / systemd unit is a natural follow-up but is out of scope here.
+- `./install.sh` installs a **launchd** (macOS) or **systemd user** (Linux) unit via `bin/cron-service` so cron auto-starts at login and after reboot.
 
 ## Troubleshooting
 

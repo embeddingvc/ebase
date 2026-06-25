@@ -1718,9 +1718,9 @@ async def get_cron_status() -> str:
     Return cron scheduler health, per-sweep configuration, and recent tick/run
     activity as JSON.
 
-    Includes whether the cron HTTP server is reachable, configured sweeps
-    (connection sync and conversation plan), and a note that cron does not
-    auto-start after reboot (run ``make cron`` or ``./install.sh``).
+    Includes whether the cron HTTP server is reachable, whether a launchd/systemd
+    auto-start unit is installed, configured sweeps (connection sync and
+    conversation plan), and restart hints.
     """
     try:
         from cron.status_report import build_cron_status

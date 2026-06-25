@@ -147,6 +147,25 @@ confirm() {
 stop_processes() {
   local repo="$1"
   local web_pid="${repo}/${WEB_PID_FILE}"
+  local svc="${repo}/bin/cron-service"
+
+  if [[ -x "${svc}" ]]; then
+    OUTREACH_REPO_ROOT="${repo}" WEB_PORT="${WEB_PORT}" "${svc}" stop >/dev/null 2>&1 || true
+    info "Stopped cron scheduler"
+    note "ok: cron scheduler stopped"
+    if [[ "$YES" -eq 1 ]] || confirm "Remove cron auto-start service (launchd/systemd)?"; then
+      OUTREACH_REPO_ROOT="${repo}" "${svc}" uninstall
+      note "ok: cron auto-start service removed"
+    else
+      note "skip: cron auto-start service left installed"
+    fi
+  elif command -v lsof >/dev/null 2>&1; then
+    if lsof -ti ":${WEB_PORT}" >/dev/null 2>&1; then
+      lsof -ti ":${WEB_PORT}" | xargs kill 2>/dev/null || true
+      info "Stopped process on port ${WEB_PORT}"
+      note "ok: cron port ${WEB_PORT} cleared"
+    fi
+  fi
 
   if [[ -f "$web_pid" ]]; then
     local pid
@@ -157,12 +176,6 @@ stop_processes() {
       note "ok: web dashboard stopped"
     fi
     rm -f "$web_pid"
-  elif command -v lsof >/dev/null 2>&1; then
-    if lsof -ti ":${WEB_PORT}" >/dev/null 2>&1; then
-      lsof -ti ":${WEB_PORT}" | xargs kill 2>/dev/null || true
-      info "Stopped process on port ${WEB_PORT}"
-      note "ok: web port ${WEB_PORT} cleared"
-    fi
   fi
 }
 

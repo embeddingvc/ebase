@@ -19,9 +19,25 @@ Mock mode (`OUTREACH_MOCK`) and the dev dashboard are `testing/` concerns; see [
 
 ## Cron persistence
 
-The cron scheduler is started by `./install.sh` or `make cron` as a background `nohup` process. It **survives closing the terminal** but **does not auto-start after reboot or logout**. After a restart, run `make cron` or `./install.sh` again (install is idempotent and will skip if cron is already healthy).
+`./install.sh` registers a **launchd** agent on macOS or a **systemd user unit** on Linux via `bin/cron-service install`, so cron auto-starts at login and after reboot.
 
-Check status from the shell with `make status` or via the MCP tool `get_cron_status`.
+| Platform | Unit location |
+|----------|----------------|
+| macOS | `~/Library/LaunchAgents/com.embeddingvc.ebase.cron.plist` |
+| Linux | `~/.config/systemd/user/ebase-cron.service` |
+
+Manual controls:
+
+```bash
+bin/cron-service status      # managed + running?
+bin/cron-service install     # (re)register auto-start
+bin/cron-service uninstall   # remove unit
+make stop-cron               # stop process (managed or legacy nohup)
+```
+
+On Linux without an active login session, enable linger: `loginctl enable-linger $USER`.
+
+Check status from the shell with `make status` or MCP tool `get_cron_status`.
 
 ## Operational data layout
 

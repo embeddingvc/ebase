@@ -67,7 +67,10 @@ browser: ## Launch Chrome with remote debugging (stays open after make exits)
 # ── Stop ──────────────────────────────────────────────────────────────────────
 
 stop-cron: ## Kill the cron scheduler server (uvicorn)
-	@if [ -f $(CRON_PID_FILE) ]; then \
+	@if [ -x bin/cron-service ] && bin/cron-service is-managed 2>/dev/null; then \
+	  OUTREACH_REPO_ROOT="$(CURDIR)" WEB_HOST="$(WEB_HOST)" WEB_PORT="$(WEB_PORT)" \
+	    bin/cron-service stop; \
+	elif [ -f $(CRON_PID_FILE) ]; then \
 	  PID=$$(cat $(CRON_PID_FILE)); \
 	  echo "[cron] Stopping pid=$$PID"; \
 	  kill $$PID 2>/dev/null && echo "[cron] Stopped." || echo "[cron] Process not found."; \
@@ -183,6 +186,7 @@ status: ## Show whether Chrome and cron are running
 cron: ## Start the scheduler + health API in foreground (WEB_HOST / WEB_PORT)
 	@mkdir -p outreach/storage logs
 	@echo "[cron] http://$(WEB_HOST):$(WEB_PORT)/health"
+	@echo "[cron] Tip: for background + reboot persistence run: bin/cron-service install"
 	@cd "$(CURDIR)" && uv run uvicorn cron.server:app --host "$(WEB_HOST)" --port "$(WEB_PORT)"
 
 sync-version: ## Copy VERSION into pyproject.toml

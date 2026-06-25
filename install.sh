@@ -738,82 +738,92 @@ persist_outreach_upgrade_config() {
   fi
 }
 
+cron_running_now() {
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -sf "http://${WEB_HOST}:${WEB_PORT}/health" >/dev/null 2>&1
+}
+
 start_cron_server() {
   if [[ "${SKIP_WEB}" == "1" ]]; then
-    step_begin "Starting cron scheduler server"
+    step_begin "Installing cron scheduler service"
     info "Skipped — --no-cron / LINKEDIN_OUTREACH_SKIP_WEB=1"
     note "skip: cron server not started (--no-cron)"
     step_done "Cron server (skipped)"
     return 0
   fi
 
-  step_begin "Starting cron scheduler server"
+  step_begin "Installing cron scheduler service"
   cd "${REPO_ROOT}"
-  local pid_file="${REPO_ROOT}/${CRON_PID_FILE}"
-  local log_file="${REPO_ROOT}/${CRON_LOG}"
+  local svc="${REPO_ROOT}/bin/cron-service"
   local health_url="http://${WEB_HOST}:${WEB_PORT}/health"
+  local log_file="${REPO_ROOT}/${CRON_LOG}"
 
-  mkdir -p "$(dirname "${pid_file}")" "$(dirname "${log_file}")"
+  mkdir -p "$(dirname "${log_file}")" outreach/storage
 
-  if [[ -f "${pid_file}" ]]; then
-    local old_pid
-    old_pid="$(cat "${pid_file}")"
-    if kill -0 "${old_pid}" 2>/dev/null && curl -sf "${health_url}" >/dev/null 2>&1; then
-      info "Cron server already running at ${health_url} (pid=${old_pid})"
-      note "ok: cron server at ${health_url}"
-      step_done "Cron server"
-      return 0
-    fi
-    rm -f "${pid_file}"
+  if [[ ! -x "${svc}" ]]; then
+    warn "bin/cron-service not found — cannot install auto-start"
+    note "warn: cron service installer missing"
+    step_done "Cron server (installer missing)"
+    return 0
   fi
 
-  if command -v curl >/dev/null 2>&1 && curl -sf "${health_url}" >/dev/null 2>&1; then
-    info "Cron server already reachable at ${health_url}"
-    note "ok: cron server already running at ${health_url}"
+  export OUTREACH_REPO_ROOT="${REPO_ROOT}"
+  export WEB_HOST WEB_PORT CRON_LOG
+  export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
+
+  if cron_running_now && "${svc}" is-managed 2>/dev/null; then
+    info "Cron server already running (managed service) at ${health_url}"
+    note "ok: cron server at ${health_url}"
     step_done "Cron server"
     return 0
   fi
 
-  if port_in_use "${WEB_PORT}"; then
-    local holder
-    holder="$(describe_port_holder "${WEB_PORT}")"
-    warn "Port ${WEB_PORT} is in use but cron health check failed."
-    [[ -n "${holder}" ]] && warn "  ${holder}"
-    warn "Free the port or set WEB_PORT, then run: make cron"
-    note "warn: cron port ${WEB_PORT} conflict — server not started"
-    step_done "Cron server (port conflict)"
-    return 0
+  if cron_running_now; then
+    info "Cron reachable at ${health_url}; registering auto-start service"
   fi
 
-  info "Health URL: ${health_url}  |  Log: ${log_file}"
-  if ! nohup uv run uvicorn cron.server:app --host "${WEB_HOST}" --port "${WEB_PORT}" \
-    >>"${log_file}" 2>&1 & then
-    warn "Failed to start uvicorn. See ${log_file} or run: make cron"
-    note "warn: cron server failed to start"
-    step_done "Cron server (start failed)"
-    return 0
+  if ! "${svc}" install; then
+    warn "launchd/systemd install unavailable; starting cron via nohup fallback"
+    if ! "${svc}" start; then
+      warn "Failed to start cron. See ${log_file} or run: make cron"
+      note "warn: cron server failed to start"
+      step_done "Cron server (start failed)"
+      return 0
+    fi
+    note "ok: cron server started (nohup fallback — no auto-start on reboot)"
+  else
+    case "$(uname -s)" in
+      Darwin)
+        note "ok: cron auto-start via launchd (starts at login / after reboot)"
+        ;;
+      Linux)
+        note "ok: cron auto-start via systemd user service (starts at login)"
+        ;;
+      *)
+        note "ok: cron server installed"
+        ;;
+    esac
   fi
-  echo $! >"${pid_file}"
 
   if command -v curl >/dev/null 2>&1; then
     info "Waiting for cron health (up to ~10s)…"
     local i
     for i in $(seq 1 40); do
       if curl -sf "${health_url}" >/dev/null 2>&1; then
-        info "Cron server ready (pid=$(cat "${pid_file}"))"
-        note "ok: cron server at ${health_url}"
+        info "Cron server ready at ${health_url}"
+        info "Log: ${log_file}"
         step_done "Cron server"
         return 0
       fi
       sleep 0.25
     done
-    warn "Cron server process started but health check did not succeed yet."
+    warn "Cron service started but health check did not succeed yet."
     warn "Tail logs: tail -f ${log_file}"
-    warn "Restart: make stop-cron && make cron"
-    note "warn: cron server started but health check pending — see ${log_file}"
+    warn "Status: make status   |   bin/cron-service status"
+    note "warn: cron health check pending — see ${log_file}"
   else
-    info "Cron server process started (pid=$(cat "${pid_file}")); install curl to verify health."
-    note "ok: cron server process started (health not verified — no curl)"
+    info "Cron service started; install curl to verify health."
+    note "ok: cron service started (health not verified — no curl)"
   fi
   step_done "Cron server"
 }
@@ -1022,6 +1032,7 @@ print_final_summary() {
   fi
   if [[ "${SKIP_WEB}" != "1" ]]; then
     printf '  • Cron scheduler health: %s\n' "${cron_health_url}"
+    printf '  • Cron auto-start: launchd (macOS) or systemd user unit (Linux) via bin/cron-service\n'
     printf '  • Stop scheduler: make stop-cron   |   Status: make status\n'
   fi
   printf '  • Dev dashboard + mock regression: see testing/README.md\n'

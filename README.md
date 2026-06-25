@@ -50,7 +50,7 @@ The script does **not** require **Make** (suitable for a fresh Mac before Xcode 
 - Pre-allows ebase in Claude Code settings: MCP (`mcp__linkedin`), all repo skills (`Skill(...)`), and maintenance bash (`bin/outreach-*`, `install.sh`, `uninstall.sh`, `make upgrade` / `uninstall` / `claude-install`). Writes to **`~/.claude/settings.json`** in default mode, or **`<repo>/.claude/settings.local.json`** with **`--local`**.
 - If **`claude`** is missing, it prints next steps. **`./install.sh --help`** lists options.
 - Launches **Google Chrome** on macOS at the default path with remote debugging (CDP) on port **9222** (same idea as **`make browser`**), opens **LinkedIn login**, and **pauses until you press Enter** after signing in. Playwright automation attaches to that live Chrome session. Skip the pause with **`./install.sh --skip-linkedin-login`**.
-- Starts the **cron scheduler server** in the background (health: **http://127.0.0.1:3847/health**, logs: `logs/cron.log`). It runs the unattended routine sweeps (connection sync, conversation planning). Skip with **`./install.sh --no-cron`**.
+- Starts the **cron scheduler** via **launchd** (macOS) or **systemd user unit** (Linux) for auto-start at login/reboot (health: **http://127.0.0.1:3847/health**, logs: `logs/cron.log`). Skip with **`./install.sh --no-cron`**.
 
 Once it finishes, run **`/setup-outreach`** in Claude Code to scrape your LinkedIn profile, review the draft persona, and save `outreach/config/persona.json`. The cron scheduler then runs the workflow unattended; check it with **`make status`**.
 

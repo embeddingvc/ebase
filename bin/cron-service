@@ -1,0 +1,385 @@
+#!/usr/bin/env bash
+# cron-service — install/manage ebase cron via launchd (macOS) or systemd (Linux).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+REPO_ROOT="${OUTREACH_REPO_ROOT:-${EBASE_DIR:-${DEFAULT_REPO_ROOT}}}"
+WEB_HOST="${WEB_HOST:-127.0.0.1}"
+WEB_PORT="${WEB_PORT:-3847}"
+CRON_LOG="${CRON_LOG:-logs/cron.log}"
+
+LAUNCHD_LABEL="com.embeddingvc.ebase.cron"
+SYSTEMD_UNIT="ebase-cron.service"
+
+info() { printf '%s\n' "[cron-service] $*"; }
+warn() { printf '%s\n' "[cron-service] $*" >&2; }
+
+usage() {
+  cat <<'EOF'
+Usage: cron-service <command>
+
+Commands:
+  install     Write launchd/systemd unit and enable auto-start on login/boot
+  uninstall   Disable and remove the unit (does not delete outreach data)
+  start       Start the cron server via the service manager (or nohup fallback)
+  stop        Stop the cron server
+  status      Print whether a managed service is installed and running
+  is-managed  Exit 0 if a unit file is installed, 1 otherwise
+  json-status Print JSON for scripts (managed, backend, running, paths)
+
+Environment:
+  OUTREACH_REPO_ROOT / EBASE_DIR   Repository root (default: parent of bin/)
+  WEB_HOST, WEB_PORT               Cron bind address (default 127.0.0.1:3847)
+  CRON_LOG                         Log file relative to repo (default logs/cron.log)
+EOF
+}
+
+resolve_repo() {
+  REPO_ROOT="$(cd "${REPO_ROOT}" && pwd)"
+  if [[ ! -f "${REPO_ROOT}/pyproject.toml" ]]; then
+    warn "Not an ebase repo: ${REPO_ROOT}"
+    exit 1
+  fi
+}
+
+resolve_uv() {
+  export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
+  command -v uv >/dev/null 2>&1 || {
+    warn "uv not found on PATH. Run ./install.sh or add ~/.local/bin to PATH."
+    exit 1
+  }
+  UV_BIN="$(command -v uv)"
+}
+
+backend() {
+  case "$(uname -s)" in
+    Darwin) printf '%s\n' "launchd" ;;
+    Linux)
+      if command -v systemctl >/dev/null 2>&1; then
+        printf '%s\n' "systemd"
+      else
+        printf '%s\n' "none"
+      fi
+      ;;
+    *) printf '%s\n' "none" ;;
+  esac
+}
+
+launchd_plist_path() {
+  printf '%s\n' "${HOME}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
+}
+
+systemd_unit_path() {
+  printf '%s\n' "${HOME}/.config/systemd/user/${SYSTEMD_UNIT}"
+}
+
+health_url() {
+  printf 'http://%s:%s/health\n' "${WEB_HOST}" "${WEB_PORT}"
+}
+
+cron_running() {
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -sf "$(health_url)" >/dev/null 2>&1
+}
+
+launchd_domain() {
+  printf 'gui/%s\n' "$(id -u)"
+}
+
+write_launchd_plist() {
+  local plist_path log_path path_val
+  plist_path="$(launchd_plist_path)"
+  log_path="${REPO_ROOT}/${CRON_LOG}"
+  path_val="${HOME}/.local/bin:${HOME}/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  mkdir -p "$(dirname "${plist_path}")" "$(dirname "${log_path}")"
+  cat >"${plist_path}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LAUNCHD_LABEL}</string>
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${UV_BIN}</string>
+    <string>run</string>
+    <string>--project</string>
+    <string>${REPO_ROOT}</string>
+    <string>uvicorn</string>
+    <string>cron.server:app</string>
+    <string>--host</string>
+    <string>${WEB_HOST}</string>
+    <string>--port</string>
+    <string>${WEB_PORT}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${path_val}</string>
+    <key>WEB_HOST</key>
+    <string>${WEB_HOST}</string>
+    <key>WEB_PORT</key>
+    <string>${WEB_PORT}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${log_path}</string>
+  <key>StandardErrorPath</key>
+  <string>${log_path}</string>
+</dict>
+</plist>
+EOF
+  info "Wrote ${plist_path}"
+}
+
+write_systemd_unit() {
+  local unit_path log_path path_val
+  unit_path="$(systemd_unit_path)"
+  log_path="${REPO_ROOT}/${CRON_LOG}"
+  path_val="${HOME}/.local/bin:${HOME}/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+  mkdir -p "$(dirname "${unit_path}")" "$(dirname "${log_path}")"
+  cat >"${unit_path}" <<EOF
+[Unit]
+Description=ebase cron scheduler (LinkedIn outreach)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${REPO_ROOT}
+Environment=PATH=${path_val}
+Environment=WEB_HOST=${WEB_HOST}
+Environment=WEB_PORT=${WEB_PORT}
+ExecStart=${UV_BIN} run --project ${REPO_ROOT} uvicorn cron.server:app --host ${WEB_HOST} --port ${WEB_PORT}
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:${log_path}
+StandardError=append:${log_path}
+
+[Install]
+WantedBy=default.target
+EOF
+  info "Wrote ${unit_path}"
+}
+
+launchd_load() {
+  local plist_path domain
+  plist_path="$(launchd_plist_path)"
+  domain="$(launchd_domain)"
+  launchctl bootout "${domain}" "${plist_path}" >/dev/null 2>&1 || true
+  launchctl bootstrap "${domain}" "${plist_path}"
+  launchctl enable "${domain}/${LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+  launchctl kickstart -k "${domain}/${LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+}
+
+launchd_unload() {
+  local plist_path domain
+  plist_path="$(launchd_plist_path)"
+  domain="$(launchd_domain)"
+  launchctl bootout "${domain}" "${plist_path}" >/dev/null 2>&1 || true
+  rm -f "${plist_path}"
+}
+
+systemd_reload() {
+  systemctl --user daemon-reload
+}
+
+systemd_enable_start() {
+  systemd_reload
+  systemctl --user enable --now "${SYSTEMD_UNIT}"
+}
+
+systemd_stop_disable() {
+  systemctl --user disable --now "${SYSTEMD_UNIT}" >/dev/null 2>&1 || true
+  systemd_reload
+  rm -f "$(systemd_unit_path)"
+}
+
+cmd_install() {
+  resolve_repo
+  resolve_uv
+  local be
+  be="$(backend)"
+  case "${be}" in
+    launchd)
+      write_launchd_plist
+      launchd_load
+      info "launchd service enabled (starts at login and after reboot while logged in)"
+      ;;
+    systemd)
+      write_systemd_unit
+      systemd_enable_start
+      if command -v loginctl >/dev/null 2>&1 && ! loginctl show-user "$(id -un)" -p Linger 2>/dev/null | grep -q 'Linger=yes'; then
+        info "Tip: for cron without an active login session, run: loginctl enable-linger $(id -un)"
+      fi
+      info "systemd user service enabled (starts at login; use loginctl enable-linger for headless)"
+      ;;
+    *)
+      warn "No supported service manager on this OS; use manual: make cron"
+      return 1
+      ;;
+  esac
+}
+
+cmd_uninstall() {
+  local be
+  be="$(backend)"
+  case "${be}" in
+    launchd)
+      if [[ -f "$(launchd_plist_path)" ]]; then
+        launchd_unload
+        info "Removed launchd service ${LAUNCHD_LABEL}"
+      fi
+      ;;
+    systemd)
+      if [[ -f "$(systemd_unit_path)" ]]; then
+        systemd_stop_disable
+        info "Removed systemd user service ${SYSTEMD_UNIT}"
+      fi
+      ;;
+    *)
+      info "No managed cron service found"
+      ;;
+  esac
+}
+
+nohup_start() {
+  resolve_repo
+  resolve_uv
+  local pid_file log_file
+  pid_file="${REPO_ROOT}/outreach/storage/cron.pid"
+  log_file="${REPO_ROOT}/${CRON_LOG}"
+  mkdir -p "$(dirname "${pid_file}")" "$(dirname "${log_file}")"
+  if cron_running; then
+    info "Cron already running at $(health_url)"
+    return 0
+  fi
+  cd "${REPO_ROOT}"
+  nohup "${UV_BIN}" run --project "${REPO_ROOT}" uvicorn cron.server:app \
+    --host "${WEB_HOST}" --port "${WEB_PORT}" >>"${log_file}" 2>&1 &
+  echo $! >"${pid_file}"
+  info "Started cron via nohup (pid=$(cat "${pid_file}"))"
+}
+
+nohup_stop() {
+  resolve_repo
+  local pid_file="${REPO_ROOT}/outreach/storage/cron.pid"
+  if [[ -f "${pid_file}" ]]; then
+    local pid
+    pid="$(cat "${pid_file}" 2>/dev/null || true)"
+    if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+      kill "${pid}" 2>/dev/null || true
+      info "Stopped nohup cron (pid=${pid})"
+    fi
+    rm -f "${pid_file}"
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -ti ":${WEB_PORT}" | xargs kill 2>/dev/null || true
+  fi
+}
+
+cmd_start() {
+  if cmd_is_managed >/dev/null 2>&1; then
+    resolve_repo
+    case "$(backend)" in
+      launchd)
+        launchctl kickstart -k "$(launchd_domain)/${LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+        ;;
+      systemd)
+        systemctl --user start "${SYSTEMD_UNIT}"
+        ;;
+    esac
+    info "Started managed cron service"
+    return 0
+  fi
+  nohup_start
+}
+
+cmd_stop() {
+  if cmd_is_managed >/dev/null 2>&1; then
+    case "$(backend)" in
+      launchd)
+        launchctl kill SIGTERM "$(launchd_domain)/${LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+        ;;
+      systemd)
+        systemctl --user stop "${SYSTEMD_UNIT}" >/dev/null 2>&1 || true
+        ;;
+    esac
+    info "Stopped managed cron service"
+    return 0
+  fi
+  nohup_stop
+}
+
+managed_paths() {
+  case "$(backend)" in
+    launchd) [[ -f "$(launchd_plist_path)" ]] && return 0 ;;
+    systemd) [[ -f "$(systemd_unit_path)" ]] && return 0 ;;
+  esac
+  return 1
+}
+
+cmd_is_managed() {
+  managed_paths
+}
+
+cmd_status() {
+  local be running managed
+  be="$(backend)"
+  managed="no"
+  if managed_paths; then managed="yes"; fi
+  running="no"
+  if cron_running; then running="yes"; fi
+  info "backend=${be}  managed=${managed}  running=${running}  url=$(health_url)"
+  if [[ "${managed}" == "yes" ]]; then
+    case "${be}" in
+      launchd) info "unit $(launchd_plist_path)" ;;
+      systemd) info "unit $(systemd_unit_path)" ;;
+    esac
+  fi
+}
+
+cmd_json_status() {
+  local be running managed path=""
+  be="$(backend)"
+  managed="false"
+  if managed_paths; then
+    managed="true"
+    case "${be}" in
+      launchd) path="$(launchd_plist_path)" ;;
+      systemd) path="$(systemd_unit_path)" ;;
+    esac
+  fi
+  running="false"
+  if cron_running; then running="true"; fi
+  printf '{"managed":%s,"backend":"%s","running":%s,"health_url":"%s","unit_path":"%s","repo_root":"%s"}\n' \
+    "${managed}" "${be}" "${running}" "$(health_url)" "${path}" "${REPO_ROOT}"
+}
+
+main() {
+  local cmd="${1:-}"
+  case "${cmd}" in
+    install) cmd_install ;;
+    uninstall) cmd_uninstall ;;
+    start) cmd_start ;;
+    stop) cmd_stop ;;
+    status) cmd_status ;;
+    is-managed) cmd_is_managed ;;
+    json-status) cmd_json_status ;;
+    -h|--help|help|"") usage ;;
+    *)
+      warn "Unknown command: ${cmd}"
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

@@ -64,8 +64,7 @@ def test_build_cron_status_per_prospect(outreach_tmp: Path) -> None:
     assert status["sweeps"][0]["gate"] == "outside window"
     assert status["sweeps"][1]["active"] is False
     assert status["server"]["auto_start_on_reboot"] is False
-    assert status["notes"]
-    assert "reboot" in status["notes"][0].lower()
+    assert "install" in status["notes"][0].lower()
 
 
 def test_format_sweep_lines_per_prospect(outreach_tmp: Path) -> None:
