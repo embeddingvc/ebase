@@ -157,7 +157,7 @@ WorkingDirectory=${REPO_ROOT}
 Environment=PATH=${path_val}
 Environment=WEB_HOST=${WEB_HOST}
 Environment=WEB_PORT=${WEB_PORT}
-ExecStart=${UV_BIN} run --project ${REPO_ROOT} uvicorn cron.server:app --host ${WEB_HOST} --port ${WEB_PORT}
+ExecStart="${UV_BIN}" run --project "${REPO_ROOT}" uvicorn cron.server:app --host "${WEB_HOST}" --port "${WEB_PORT}"
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:${log_path}
