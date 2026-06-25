@@ -40,7 +40,7 @@ SKILL_PATH   = os.path.join(
 )
 LOGS_DIR     = os.path.join(BASE_DIR, "outreach", "logs")
 PLANNER_CONFIG_PATH = os.path.join(
-    BASE_DIR, "outreach", "config", "conversation_planner.json"
+    BASE_DIR, "outreach", "config", "conversation_planner.json.example"
 )
 
 # ── Load .env ────────────────────────────────────────────────────────────────

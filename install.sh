@@ -310,6 +310,16 @@ ensure_repo() {
   step_done "Repository"
 }
 
+ensure_local_planner_config() {
+  local example="${REPO_ROOT}/outreach/config/conversation_planner.json.example"
+  local local_cfg="${REPO_ROOT}/outreach/config/conversation_planner.json"
+  if [[ -f "${example}" ]] && [[ ! -f "${local_cfg}" ]]; then
+    cp "${example}" "${local_cfg}"
+    info "Created outreach/config/conversation_planner.json from conversation_planner.json.example"
+    note "ok: local planner config created from template"
+  fi
+}
+
 install_project_deps() {
   step_begin "Installing Python dependencies and Playwright Chromium"
   cd "${REPO_ROOT}"
@@ -716,7 +726,7 @@ setup_planner_tone_and_examples() {
   fi
   if [[ ! -f "${cfg_path}" ]]; then
     info "Planner config not found at ${cfg_path} — skipping tone setup."
-    info "It will be created with defaults the first time the MCP runs."
+    info "Copy outreach/config/conversation_planner.json.example → conversation_planner.json, or re-run ./install.sh."
     note "skip: planner tone / examples (config missing)"
     step_done "Planner tone / examples (skipped)"
     return 0
@@ -1073,6 +1083,8 @@ main() {
   ensure_repo
   [[ -n "${REPO_ROOT}" ]] || { warn "Could not determine repository root."; exit 1; }
   REPO_ROOT="$(cd "${REPO_ROOT}" && pwd)"
+
+  ensure_local_planner_config
 
   install_project_deps
   sync_claude_skills_to_home

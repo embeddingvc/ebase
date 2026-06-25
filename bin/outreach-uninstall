@@ -302,6 +302,7 @@ remove_repo_data() {
   local paths=(
     "outreach/connections.json"
     "outreach/config/persona.json"
+    "outreach/config/conversation_planner.json"
     "outreach/config/dashboard_routines.json"
     "outreach/logs/actions.jsonl"
     "outreach/logs/planned_messages.jsonl"

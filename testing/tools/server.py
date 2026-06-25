@@ -744,6 +744,31 @@ def _planner_config_path() -> Path:
     return _outreach_base() / "config" / "conversation_planner.json"
 
 
+def _bundled_planner_example_path() -> Path:
+    return (
+        Path(__file__).resolve().parent.parent
+        / "outreach"
+        / "config"
+        / "conversation_planner.json.example"
+    )
+
+
+def _load_planner_core() -> dict:
+    """Load campaign/rules/router from local file, bundled example, or defaults."""
+    for path in (_planner_config_path(), _bundled_planner_example_path()):
+        if not path.exists():
+            continue
+        try:
+            core = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.exception("_load_planner_core: invalid %s", path)
+            continue
+        if isinstance(core, dict):
+            _strip_legacy_identity_from_core(core)
+            return core
+    return _default_conversation_planner_config()
+
+
 def _persona_path() -> Path:
     return _outreach_base() / "config" / "persona.json"
 
@@ -1752,7 +1777,8 @@ async def get_cron_status() -> str:
 @mcp.tool()
 async def get_conversation_planner_config() -> str:
     """
-    Read planner config from config/conversation_planner.json and identity from
+    Read planner config from config/conversation_planner.json (or the bundled
+    conversation_planner.json.example when local file is absent) and identity from
     config/persona.json under the active outreach data root (optional; defaults apply if absent).
 
     Returns a single merged JSON object (persona + organization + campaign, rules,
@@ -1760,19 +1786,7 @@ async def get_conversation_planner_config() -> str:
     edits are reflected immediately.
     """
     try:
-        planner_path = _planner_config_path()
-        if not planner_path.exists():
-            core = _default_conversation_planner_config()
-            _atomic_write_json(planner_path, core)
-        else:
-            core = json.loads(planner_path.read_text(encoding="utf-8"))
-            if not isinstance(core, dict):
-                return (
-                    "error: "
-                    + str(planner_path)
-                    + " must contain a JSON object at top level"
-                )
-            _strip_legacy_identity_from_core(core)
+        core = _load_planner_core()
         err = _validate_conversation_planner_config(core)
         if err:
             return f"error: {err}"

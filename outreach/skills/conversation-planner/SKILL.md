@@ -77,7 +77,7 @@ the source of truth for operator profile, campaign goal/topic, and desired end s
 across runs; always read fresh so file edits apply immediately without skill reload or server restart.
 
 Server-managed files:
-- Planner (campaign, end goals, message rules, router): `outreach/config/conversation_planner.json`
+- Planner (campaign, end goals, message rules, router): `outreach/config/conversation_planner.json` (typically gitignored — copy `conversation_planner.json.example` locally; `./install.sh` does this on first run)
 - Operator identity (**`persona`**, **`organization`**): `outreach/config/persona.json` (typically gitignored — copy `persona.json.example` locally)
 
 The MCP **`get_conversation_planner_config`** response merges both so you always have one JSON with `persona` + `organization` + the rest.
