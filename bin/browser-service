@@ -404,8 +404,10 @@ cmd_json_status() {
     running="true"
     version="$(curl -sf "$(cdp_url)" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("Browser",""))' 2>/dev/null || true)"
   fi
-  printf '{"managed":%s,"backend":"%s","running":%s,"cdp_url":"%s","browser":"%s","profile":"%s","unit_path":"%s","repo_root":"%s"}\n' \
-    "${managed}" "${be}" "${running}" "$(cdp_url)" "${version}" "${CHROME_PROFILE}" "${path}" "${REPO_ROOT}"
+  python3 -c "import json,sys; d=dict(zip(sys.argv[1::2],sys.argv[2::2])); print(json.dumps({**d,'managed':d['managed']=='true','running':d['running']=='true'}))" \
+    managed "${managed}" backend "${be}" running "${running}" \
+    cdp_url "$(cdp_url)" browser "${version}" profile "${CHROME_PROFILE}" \
+    unit_path "${path}" repo_root "${REPO_ROOT}"
 }
 
 main() {
