@@ -495,7 +495,7 @@ open_linkedin_tab_in_cdp() {
 
 launch_chrome_cdp() {
   step_begin "Launching Chrome with CDP for LinkedIn"
-  local chrome
+  local chrome svc="${REPO_ROOT}/bin/browser-service"
   chrome="$(chrome_binary)"
   if [[ -z "${chrome}" ]]; then
     warn "Google Chrome not found."
@@ -508,34 +508,66 @@ launch_chrome_cdp() {
   info "Chrome binary: ${chrome}"
   info "Profile: ${CHROME_PROFILE}  |  CDP: http://localhost:${CDP_PORT}"
 
-  if command -v curl >/dev/null 2>&1 && curl -sf "http://localhost:${CDP_PORT}/json/version" >/dev/null 2>&1; then
-    info "Chrome already exposing CDP on port ${CDP_PORT} — skipping launch."
-    open_linkedin_tab_in_cdp
-    note "ok: Chrome CDP already running on port ${CDP_PORT}"
+  if [[ ! -f "${svc}" ]]; then
+    warn "bin/browser-service not found — launching Chrome directly"
+    check_cdp_port
+    "${chrome}" \
+      --remote-debugging-port="${CDP_PORT}" \
+      --user-data-dir="${CHROME_PROFILE}" \
+      --no-first-run \
+      --no-default-browser-check \
+      --disable-extensions-except= \
+      "${LINKEDIN_LOGIN_URL}" \
+      >/dev/null 2>&1 &
+    wait_for_cdp 40 || true
+    step_done "Chrome"
+    return 0
+  fi
+  chmod +x "${svc}" 2>/dev/null || true
+
+  export OUTREACH_REPO_ROOT="${REPO_ROOT}"
+  export CDP_PORT CHROME_PROFILE
+  export CHROME_BIN="${chrome}"
+
+  info "Running bin/browser-service install…"
+  if ! "${svc}" install; then
+    warn "launchd/systemd install unavailable; launching Chrome directly"
+    check_cdp_port
+    "${chrome}" \
+      --remote-debugging-port="${CDP_PORT}" \
+      --user-data-dir="${CHROME_PROFILE}" \
+      --no-first-run \
+      --no-default-browser-check \
+      --disable-extensions-except= \
+      "${LINKEDIN_LOGIN_URL}" \
+      >/dev/null 2>&1 &
+    if wait_for_cdp 40; then
+      note "ok: Chrome launched (manual — no auto-start on reboot)"
+    else
+      note "warn: Chrome CDP not ready on port ${CDP_PORT}"
+    fi
     step_done "Chrome"
     return 0
   fi
 
-  check_cdp_port
+  case "$(uname -s)" in
+    Darwin)
+      note "ok: bin/browser-service install — launchd auto-start enabled"
+      ;;
+    Linux)
+      note "ok: bin/browser-service install — systemd user auto-start enabled"
+      ;;
+    *)
+      note "ok: bin/browser-service install completed"
+      ;;
+  esac
 
-  info "Opening Chrome with remote debugging (CDP port ${CDP_PORT})."
-  info "Playwright attaches to this live session (not headless Chromium)."
-  "${chrome}" \
-    --remote-debugging-port="${CDP_PORT}" \
-    --user-data-dir="${CHROME_PROFILE}" \
-    --no-first-run \
-    --no-default-browser-check \
-    --disable-extensions-except= \
-    "${LINKEDIN_LOGIN_URL}" \
-    >/dev/null 2>&1 &
-
-  info "Waiting for CDP (up to ~10s)…"
-  if wait_for_cdp 40; then
+  open_linkedin_tab_in_cdp
+  if wait_for_cdp 10; then
     info "Chrome CDP is ready on port ${CDP_PORT}."
-    note "ok: Chrome launched with CDP on port ${CDP_PORT}"
   else
-    warn "Chrome started but CDP port ${CDP_PORT} is not ready yet."
-    warn "Check for port conflicts: lsof -i :${CDP_PORT}   or retry: make browser"
+    warn "Chrome service installed but CDP port ${CDP_PORT} is not ready yet."
+    warn "Check: bin/browser-service status   or   make status"
     note "warn: Chrome CDP not ready on port ${CDP_PORT}"
   fi
   step_done "Chrome"
@@ -738,11 +770,6 @@ persist_outreach_upgrade_config() {
   fi
 }
 
-cron_running_now() {
-  command -v curl >/dev/null 2>&1 || return 1
-  curl -sf "http://${WEB_HOST}:${WEB_PORT}/health" >/dev/null 2>&1
-}
-
 start_cron_server() {
   if [[ "${SKIP_WEB}" == "1" ]]; then
     step_begin "Installing cron scheduler service"
@@ -760,28 +787,19 @@ start_cron_server() {
 
   mkdir -p "$(dirname "${log_file}")" outreach/storage
 
-  if [[ ! -x "${svc}" ]]; then
+  if [[ ! -f "${svc}" ]]; then
     warn "bin/cron-service not found — cannot install auto-start"
     note "warn: cron service installer missing"
     step_done "Cron server (installer missing)"
     return 0
   fi
+  chmod +x "${svc}" 2>/dev/null || true
 
   export OUTREACH_REPO_ROOT="${REPO_ROOT}"
   export WEB_HOST WEB_PORT CRON_LOG
   export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 
-  if cron_running_now && "${svc}" is-managed 2>/dev/null; then
-    info "Cron server already running (managed service) at ${health_url}"
-    note "ok: cron server at ${health_url}"
-    step_done "Cron server"
-    return 0
-  fi
-
-  if cron_running_now; then
-    info "Cron reachable at ${health_url}; registering auto-start service"
-  fi
-
+  info "Running bin/cron-service install…"
   if ! "${svc}" install; then
     warn "launchd/systemd install unavailable; starting cron via nohup fallback"
     if ! "${svc}" start; then
@@ -794,13 +812,13 @@ start_cron_server() {
   else
     case "$(uname -s)" in
       Darwin)
-        note "ok: cron auto-start via launchd (starts at login / after reboot)"
+        note "ok: bin/cron-service install — launchd auto-start enabled"
         ;;
       Linux)
-        note "ok: cron auto-start via systemd user service (starts at login)"
+        note "ok: bin/cron-service install — systemd user auto-start enabled"
         ;;
       *)
-        note "ok: cron server installed"
+        note "ok: bin/cron-service install completed"
         ;;
     esac
   fi
@@ -1032,6 +1050,7 @@ print_final_summary() {
   fi
   if [[ "${SKIP_WEB}" != "1" ]]; then
     printf '  • Cron scheduler health: %s\n' "${cron_health_url}"
+    printf '  • Browser auto-start: launchd (macOS) or systemd user unit (Linux) via bin/browser-service\n'
     printf '  • Cron auto-start: launchd (macOS) or systemd user unit (Linux) via bin/cron-service\n'
     printf '  • Stop scheduler: make stop-cron   |   Status: make status\n'
   fi
@@ -1044,7 +1063,7 @@ print_final_summary() {
   else
     printf '  • MCP is registered for all projects; skills live in %s/\n' "${USER_CLAUDE_SKILLS}"
   fi
-  printf '  • Day-to-day: make browser   make cron\n'
+  printf '  • Day-to-day: make status   (Chrome + cron auto-start via install.sh)\n'
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 

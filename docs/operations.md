@@ -19,25 +19,26 @@ Mock mode (`OUTREACH_MOCK`) and the dev dashboard are `testing/` concerns; see [
 
 ## Cron persistence
 
-`./install.sh` registers a **launchd** agent on macOS or a **systemd user unit** on Linux via `bin/cron-service install`, so cron auto-starts at login and after reboot.
+`./install.sh` registers **launchd** (macOS) or **systemd user** (Linux) units for both Chrome and cron:
 
-| Platform | Unit location |
-|----------|----------------|
-| macOS | `~/Library/LaunchAgents/com.embeddingvc.ebase.cron.plist` |
-| Linux | `~/.config/systemd/user/ebase-cron.service` |
+| Service | Unit | Manager script |
+|---------|------|----------------|
+| Chrome CDP | `com.embeddingvc.ebase.browser` / `ebase-browser.service` | `bin/browser-service` |
+| Cron scheduler | `com.embeddingvc.ebase.cron` / `ebase-cron.service` | `bin/cron-service` |
 
 Manual controls:
 
 ```bash
-bin/cron-service status      # managed + running?
-bin/cron-service install     # (re)register auto-start
-bin/cron-service uninstall   # remove unit
-make stop-cron               # stop process (managed or legacy nohup)
+bin/browser-service status     # Chrome CDP managed + running?
+bin/browser-service install    # (re)register Chrome auto-start
+bin/browser-service uninstall  # remove unit
+make stop-browser              # stop managed Chrome
+
+bin/cron-service status        # cron managed + running?
+bin/cron-service install       # (re)register cron auto-start
+make stop-cron                 # stop cron
+make status                    # Chrome + cron + sweep summary
 ```
-
-On Linux without an active login session, enable linger: `loginctl enable-linger $USER`.
-
-Check status from the shell with `make status` or MCP tool `get_cron_status`.
 
 ## Operational data layout
 

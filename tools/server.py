@@ -48,6 +48,7 @@ A mock-capable fork of this server (scripted responses, no browser) lives in
     append_planned_message_log Append one JSON line to planned_messages.jsonl.
     save_outreach_report      Write .../storage/reports/<id>.md.
     get_cron_status           Cron scheduler health, sweep config, and recent activity (JSON).
+    get_browser_status        Chrome CDP health and auto-start service status (JSON).
 """
 
 from __future__ import annotations
@@ -1670,6 +1671,23 @@ async def save_outreach_report(
         return f"ok — saved {path}"
     except Exception as exc:
         logger.exception("save_outreach_report failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def get_browser_status() -> str:
+    """
+    Return Chrome CDP health and launchd/systemd auto-start status as JSON.
+
+    Includes whether CDP is reachable on the configured port, Chrome version
+    string when up, profile path, and service manager registration.
+    """
+    try:
+        from cron.system_status import probe_browser
+
+        return json.dumps(probe_browser(), indent=2, ensure_ascii=False)
+    except Exception as exc:
+        logger.exception("get_browser_status failed")
         return f"error: {exc}"
 
 

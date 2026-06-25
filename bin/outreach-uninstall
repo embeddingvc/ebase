@@ -148,6 +148,23 @@ stop_processes() {
   local repo="$1"
   local web_pid="${repo}/${WEB_PID_FILE}"
   local svc="${repo}/bin/cron-service"
+  local browser_svc="${repo}/bin/browser-service"
+
+  if [[ -x "${browser_svc}" ]]; then
+    OUTREACH_REPO_ROOT="${repo}" CDP_PORT="${CDP_PORT}" "${browser_svc}" stop >/dev/null 2>&1 || true
+    if [[ "$YES" -eq 1 ]] || confirm "Remove browser auto-start service (launchd/systemd)?"; then
+      OUTREACH_REPO_ROOT="${repo}" "${browser_svc}" uninstall
+      note "ok: browser auto-start service removed"
+    else
+      note "skip: browser auto-start service left installed"
+    fi
+  elif command -v lsof >/dev/null 2>&1; then
+    if lsof -ti ":${CDP_PORT}" >/dev/null 2>&1; then
+      lsof -ti ":${CDP_PORT}" | xargs kill 2>/dev/null || true
+      info "Stopped process on CDP port ${CDP_PORT}"
+      note "ok: CDP port ${CDP_PORT} cleared"
+    fi
+  fi
 
   if [[ -x "${svc}" ]]; then
     OUTREACH_REPO_ROOT="${repo}" WEB_PORT="${WEB_PORT}" "${svc}" stop >/dev/null 2>&1 || true

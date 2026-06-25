@@ -140,6 +140,40 @@ if [[ -x "$ALLOW_SCRIPT" ]]; then
     "$ALLOW_SCRIPT" add "${local_allow[@]}" 2>/dev/null || true
 fi
 
+CRON_SVC="${REPO_ROOT}/bin/cron-service"
+if [[ -f "$CRON_SVC" ]]; then
+  chmod +x "$CRON_SVC" 2>/dev/null || true
+  export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
+  if OUTREACH_REPO_ROOT="$REPO_ROOT" "$CRON_SVC" install; then
+    echo "[outreach-upgrade] Refreshed cron auto-start (bin/cron-service install)"
+  else
+    echo "[outreach-upgrade] bin/cron-service install skipped (no launchd/systemd)" >&2
+  fi
+fi
+
+BROWSER_SVC="${REPO_ROOT}/bin/browser-service"
+if [[ -f "$BROWSER_SVC" ]]; then
+  chmod +x "$BROWSER_SVC" 2>/dev/null || true
+  chrome_bin=""
+  mac_chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  if [[ -x "$mac_chrome" ]]; then
+    chrome_bin="$mac_chrome"
+  elif command -v google-chrome >/dev/null 2>&1; then
+    chrome_bin="$(command -v google-chrome)"
+  elif command -v chromium >/dev/null 2>&1; then
+    chrome_bin="$(command -v chromium)"
+  elif command -v chromium-browser >/dev/null 2>&1; then
+    chrome_bin="$(command -v chromium-browser)"
+  fi
+  if [[ -n "$chrome_bin" ]]; then
+    if OUTREACH_REPO_ROOT="$REPO_ROOT" CHROME_BIN="$chrome_bin" "$BROWSER_SVC" install; then
+      echo "[outreach-upgrade] Refreshed browser auto-start (bin/browser-service install)"
+    else
+      echo "[outreach-upgrade] bin/browser-service install skipped (no launchd/systemd)" >&2
+    fi
+  fi
+fi
+
 NEW_VERSION="$(read_local_version "$REPO_ROOT")"
 mkdir -p "$STATE_DIR"
 echo "$OLD_VERSION" >"$MARKER_FILE"

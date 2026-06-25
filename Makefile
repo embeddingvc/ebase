@@ -43,7 +43,7 @@ ifneq ($(LOCAL),)
 override CLAUDE_INSTALL_LOCAL := $(LOCAL)
 endif
 
-.PHONY: browser stop-cron stop-web test test_conversation regression smoke install upgrade uninstall status help cron \
+.PHONY: browser stop-browser stop-cron stop-web test test_conversation regression smoke install upgrade uninstall status help cron \
 	claude-install claude-cleanup sync-version check-version check-repo-url
 
 # ── Browser ───────────────────────────────────────────────────────────────────
@@ -62,6 +62,20 @@ browser: ## Launch Chrome with remote debugging (stays open after make exits)
 	    --disable-extensions-except= \
 	    > /dev/null 2>&1 & \
 	  echo "[browser] Launched (pid=$$!)"; \
+	fi
+
+browser: ## Install/start Chrome CDP via launchd/systemd (or direct fallback)
+	@chmod +x bin/browser-service 2>/dev/null || true
+	@OUTREACH_REPO_ROOT="$(CURDIR)" CDP_PORT="$(CDP_PORT)" CHROME_PROFILE="$(CHROME_PROFILE)" \
+	  bin/browser-service install || \
+	  OUTREACH_REPO_ROOT="$(CURDIR)" CDP_PORT="$(CDP_PORT)" CHROME_PROFILE="$(CHROME_PROFILE)" \
+	  bin/browser-service start
+
+stop-browser: ## Stop managed Chrome CDP service
+	@if [ -x bin/browser-service ]; then \
+	  OUTREACH_REPO_ROOT="$(CURDIR)" CDP_PORT="$(CDP_PORT)" bin/browser-service stop; \
+	else \
+	  echo "[browser] bin/browser-service not found"; \
 	fi
 
 # ── Stop ──────────────────────────────────────────────────────────────────────
@@ -168,20 +182,8 @@ claude-cleanup: ## Remove linkedin MCP from user/local/project scopes; does not 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
-status: ## Show whether Chrome and cron are running
-	@echo "── Chrome (CDP port $(CDP_PORT)) ─────────────────"
-	@curl -sf http://localhost:$(CDP_PORT)/json/version \
-	  && echo "  ✅  Running" \
-	  || echo "  ❌  Not running  (start with: make browser)"
-	@echo "── Cron server (http://$(WEB_HOST):$(WEB_PORT)/health) ───"
-	@curl -sf http://$(WEB_HOST):$(WEB_PORT)/health >/dev/null 2>&1 \
-	  && echo "  ✅  Running" \
-	  || echo "  ❌  Not running  (start with: make cron or ./install.sh)"
-	@if [ -f $(CRON_PID_FILE) ]; then \
-	  echo "      pid=$$(cat $(CRON_PID_FILE))  log=$(CRON_LOG)"; \
-	fi
-	@echo "── Cron sweeps ────────────────────────────────────"
-	@cd "$(CURDIR)" && uv run python -m cron.status_report
+status: ## Show Chrome CDP and cron scheduler status
+	@cd "$(CURDIR)" && uv run python -m cron.system_status
 
 cron: ## Start the scheduler + health API in foreground (WEB_HOST / WEB_PORT)
 	@mkdir -p outreach/storage logs
