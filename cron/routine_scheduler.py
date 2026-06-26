@@ -47,6 +47,7 @@ def _get_sweep_lock(kind: str) -> asyncio.Lock:
         _sweep_locks[kind] = lock
     return lock
 
+
 # Tracks last sweep timestamps in per_prospect mode. The sweep cadence is the
 # floor on how often the sweep can possibly run — individual prospects still
 # obey their own ``sync_backoff`` / ``plan_backoff`` records.
@@ -100,9 +101,7 @@ async def _run_one(routine: dict[str, Any]) -> None:
             error=result.error,
             stdout_tail=result.stdout,
         )
-        routines_config.update_routine_after_run(
-            rid, status=status, error=result.error
-        )
+        routines_config.update_routine_after_run(rid, status=status, error=result.error)
         if result.ok:
             logger.info("routine %s finished ok", rid)
         else:

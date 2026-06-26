@@ -119,7 +119,9 @@ def _window_label(start: str | None, end: str | None) -> str:
     return "always on"
 
 
-def _event_summary(row: dict[str, Any] | None, *, now: datetime | None = None) -> dict[str, Any]:
+def _event_summary(
+    row: dict[str, Any] | None, *, now: datetime | None = None
+) -> dict[str, Any]:
     if not row:
         return {
             "at": None,
@@ -147,10 +149,18 @@ def _cron_service_managed() -> tuple[bool, str | None, Path | None]:
     system = platform.system()
     if system == "Darwin":
         path = home / "Library/LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
-        return path.is_file(), "launchd" if path.is_file() else None, path if path.is_file() else None
+        return (
+            path.is_file(),
+            "launchd" if path.is_file() else None,
+            path if path.is_file() else None,
+        )
     if system == "Linux":
         path = home / ".config/systemd/user" / _SYSTEMD_UNIT
-        return path.is_file(), "systemd" if path.is_file() else None, path if path.is_file() else None
+        return (
+            path.is_file(),
+            "systemd" if path.is_file() else None,
+            path if path.is_file() else None,
+        )
     return False, None, None
 
 
@@ -348,7 +358,9 @@ def format_sweep_lines(*, now: datetime | None = None) -> list[str]:
         lines.append(f"  cron server  not running{extra}")
         lines.append(f"    restart: {hint}")
     if server.get("managed"):
-        lines.append(f"    auto-start  {server.get('service_backend')}  ({server.get('service_unit_path')})")
+        lines.append(
+            f"    auto-start  {server.get('service_backend')}  ({server.get('service_unit_path')})"
+        )
     elif server.get("auto_start_on_reboot") is False:
         lines.append("    auto-start  not registered (run bin/cron-service install)")
 

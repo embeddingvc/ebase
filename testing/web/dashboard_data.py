@@ -28,10 +28,12 @@ LOGS_DIR = "logs"
 MEETING_END_REASONS = frozenset({"call_scheduled"})
 MEETING_NEXT_ACTIONS = frozenset({"confirm_meeting"})
 
+
 def mock_mcp_enabled() -> bool:
     """Mirror ``testing.tools.server._mock_mcp_enabled()`` (OUTREACH_MOCK env)."""
     env = os.environ.get("OUTREACH_MOCK", "").strip().lower()
     return env in ("1", "true", "yes")
+
 
 def outreach_base(scope: str | None = None) -> Path:
     """Outreach data root.
@@ -78,11 +80,15 @@ def _read_json(path: Path, default: Any) -> Any:
 def _atomic_write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     tmp.replace(path)
 
 
-def _read_jsonl(path: Path, *, limit: int = 100, offset: int = 0) -> tuple[list[dict], int]:
+def _read_jsonl(
+    path: Path, *, limit: int = 100, offset: int = 0
+) -> tuple[list[dict], int]:
     if not path.is_file():
         return [], 0
     rows: list[dict] = []
@@ -109,7 +115,9 @@ def _read_jsonl(path: Path, *, limit: int = 100, offset: int = 0) -> tuple[list[
 
 def _chrome_running(cdp_url: str = CDP_URL) -> tuple[bool, dict[str, Any] | None]:
     try:
-        with urllib.request.urlopen(f"{cdp_url.rstrip('/')}/json/version", timeout=2) as resp:
+        with urllib.request.urlopen(
+            f"{cdp_url.rstrip('/')}/json/version", timeout=2
+        ) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             return True, data
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
@@ -335,8 +343,12 @@ def _connection_routine_meta(conn: dict[str, Any]) -> dict[str, Any]:
     """
     status = conn.get("connection_status")
     routine = _backoff_routine_for(status)
-    sync_bo = conn.get("sync_backoff") if isinstance(conn.get("sync_backoff"), dict) else None
-    plan_bo = conn.get("plan_backoff") if isinstance(conn.get("plan_backoff"), dict) else None
+    sync_bo = (
+        conn.get("sync_backoff") if isinstance(conn.get("sync_backoff"), dict) else None
+    )
+    plan_bo = (
+        conn.get("plan_backoff") if isinstance(conn.get("plan_backoff"), dict) else None
+    )
 
     if routine == "connection_sync":
         backoff = sync_bo
@@ -550,13 +562,15 @@ def get_meetings(scope: str | None = None) -> dict[str, Any]:
                 "prospect_id": pid,
                 "name": name,
                 "title": title,
-                "profile_url": conn.get("profile_url") or (prospect or {}).get("linkedin_url"),
+                "profile_url": conn.get("profile_url")
+                or (prospect or {}).get("linkedin_url"),
                 "email": conv.get("email"),
                 "meeting_link": link,
                 "channel": _meeting_channel(link),
                 "outreach_stage": conv.get("outreach_stage"),
                 "ended_reason": conv.get("ended_reason"),
-                "scheduled_at": conv.get("ended_at") or conv.get("last_action_timestamp"),
+                "scheduled_at": conv.get("ended_at")
+                or conv.get("last_action_timestamp"),
                 "scheduled_relative": _relative_time(
                     conv.get("ended_at") or conv.get("last_action_timestamp")
                 ),
@@ -584,9 +598,7 @@ def get_summary(scope: str | None = None) -> dict[str, Any]:
     routines = get_routines(scope)
     health = get_health(scope)
     pending_conn = sum(
-        1
-        for c in connections["connections"]
-        if c.get("connection_status") == "pending"
+        1 for c in connections["connections"] if c.get("connection_status") == "pending"
     )
     return {
         "connections_total": connections["total"],

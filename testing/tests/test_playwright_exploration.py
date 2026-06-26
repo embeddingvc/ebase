@@ -59,7 +59,7 @@ from outreach.browser import LinkedInBrowser  # noqa: E402
 
 # ── Config from environment ───────────────────────────────────────────────────
 
-CDP_URL  = os.environ.get("CDP_URL", "http://localhost:9222")
+CDP_URL = os.environ.get("CDP_URL", "http://localhost:9222")
 HEADLESS = os.environ.get("HEADLESS", "true").lower() != "false"
 
 
@@ -76,7 +76,7 @@ HAS_CDP = _chrome_running()
 
 # ── Result tracking ───────────────────────────────────────────────────────────
 
-RESULTS: list[tuple[str, bool, str]] = []   # (test_name, passed, note)
+RESULTS: list[tuple[str, bool, str]] = []  # (test_name, passed, note)
 
 
 def record(name: str, passed: bool, note: str = "") -> None:
@@ -93,6 +93,7 @@ def skip(name: str, reason: str) -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 # Tier 0 — Smoke tests
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 async def test_playwright_installs() -> None:
     """Verify Playwright and Chromium are installed and a browser can launch."""
@@ -125,11 +126,13 @@ async def test_stealth_script() -> None:
         async with LinkedInBrowser(mode="launch", headless=True) as li:
             await li.page.goto("https://www.linkedin.com", timeout=30_000)
             webdriver_flag = await li.page.evaluate("navigator.webdriver")
-            assert webdriver_flag is None or webdriver_flag is False, (
-                f"navigator.webdriver still exposed: {webdriver_flag!r}"
-            )
+            assert (
+                webdriver_flag is None or webdriver_flag is False
+            ), f"navigator.webdriver still exposed: {webdriver_flag!r}"
             plugins_len = await li.page.evaluate("navigator.plugins.length")
-            assert plugins_len > 0, "navigator.plugins is empty — stealth may have failed"
+            assert (
+                plugins_len > 0
+            ), "navigator.plugins is empty — stealth may have failed"
             record(name, True, f"webdriver={webdriver_flag}, plugins={plugins_len}")
     except Exception as exc:
         record(name, False, str(exc))
@@ -138,6 +141,7 @@ async def test_stealth_script() -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 # Tier 1 — CDP attach tests
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 async def test_cdp_attach() -> None:
     """
@@ -151,7 +155,7 @@ async def test_cdp_attach() -> None:
         return
     try:
         async with LinkedInBrowser(mode="attach", cdp_url=CDP_URL) as li:
-            title       = await li.page.title()
+            title = await li.page.title()
             current_url = li.page.url
             print(f"    attached_to : {current_url!r}")
             print(f"    page_title  : {title!r}")
@@ -159,7 +163,7 @@ async def test_cdp_attach() -> None:
         # Re-attach after exit — proves the browser is still alive.
         async with LinkedInBrowser(mode="attach", cdp_url=CDP_URL) as li2:
             assert _chrome_running(), "Chrome no longer reachable after detach"
-            _ = li2.page.url   # just confirm the page object works
+            _ = li2.page.url  # just confirm the page object works
 
         record(name, True, "browser still alive after detach")
     except Exception as exc:
@@ -181,8 +185,9 @@ async def test_cdp_session_persistence() -> None:
             record(
                 name,
                 logged_in,
-                "session active" if logged_in else
-                "not logged in — log in manually in the Chrome window first",
+                "session active"
+                if logged_in
+                else "not logged in — log in manually in the Chrome window first",
             )
     except Exception as exc:
         record(name, False, str(exc))
@@ -191,6 +196,7 @@ async def test_cdp_session_persistence() -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 # Tier 2 — Human behaviour
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 async def test_human_behavior() -> None:
     """
@@ -209,14 +215,19 @@ async def test_human_behavior() -> None:
 
     This test never sends messages or connection requests.
     """
-    name    = "human_behavior"
+    name = "human_behavior"
     forever = os.environ.get("FOREVER", "").lower() in ("1", "true", "yes")
 
     if not HAS_CDP:
         skip(name, "Chrome not running — start with: make browser")
         return
     try:
-        from outreach.browser import _human_mouse_move, _human_scroll, _human_pause, _human_click
+        from outreach.browser import (
+            _human_mouse_move,
+            _human_scroll,
+            _human_pause,
+            _human_click,
+        )
 
         async with LinkedInBrowser(mode="attach", cdp_url=CDP_URL) as li:
             await li.assert_logged_in()
@@ -245,7 +256,11 @@ async def test_human_behavior() -> None:
                 await _human_mouse_move(li.page)
 
                 dwell = random.uniform(8, 20)
-                print(f"    reading post {i + 1}/{posts_to_skim}  ({dwell:.0f}s)…", end="", flush=True)
+                print(
+                    f"    reading post {i + 1}/{posts_to_skim}  ({dwell:.0f}s)…",
+                    end="",
+                    flush=True,
+                )
                 await asyncio.sleep(dwell)
 
                 # 30 % chance: Like this post.
@@ -263,7 +278,7 @@ async def test_human_behavior() -> None:
                     for idx in range(count - 1, -1, -1):
                         btn = like_btns.nth(idx)
                         box = await btn.bounding_box()
-                        if box and box["y"] > 0:   # visible in viewport
+                        if box and box["y"] > 0:  # visible in viewport
                             await _human_click(li.page, btn)
                             await asyncio.sleep(random.uniform(0.8, 1.8))
                             liked += 1
@@ -279,7 +294,11 @@ async def test_human_behavior() -> None:
             print(f"    ✓ feed browsed: {posts_to_skim} posts read, {liked} liked")
 
             screenshot_path = await li.screenshot("human_behavior")
-            record(name, True, f"posts={posts_to_skim} liked={liked} screenshot={screenshot_path.name}")
+            record(
+                name,
+                True,
+                f"posts={posts_to_skim} liked={liked} screenshot={screenshot_path.name}",
+            )
     except Exception as exc:
         record(name, False, str(exc))
 
@@ -287,6 +306,7 @@ async def test_human_behavior() -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 # Runner
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 async def main() -> int:
     print("=" * 60)
@@ -307,13 +327,15 @@ async def main() -> int:
     await test_human_behavior()
 
     # Summary
-    total   = len(RESULTS)
+    total = len(RESULTS)
     skipped = sum(1 for _, _, note in RESULTS if note.startswith("SKIPPED"))
-    passed  = sum(1 for _, ok, note in RESULTS if ok and not note.startswith("SKIPPED"))
-    failed  = sum(1 for _, ok, _ in RESULTS if not ok)
+    passed = sum(1 for _, ok, note in RESULTS if ok and not note.startswith("SKIPPED"))
+    failed = sum(1 for _, ok, _ in RESULTS if not ok)
 
     print("\n" + "=" * 60)
-    print(f"Results: {passed} passed / {failed} failed / {skipped} skipped  (total {total})")
+    print(
+        f"Results: {passed} passed / {failed} failed / {skipped} skipped  (total {total})"
+    )
     print()
     if not HAS_CDP:
         print("  → Run `make browser`, log in to LinkedIn, then re-run the tests.")

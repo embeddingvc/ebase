@@ -16,7 +16,12 @@ from cron import routines_config as rc  # noqa: E402
 
 def test_validate_routine_rejects_bad_skill() -> None:
     err = rc.validate_routine(
-        {"name": "X", "skill": "not-a-real-skill", "interval_minutes": 10, "active": True}
+        {
+            "name": "X",
+            "skill": "not-a-real-skill",
+            "interval_minutes": 10,
+            "active": True,
+        }
     )
     assert err is not None
 
@@ -75,7 +80,9 @@ def test_get_routines_display_includes_skill_fields() -> None:
     assert row["status"] == "disabled"
 
 
-def test_upsert_routines_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upsert_routines_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     base = tmp_path / "outreach"
     (base / "config").mkdir(parents=True)
     monkeypatch.setenv("OUTREACH_DATA_ROOT", str(base))

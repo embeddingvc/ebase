@@ -55,7 +55,9 @@ def outreach_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return base
 
 
-def test_build_cron_status_per_prospect(outreach_tmp: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_cron_status_per_prospect(
+    outreach_tmp: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(sr, "_cron_service_managed", lambda: (False, None, None))
     now = datetime(2026, 6, 25, 4, 20, tzinfo=timezone.utc)
     status = sr.build_cron_status(now=now)

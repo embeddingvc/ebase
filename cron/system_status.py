@@ -24,10 +24,18 @@ def _browser_service_managed() -> tuple[bool, str | None, Path | None]:
     system = platform.system()
     if system == "Darwin":
         path = home / "Library/LaunchAgents" / f"{_BROWSER_LAUNCHD_LABEL}.plist"
-        return path.is_file(), "launchd" if path.is_file() else None, path if path.is_file() else None
+        return (
+            path.is_file(),
+            "launchd" if path.is_file() else None,
+            path if path.is_file() else None,
+        )
     if system == "Linux":
         path = home / ".config/systemd/user" / _BROWSER_SYSTEMD_UNIT
-        return path.is_file(), "systemd" if path.is_file() else None, path if path.is_file() else None
+        return (
+            path.is_file(),
+            "systemd" if path.is_file() else None,
+            path if path.is_file() else None,
+        )
     return False, None, None
 
 
@@ -40,7 +48,9 @@ def _cdp_url() -> str:
 
 
 def _chrome_profile() -> str:
-    return os.environ.get("CHROME_PROFILE", str(Path.home() / ".linkedin-chrome-profile"))
+    return os.environ.get(
+        "CHROME_PROFILE", str(Path.home() / ".linkedin-chrome-profile")
+    )
 
 
 def probe_browser() -> dict[str, Any]:

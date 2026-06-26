@@ -98,11 +98,7 @@ def _resolve_smtp_config(prospect_id: str, *, label: str) -> dict | None:
 
     smtp_user = (os.environ.get("SMTP_USER") or "").strip()
     smtp_pass = os.environ.get("SMTP_PASS") or ""
-    sender = (
-        (os.environ.get("SMTP_FROM") or "").strip()
-        or smtp_user
-        or operator_email
-    )
+    sender = (os.environ.get("SMTP_FROM") or "").strip() or smtp_user or operator_email
     return {
         "operator_email": operator_email,
         "smtp_host": smtp_host,
@@ -124,7 +120,9 @@ def _dispatch(
 ) -> str:
     """Send ``msg`` over SMTP using ``cfg``. Returns the 'sent' / 'error: ...' string."""
     try:
-        with smtplib.SMTP(cfg["smtp_host"], cfg["port"], timeout=cfg["timeout"]) as client:
+        with smtplib.SMTP(
+            cfg["smtp_host"], cfg["port"], timeout=cfg["timeout"]
+        ) as client:
             client.ehlo()
             if cfg["use_starttls"]:
                 client.starttls()
@@ -168,7 +166,9 @@ def _build_meeting_email(
     msg["From"] = sender
     msg["To"] = recipient
 
-    link_line = meeting_link.strip() if meeting_link else "(book the calendar invite manually)"
+    link_line = (
+        meeting_link.strip() if meeting_link else "(book the calendar invite manually)"
+    )
     body = (
         f"A LinkedIn outreach meeting was just scheduled.\n"
         f"\n"
@@ -201,15 +201,11 @@ def _build_ended_email(
     display_name = (prospect_name or "Unknown prospect").strip() or "Unknown prospect"
     verb = "closed" if outreach_stage == "ended" else "dropped"
     reason_tag = (ended_reason or "no_reason").strip() or "no_reason"
-    msg["Subject"] = (
-        f"LinkedIn outreach {verb} — {display_name} ({reason_tag})"
-    )
+    msg["Subject"] = f"LinkedIn outreach {verb} — {display_name} ({reason_tag})"
     msg["From"] = sender
     msg["To"] = recipient
 
-    step_line = (
-        str(sequence_step) if isinstance(sequence_step, int) else "(none)"
-    )
+    step_line = str(sequence_step) if isinstance(sequence_step, int) else "(none)"
     body = (
         f"A LinkedIn outreach sequence just reached a terminal state.\n"
         f"\n"

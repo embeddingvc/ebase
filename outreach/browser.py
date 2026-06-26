@@ -88,13 +88,13 @@ from playwright.async_api import (
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-BASE_URL    = "https://www.linkedin.com"
-FEED_URL    = f"{BASE_URL}/feed/"
+BASE_URL = "https://www.linkedin.com"
+FEED_URL = f"{BASE_URL}/feed/"
 
 # Playwright's default navigation timeout (30 s) works for most pages.
-NAV_TIMEOUT = 30_000   # ms
+NAV_TIMEOUT = 30_000  # ms
 # Shorter timeout when waiting for a UI element to appear.
-EL_TIMEOUT  = 10_000   # ms
+EL_TIMEOUT = 10_000  # ms
 
 # Post-submit connection-invite verification
 _INVITE_VERIFY_TIMEOUT_S = 8.0
@@ -164,6 +164,7 @@ STORAGE_DIR.mkdir(exist_ok=True)
 
 # ── Stealth helpers ───────────────────────────────────────────────────────────
 
+
 def connection_invite_failure_reason(text: str) -> str | None:
     """Return a user-facing failure reason when *text* matches a known LinkedIn block."""
     if not (text or "").strip():
@@ -188,11 +189,11 @@ def connection_accepted_from_signals(
     has_connect_cta: bool,
 ) -> bool:
     """
-  Return True only when profile signals confirm an accepted 1st-degree connection.
+    Return True only when profile signals confirm an accepted 1st-degree connection.
 
-    Used by the connection-sync sweep — intentionally stricter than
-    :func:`connection_dm_ready_from_signals`, which may fall back to a profile
-    Message CTA when the degree badge is missing.
+      Used by the connection-sync sweep — intentionally stricter than
+      :func:`connection_dm_ready_from_signals`, which may fall back to a profile
+      Message CTA when the degree badge is missing.
     """
     if has_pending_invite or has_connect_cta:
         return False
@@ -254,6 +255,7 @@ Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
 # All functions that simulate realistic human interaction patterns.
 # Use these instead of bare asyncio.sleep() throughout the codebase.
 
+
 async def _human_pause(low: float = 0.5, high: float = 1.5) -> None:
     """Random sleep simulating human think-time between actions."""
     await asyncio.sleep(random.uniform(low, high))
@@ -267,7 +269,7 @@ async def _human_mouse_move(page: Page) -> None:
     with minor deviations.  We approximate this with a few intermediate
     waypoints sampled from a random walk within the visible viewport.
     """
-    vp_w = page.viewport_size["width"]  if page.viewport_size else 1280
+    vp_w = page.viewport_size["width"] if page.viewport_size else 1280
     vp_h = page.viewport_size["height"] if page.viewport_size else 800
 
     # Start from somewhere in the middle third of the viewport.
@@ -277,12 +279,14 @@ async def _human_mouse_move(page: Page) -> None:
     steps = random.randint(3, 6)
     for _ in range(steps):
         x = max(10, min(vp_w - 10, x + random.randint(-120, 120)))
-        y = max(10, min(vp_h - 10, y + random.randint(-80,  80)))
+        y = max(10, min(vp_h - 10, y + random.randint(-80, 80)))
         await page.mouse.move(x, y)
         await asyncio.sleep(random.uniform(0.04, 0.12))
 
 
-async def _human_scroll(page: Page, direction: str = "down", ticks: int | None = None) -> None:
+async def _human_scroll(
+    page: Page, direction: str = "down", ticks: int | None = None
+) -> None:
     """
     Scroll the page in short bursts as a human would when reading.
 
@@ -291,12 +295,12 @@ async def _human_scroll(page: Page, direction: str = "down", ticks: int | None =
     direction : "down" | "up"
     ticks     : total scroll distance in pixels; randomised if None.
     """
-    total   = ticks if ticks is not None else random.randint(300, 900)
-    delta   = 100 if direction == "down" else -100
-    steps   = max(1, total // abs(delta))
-    vp_w    = page.viewport_size["width"]  if page.viewport_size else 640
-    vp_h    = page.viewport_size["height"] if page.viewport_size else 400
-    x, y    = vp_w // 2, vp_h // 2
+    total = ticks if ticks is not None else random.randint(300, 900)
+    delta = 100 if direction == "down" else -100
+    steps = max(1, total // abs(delta))
+    vp_w = page.viewport_size["width"] if page.viewport_size else 640
+    vp_h = page.viewport_size["height"] if page.viewport_size else 400
+    x, y = vp_w // 2, vp_h // 2
 
     for _ in range(steps):
         await page.mouse.wheel(0, delta + random.randint(-20, 20))
@@ -315,9 +319,9 @@ async def _human_type(page: Page, selector: str, text: str) -> None:
 
     for char in text:
         await page.keyboard.type(char)
-        delay = random.gauss(0.10, 0.04)          # ~100 ms ± noise
-        delay = max(0.04, min(delay, 0.35))        # clamp to [40 ms, 350 ms]
-        if random.random() < 0.1:                 # 10 % chance of a short thinking pause
+        delay = random.gauss(0.10, 0.04)  # ~100 ms ± noise
+        delay = max(0.04, min(delay, 0.35))  # clamp to [40 ms, 350 ms]
+        if random.random() < 0.1:  # 10 % chance of a short thinking pause
             delay += random.uniform(0.5, 1.2)
         await asyncio.sleep(delay)
 
@@ -334,7 +338,7 @@ async def _human_click(page: Page, locator) -> None:
     box = await locator.bounding_box()
     if box:
         # Land somewhere within the element, not exactly at its centre.
-        tx = box["x"] + box["width"]  * random.uniform(0.3, 0.7)
+        tx = box["x"] + box["width"] * random.uniform(0.3, 0.7)
         ty = box["y"] + box["height"] * random.uniform(0.3, 0.7)
         await page.mouse.move(tx, ty, steps=random.randint(5, 12))
         await asyncio.sleep(random.uniform(0.08, 0.2))
@@ -345,6 +349,7 @@ async def _human_click(page: Page, locator) -> None:
 
 
 # ── parse_profile structuring (heuristic slot-filling, no full-page dumps) ───
+
 
 def _pp_split_lines(block: str, limit: int = 32) -> list[str]:
     lines = [ln.strip() for ln in block.replace("\r", "").split("\n") if ln.strip()]
@@ -419,7 +424,9 @@ def _pp_structure_experience_card(text: str) -> dict[str, Any]:
             continue
         description_lines.append(ln)
     description = "\n".join(description_lines).strip() or None
-    conf = "high" if role_title and organization else ("medium" if role_title else "none")
+    conf = (
+        "high" if role_title and organization else ("medium" if role_title else "none")
+    )
     return {
         "role_title": role_title,
         "organization": organization,
@@ -521,6 +528,7 @@ def _pp_structure_activity_update(index: int, post: dict[str, Any]) -> dict[str,
 
 # ── Browser wrapper ───────────────────────────────────────────────────────────
 
+
 class LinkedInBrowser:
     """
     Async context manager wrapping a Playwright Chromium session.
@@ -564,17 +572,17 @@ class LinkedInBrowser:
         if mode not in ("launch", "attach"):
             raise ValueError(f"mode must be 'launch' or 'attach', got {mode!r}")
 
-        self.mode    = mode
+        self.mode = mode
         self.cdp_url = cdp_url
         self.headless = headless
-        self.slow_mo  = slow_mo
+        self.slow_mo = slow_mo
 
-        self._pw:          Playwright    | None = None
-        self._browser:     Browser       | None = None
-        self._ctx:         BrowserContext | None = None
-        self._page:        Page          | None = None
-        self._is_attached: bool = False   # True when we connected via CDP
-        self._owned_page:  bool = False   # True when we opened the tab (attach mode)
+        self._pw: Playwright | None = None
+        self._browser: Browser | None = None
+        self._ctx: BrowserContext | None = None
+        self._page: Page | None = None
+        self._is_attached: bool = False  # True when we connected via CDP
+        self._owned_page: bool = False  # True when we opened the tab (attach mode)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -610,7 +618,7 @@ class LinkedInBrowser:
             "locale": "en-US",
         }
 
-        self._ctx  = await self._browser.new_context(**ctx_kwargs)
+        self._ctx = await self._browser.new_context(**ctx_kwargs)
         self._page = await self._ctx.new_page()
 
         # Inject stealth overrides on every new page / frame.
@@ -634,17 +642,22 @@ class LinkedInBrowser:
         self._is_attached = True
 
         # Inherit the real user session (cookies, localStorage, etc.).
-        self._ctx = self._browser.contexts[0] if self._browser.contexts \
-                    else await self._browser.new_context()
+        self._ctx = (
+            self._browser.contexts[0]
+            if self._browser.contexts
+            else await self._browser.new_context()
+        )
 
         page = self._pick_tab(self._ctx.pages)
         if page is not None:
-            self._page       = page
-            self._owned_page = False   # we reused it — don't close on exit
-            logger.info("Attached to Chrome at %s (reusing tab: %r)", self.cdp_url, page.url)
+            self._page = page
+            self._owned_page = False  # we reused it — don't close on exit
+            logger.info(
+                "Attached to Chrome at %s (reusing tab: %r)", self.cdp_url, page.url
+            )
         else:
-            self._page       = await self._ctx.new_page()
-            self._owned_page = True    # we opened it — close on exit
+            self._page = await self._ctx.new_page()
+            self._owned_page = True  # we opened it — close on exit
             logger.info("Attached to Chrome at %s (opened new tab)", self.cdp_url)
 
     @staticmethod
@@ -660,8 +673,8 @@ class LinkedInBrowser:
         """
         _SKIP = ("chrome://", "devtools://", "about:", "data:", "chrome-extension://")
 
-        usable    = [p for p in pages if not any(p.url.startswith(s) for s in _SKIP)]
-        linkedin  = [p for p in usable if "linkedin.com" in p.url]
+        usable = [p for p in pages if not any(p.url.startswith(s) for s in _SKIP)]
+        linkedin = [p for p in usable if "linkedin.com" in p.url]
 
         if linkedin:
             return linkedin[0]
@@ -703,7 +716,9 @@ class LinkedInBrowser:
             await self._page.bring_to_front()
             await _human_pause(0.2, 0.5)
             return
-        await self._page.goto(profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+        await self._page.goto(
+            profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded"
+        )
         await _human_pause(1.5, 2.5)
 
     async def __aexit__(self, *_: Any) -> None:
@@ -758,8 +773,8 @@ class LinkedInBrowser:
         """
         degree_text = ""
         _degree_selectors = [
-            ".dist-value",                                # legacy layout
-            "[aria-label*='degree connection']",          # aria fallback
+            ".dist-value",  # legacy layout
+            "[aria-label*='degree connection']",  # aria fallback
         ]
         for _sel in _degree_selectors:
             try:
@@ -810,7 +825,7 @@ class LinkedInBrowser:
         Leaves the browser on the profile overview URL when it returns.
         """
         await self._ensure_profile_tab(profile_url)
-        await _human_scroll(self._page, "down")   # read down the page like a human
+        await _human_scroll(self._page, "down")  # read down the page like a human
 
         try:
             await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
@@ -821,8 +836,17 @@ class LinkedInBrowser:
                 profile_url,
             )
 
-        _SECTION_HEADERS = {"Experience", "Education", "Skills", "Activity", "About",
-                            "Featured", "Recommendations", "Courses", "Projects"}
+        _SECTION_HEADERS = {
+            "Experience",
+            "Education",
+            "Skills",
+            "Activity",
+            "About",
+            "Featured",
+            "Recommendations",
+            "Courses",
+            "Projects",
+        }
         name = ""
         _name_selectors = [
             "h1.text-heading-xlarge",
@@ -893,7 +917,11 @@ class LinkedInBrowser:
         about_el = self._page.locator(
             "section#about ~ div, div[data-generated-suggestion-target='urn:li:fs_aboutPrompt']"
         ).first
-        about = await about_el.inner_text(timeout=EL_TIMEOUT) if await about_el.count() else ""
+        about = (
+            await about_el.inner_text(timeout=EL_TIMEOUT)
+            if await about_el.count()
+            else ""
+        )
 
         raw_text = ""
         try:
@@ -905,14 +933,14 @@ class LinkedInBrowser:
             logger.warning("Could not capture raw page text: %s", exc)
 
         return {
-            "linkedin_url":      profile_url,
-            "name":              name.strip(),
-            "title":             headline.strip(),
-            "location":          location.strip(),
+            "linkedin_url": profile_url,
+            "name": name.strip(),
+            "title": headline.strip(),
+            "location": location.strip(),
             "connection_degree": connection_degree,
-            "about":             about.strip(),
-            "raw_text":          raw_text,
-            "scraped_at":        datetime.now(timezone.utc).isoformat(),
+            "about": about.strip(),
+            "raw_text": raw_text,
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def _scrape_recent_activity_posts(
@@ -947,7 +975,9 @@ class LinkedInBrowser:
             logger.warning("Could not scrape activity feed: %s", exc)
         return posts
 
-    async def _extract_pvs_list_cards(self, max_items: int = 40) -> list[dict[str, str]]:
+    async def _extract_pvs_list_cards(
+        self, max_items: int = 40
+    ) -> list[dict[str, str]]:
         """Best-effort rows from a LinkedIn PVS / list detail page."""
         seen: set[str] = set()
         items: list[dict[str, str]] = []
@@ -979,16 +1009,20 @@ class LinkedInBrowser:
                 break
         return items
 
-    async def _extract_mutual_connections_preview(self, max_names: int = 18) -> list[str]:
+    async def _extract_mutual_connections_preview(
+        self, max_names: int = 18
+    ) -> list[str]:
         """Names (plain text) from a visible *Mutual connections* module on the overview."""
         names: list[str] = []
         root = self._page.locator("main, #workspace").first
         if not await root.count():
             return names
         try:
-            section = root.locator("section, div").filter(
-                has_text=re.compile(r"mutual\s+connection", re.I)
-            ).first
+            section = (
+                root.locator("section, div")
+                .filter(has_text=re.compile(r"mutual\s+connection", re.I))
+                .first
+            )
             if not await section.count():
                 return names
             links = section.locator("a[href*='/in/']")
@@ -1041,28 +1075,34 @@ class LinkedInBrowser:
         crawl_log: list[dict[str, Any]] = []
 
         main = await self._scrape_profile_main_fields(profile_url)
-        crawl_log.append({
-            "phase": "main_profile",
-            "url": self._page.url,
-            "status": "ok",
-            "name_present": bool(main.get("name")),
-        })
+        crawl_log.append(
+            {
+                "phase": "main_profile",
+                "url": self._page.url,
+                "status": "ok",
+                "name_present": bool(main.get("name")),
+            }
+        )
 
         mutual: list[str] = []
         try:
             mutual = await self._extract_mutual_connections_preview()
-            crawl_log.append({
-                "phase": "mutual_connections",
-                "status": "ok",
-                "count": len(mutual),
-            })
+            crawl_log.append(
+                {
+                    "phase": "mutual_connections",
+                    "status": "ok",
+                    "count": len(mutual),
+                }
+            )
         except Exception as exc:
             logger.warning("parse_profile mutual_connections: %s", exc)
-            crawl_log.append({
-                "phase": "mutual_connections",
-                "status": "error",
-                "error": str(exc),
-            })
+            crawl_log.append(
+                {
+                    "phase": "mutual_connections",
+                    "status": "error",
+                    "error": str(exc),
+                }
+            )
 
         raw_cards: dict[str, list[dict[str, str]]] = {
             "experience": [],
@@ -1079,10 +1119,14 @@ class LinkedInBrowser:
         for key, path in subpaths:
             url = base.rstrip("/") + "/" + path
             try:
-                await self._page.goto(url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+                await self._page.goto(
+                    url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded"
+                )
                 await _human_pause(1.0, 2.0)
                 try:
-                    await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+                    await self._page.wait_for_selector(
+                        "main, #workspace", timeout=NAV_TIMEOUT
+                    )
                 except Exception:
                     pass
                 for _ in range(max(0, detail_scroll_rounds)):
@@ -1090,21 +1134,25 @@ class LinkedInBrowser:
                     await _human_pause(0.25, 0.55)
                 cards = await self._extract_pvs_list_cards()
                 raw_cards[key] = cards
-                crawl_log.append({
-                    "phase": key,
-                    "url": url,
-                    "status": "ok",
-                    "items": len(cards),
-                })
+                crawl_log.append(
+                    {
+                        "phase": key,
+                        "url": url,
+                        "status": "ok",
+                        "items": len(cards),
+                    }
+                )
             except Exception as exc:
                 logger.warning("parse_profile %s: %s", key, exc)
                 raw_cards[key] = []
-                crawl_log.append({
-                    "phase": key,
-                    "url": url,
-                    "status": "error",
-                    "error": str(exc),
-                })
+                crawl_log.append(
+                    {
+                        "phase": key,
+                        "url": url,
+                        "status": "error",
+                        "error": str(exc),
+                    }
+                )
 
         activity_url = base.rstrip("/") + "/recent-activity/all/"
         posts = await self._scrape_recent_activity_posts(
@@ -1112,18 +1160,25 @@ class LinkedInBrowser:
             limit=max(1, max_activity_posts),
             extra_scroll_rounds=activity_extra_scroll_rounds,
         )
-        crawl_log.append({
-            "phase": "activity_feed",
-            "url": activity_url,
-            "status": "ok",
-            "posts": len(posts),
-        })
+        crawl_log.append(
+            {
+                "phase": "activity_feed",
+                "url": activity_url,
+                "status": "ok",
+                "posts": len(posts),
+            }
+        )
 
-        experience = [_pp_structure_experience_card(c["text"]) for c in raw_cards["experience"]]
-        education = [_pp_structure_education_card(c["text"]) for c in raw_cards["education"]]
+        experience = [
+            _pp_structure_experience_card(c["text"]) for c in raw_cards["experience"]
+        ]
+        education = [
+            _pp_structure_education_card(c["text"]) for c in raw_cards["education"]
+        ]
         skills = [_pp_structure_skill_row(c["text"]) for c in raw_cards["skills"]]
         recommendations = [
-            _pp_structure_recommendation_card(c["text"]) for c in raw_cards["recommendations"]
+            _pp_structure_recommendation_card(c["text"])
+            for c in raw_cards["recommendations"]
         ]
         mutual_objs = [{"display_name": n} for n in mutual]
 
@@ -1150,7 +1205,9 @@ class LinkedInBrowser:
                 },
             },
             "career_signals": {
-                "primary_role": exp0.get("role_title") if exp0.get("parse_confidence") != "none" else None,
+                "primary_role": exp0.get("role_title")
+                if exp0.get("parse_confidence") != "none"
+                else None,
                 "primary_organization": exp0.get("organization"),
                 "employment_type_primary": exp0.get("employment_type"),
                 "tenure_primary": exp0.get("tenure"),
@@ -1188,7 +1245,9 @@ class LinkedInBrowser:
                 "stats": {
                     "updates_collected": len(updates),
                     "total_words": total_words,
-                    "any_update_has_url": any(u["metrics"]["has_urls"] for u in updates),
+                    "any_update_has_url": any(
+                        u["metrics"]["has_urls"] for u in updates
+                    ),
                     "updates_with_hashtags": sum(
                         1 for u in updates if u["metrics"]["hashtag_count"] > 0
                     ),
@@ -1204,7 +1263,9 @@ class LinkedInBrowser:
 
     # ── Connection request ────────────────────────────────────────────────────
 
-    async def _visible_locator_texts(self, locator: Locator, *, limit: int = 15) -> list[str]:
+    async def _visible_locator_texts(
+        self, locator: Locator, *, limit: int = 15
+    ) -> list[str]:
         texts: list[str] = []
         count = min(await locator.count(), limit)
         for i in range(count):
@@ -1281,9 +1342,9 @@ class LinkedInBrowser:
             ).first,
             workspace.get_by_role("button", name=_connect_only).first,
             workspace.get_by_role("link", name=_connect_only).first,
-            workspace.locator("button.artdeco-button--primary").filter(
-                has_text=_connect_only
-            ).first,
+            workspace.locator("button.artdeco-button--primary")
+            .filter(has_text=_connect_only)
+            .first,
         )
         for cand in candidates:
             if not await cand.count():
@@ -1466,9 +1527,9 @@ class LinkedInBrowser:
             ).first,
             workspace.get_by_role("button", name=_connect_only).first,
             workspace.get_by_role("link", name=_connect_only).first,
-            workspace.locator("button.artdeco-button--primary").filter(
-                has_text=_connect_only
-            ).first,
+            workspace.locator("button.artdeco-button--primary")
+            .filter(has_text=_connect_only)
+            .first,
             self._page.get_by_role("button", name=_invite_connect).first,
             self._page.get_by_role("button", name=_connect_only).first,
         )
@@ -1529,16 +1590,16 @@ class LinkedInBrowser:
             self._page.get_by_role("button", name=_invite_connect).first,
             self._page.get_by_role("button", name=_connect_only).first,
             self._page.get_by_role("link", name=_connect_only).first,
-            self._page.locator("[role='menuitem']:visible").filter(
-                has_text=_connect_word
-            ).first,
-            self._page.locator("[role='button']:visible").filter(
-                has_text=_connect_only
-            ).first,
+            self._page.locator("[role='menuitem']:visible")
+            .filter(has_text=_connect_word)
+            .first,
+            self._page.locator("[role='button']:visible")
+            .filter(has_text=_connect_only)
+            .first,
             self._page.locator("a:visible").filter(has_text=_connect_only).first,
-            self._page.locator("button:visible, a:visible").filter(
-                has_text=_connect_word
-            ).first,
+            self._page.locator("button:visible, a:visible")
+            .filter(has_text=_connect_word)
+            .first,
         )
         for cand in candidates:
             if not await cand.count():
@@ -1680,7 +1741,9 @@ class LinkedInBrowser:
             return None, _FOLLOWERS_ONLY_MSG
         return None, _CONNECT_NOT_FOUND_MSG
 
-    async def send_connection_request(self, profile_url: str, note: str = "") -> str | None:
+    async def send_connection_request(
+        self, profile_url: str, note: str = ""
+    ) -> str | None:
         """
         Send a connection request to a LinkedIn profile.
 
@@ -1698,7 +1761,9 @@ class LinkedInBrowser:
             ``None`` on verified success, or a user-facing error description.
         """
         if len(note) > 300:
-            raise ValueError(f"Connection note too long: {len(note)} chars (LinkedIn limit: 300)")
+            raise ValueError(
+                f"Connection note too long: {len(note)} chars (LinkedIn limit: 300)"
+            )
 
         connect_btn: Locator | None = None
         last_err = _CONNECT_NOT_FOUND_MSG
@@ -1749,10 +1814,14 @@ class LinkedInBrowser:
         how_know_other = self._page.get_by_role("radio", name="Other")
         if await how_know_other.count():
             await _human_click(self._page, how_know_other)
-            await _human_click(self._page, self._page.get_by_role("button", name="Connect"))
+            await _human_click(
+                self._page, self._page.get_by_role("button", name="Connect")
+            )
 
         if note:
-            add_note_btn = self._page.get_by_role("button", name=re.compile(r"Add a note", re.I))
+            add_note_btn = self._page.get_by_role(
+                "button", name=re.compile(r"Add a note", re.I)
+            )
             if await add_note_btn.count():
                 await _human_click(self._page, add_note_btn)
                 await _human_type(self._page, "textarea[name='message']", note)
@@ -1773,7 +1842,9 @@ class LinkedInBrowser:
             _no_note_candidates: list = [
                 self._page.get_by_role("button", name=_without_note),
                 self._page.get_by_role("link", name=_without_note),
-                self._page.locator("[role='button']").filter(has_text=_without_note_text),
+                self._page.locator("[role='button']").filter(
+                    has_text=_without_note_text
+                ),
                 self._page.locator("button, a").filter(has_text=_without_note_text),
             ]
             for root in invite_roots:
@@ -1930,7 +2001,9 @@ class LinkedInBrowser:
         else:
             current_url = (self._page.url or "").lower()
             if "linkedin.com/messaging" not in current_url:
-                await self._page.goto(target, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+                await self._page.goto(
+                    target, timeout=NAV_TIMEOUT, wait_until="domcontentloaded"
+                )
                 await _human_pause(1.0, 1.8)
 
         try:
@@ -2030,7 +2103,9 @@ class LinkedInBrowser:
             row_candidates = [
                 self._page.locator("a.msg-conversation-listitem__link"),
                 self._page.locator("div.msg-conversation-listitem__link"),
-                self._page.locator("li.msg-conversation-listitem div.msg-conversation-listitem__link"),
+                self._page.locator(
+                    "li.msg-conversation-listitem div.msg-conversation-listitem__link"
+                ),
                 self._page.locator("li.msg-conversation-listitem"),
                 self._page.locator("a[href*='/messaging/thread/']"),
                 self._page.locator(".msg-conversation-listitem a"),
@@ -2067,7 +2142,9 @@ class LinkedInBrowser:
         if len(message) > 8_000:
             raise ValueError("Message too long (LinkedIn limit: ~8 000 chars)")
 
-        if not await self._open_message_ui_from_messaging(profile_url, search_name=search_name):
+        if not await self._open_message_ui_from_messaging(
+            profile_url, search_name=search_name
+        ):
             return False
 
         compose_selector = (
@@ -2084,7 +2161,9 @@ class LinkedInBrowser:
 
         send_btn = self._page.locator("button.msg-form__send-button").first
         if not await send_btn.count():
-            send_btn = self._page.get_by_role("button", name=re.compile(r"^Send$", re.I)).first
+            send_btn = self._page.get_by_role(
+                "button", name=re.compile(r"^Send$", re.I)
+            ).first
         if not await send_btn.count():
             send_btn = self._page.locator("button[aria-label*='Send' i]").first
         if not await send_btn.count():
@@ -2112,7 +2191,9 @@ class LinkedInBrowser:
         logged-in user's outgoing messages. Older messages not scrolled into
         view are not included.
         """
-        if not await self._open_message_ui_from_messaging(profile_url, search_name=search_name):
+        if not await self._open_message_ui_from_messaging(
+            profile_url, search_name=search_name
+        ):
             return []
 
         try:
@@ -2245,7 +2326,9 @@ class LinkedInBrowser:
         if len(text) > 10_000:
             raise ValueError("Post content too long (keep under ~10 000 chars).")
 
-        await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+        await self._page.goto(
+            FEED_URL, timeout=NAV_TIMEOUT, wait_until="domcontentloaded"
+        )
         await _human_pause(1.5, 2.5)
 
         # Composer often sits outside <main>; wait for any sharebox affordance on the full page.
@@ -2269,15 +2352,17 @@ class LinkedInBrowser:
         _start_name = re.compile(r"(start|create) a post", re.I)
         start_candidates = [
             pg.locator("a[href*='/preload/sharebox/']:has-text('Start a post')").first,
-            pg.locator("a[href*='sharebox']").filter(
-                has_text=re.compile(r"start|create", re.I)
-            ).first,
+            pg.locator("a[href*='sharebox']")
+            .filter(has_text=re.compile(r"start|create", re.I))
+            .first,
             pg.locator("a[href*='preload/sharebox']").first,
             pg.locator("a[href*='sharebox']").first,
             pg.get_by_role("link", name=_start_name).first,
             pg.locator("a:has([aria-label*='Start a post' i])").first,
             pg.get_by_role("button", name=_start_name).first,
-            pg.locator("[aria-label='Start a post'], [aria-label*='Start a post' i]").first,
+            pg.locator(
+                "[aria-label='Start a post'], [aria-label*='Start a post' i]"
+            ).first,
         ]
 
         start_btn = None
@@ -2339,11 +2424,15 @@ class LinkedInBrowser:
         await _human_type(self._page, editor_selector, text)
         await _human_pause(0.4, 0.9)
 
-        post_btn = modal.locator("button.share-actions__primary-action").filter(
-            has_text=re.compile(r"^Post$", re.I)
-        ).first
+        post_btn = (
+            modal.locator("button.share-actions__primary-action")
+            .filter(has_text=re.compile(r"^Post$", re.I))
+            .first
+        )
         if not await post_btn.count():
-            post_btn = modal.get_by_role("button", name=re.compile(r"^Post$", re.I)).first
+            post_btn = modal.get_by_role(
+                "button", name=re.compile(r"^Post$", re.I)
+            ).first
         if not await post_btn.count():
             logger.warning("create_new_post: Post button not found.")
             return False
@@ -2351,7 +2440,9 @@ class LinkedInBrowser:
         try:
             await expect(post_btn).to_be_enabled(timeout=EL_TIMEOUT)
         except Exception:
-            logger.warning("create_new_post: Post stayed disabled — content may not have registered.")
+            logger.warning(
+                "create_new_post: Post stayed disabled — content may not have registered."
+            )
             return False
 
         await _human_click(self._page, post_btn)
@@ -2376,7 +2467,7 @@ class LinkedInBrowser:
         await _human_pause(1.5, 3.0)
         await _human_scroll(self._page, "down", ticks=200)  # read a bit before reacting
         await _human_mouse_move(self._page)
-        await _human_pause(0.8, 2.0)                        # "reading" the post
+        await _human_pause(0.8, 2.0)  # "reading" the post
 
         like_btn = self._page.locator('button[aria-label*="Reaction button"]').first
         if not await like_btn.count():
@@ -2395,7 +2486,7 @@ class LinkedInBrowser:
                     box["y"] + box["height"] / 2,
                     steps=random.randint(6, 12),
                 )
-            await _human_pause(0.8, 1.4)   # hold hover long enough for picker to appear
+            await _human_pause(0.8, 1.4)  # hold hover long enough for picker to appear
             reaction_btn = self._page.get_by_label(reaction)
             if not await reaction_btn.count():
                 logger.warning("Reaction %r not found.", reaction)
@@ -2413,14 +2504,18 @@ class LinkedInBrowser:
         await self._page.goto(post_url, timeout=NAV_TIMEOUT)
         await _human_pause(1.5, 3.0)
 
-        comment_btn = self._page.get_by_role("button", name=re.compile(r"Comment", re.I)).first
+        comment_btn = self._page.get_by_role(
+            "button", name=re.compile(r"Comment", re.I)
+        ).first
         if not await comment_btn.count():
             logger.warning("Comment button not found.")
             return False
 
         await _human_click(self._page, comment_btn)
 
-        editor = self._page.locator("div[role='textbox'][aria-label*='Add a comment']").first
+        editor = self._page.locator(
+            "div[role='textbox'][aria-label*='Add a comment']"
+        ).first
         await expect(editor).to_be_visible(timeout=EL_TIMEOUT)
         await _human_type(
             self._page,
@@ -2429,7 +2524,9 @@ class LinkedInBrowser:
         )
         await _human_pause()
 
-        post_btn = self._page.get_by_role("button", name=re.compile(r"^Post$", re.I)).first
+        post_btn = self._page.get_by_role(
+            "button", name=re.compile(r"^Post$", re.I)
+        ).first
         await _human_click(self._page, post_btn)
         await _human_pause(1.0, 2.0)
         logger.info("Comment posted on %s", post_url)
@@ -2473,7 +2570,7 @@ class LinkedInBrowser:
             logger.info("Stopping after this round (Ctrl-C received).")
             _running = False
 
-        _signal.signal(_signal.SIGINT,  _stop)
+        _signal.signal(_signal.SIGINT, _stop)
         _signal.signal(_signal.SIGTERM, _stop)
 
         round_num = 0
@@ -2485,7 +2582,7 @@ class LinkedInBrowser:
             # ── 1. Land on the feed ───────────────────────────────────────────
             if "linkedin.com/feed" not in self._page.url:
                 await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT)
-            await _human_pause(2.0, 4.0)          # page-load settle time
+            await _human_pause(2.0, 4.0)  # page-load settle time
 
             # ── 2. Read through the feed ──────────────────────────────────────
             posts_to_read = random.randint(3, 7)
@@ -2498,14 +2595,18 @@ class LinkedInBrowser:
                 # Scroll to the next post in short bursts.
                 bursts = random.randint(2, 5)
                 for _ in range(bursts):
-                    await _human_scroll(self._page, "down", ticks=random.randint(80, 180))
+                    await _human_scroll(
+                        self._page, "down", ticks=random.randint(80, 180)
+                    )
                     await asyncio.sleep(random.uniform(0.4, 1.2))
 
                 await _human_mouse_move(self._page)
 
                 # Dwell on this post — simulate reading time.
                 dwell = random.uniform(8, 35)
-                logger.info("  post %d/%d  (reading %.0fs)", post_n + 1, posts_to_read, dwell)
+                logger.info(
+                    "  post %d/%d  (reading %.0fs)", post_n + 1, posts_to_read, dwell
+                )
                 await asyncio.sleep(dwell)
 
                 # ── 3. Random inline reaction (~20 % chance per post) ─────────
@@ -2537,15 +2638,20 @@ class LinkedInBrowser:
                                 if await reaction_btn.count():
                                     await _human_click(self._page, reaction_btn)
                                     logger.info(
-                                        "  → reacted %r to post %d", reaction, post_n + 1
+                                        "  → reacted %r to post %d",
+                                        reaction,
+                                        post_n + 1,
                                     )
                                 else:
                                     logger.warning(
                                         "  reaction %r not found in picker for post %d",
-                                        reaction, post_n + 1,
+                                        reaction,
+                                        post_n + 1,
                                     )
                     except Exception as exc:
-                        logger.warning("  inline react failed on post %d: %s", post_n + 1, exc)
+                        logger.warning(
+                            "  inline react failed on post %d: %s", post_n + 1, exc
+                        )
 
                 # ~20 % chance: click into the post for a deeper read.
                 elif random.random() < 0.20:
@@ -2567,7 +2673,7 @@ class LinkedInBrowser:
 
             # ── 4. Idle break before next round ───────────────────────────────
             if _running:
-                break_min  = random.uniform(2, 6)
+                break_min = random.uniform(2, 6)
                 break_secs = break_min * 60
                 logger.info("Idle break %.1f min before next round…", break_min)
                 # Sleep in short chunks so Ctrl-C is responsive.
@@ -2640,7 +2746,9 @@ class LinkedInBrowser:
             await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
             await _human_pause(0.4, 0.9)
         except Exception:
-            logger.warning("download_profile_pdf: main/workspace not ready for %s", profile_url)
+            logger.warning(
+                "download_profile_pdf: main/workspace not ready for %s", profile_url
+            )
 
         await self._page.evaluate("window.scrollTo(0, 0)")
         await _human_mouse_move(self._page)
@@ -2651,9 +2759,13 @@ class LinkedInBrowser:
         # Prefer the accessible overflow action button when present.
         more_btn = self._page.locator("button[aria-label='More actions']").first
         if not await more_btn.count():
-            more_btn = workspace.get_by_role("button", name=re.compile(r"^More$", re.I)).first
+            more_btn = workspace.get_by_role(
+                "button", name=re.compile(r"^More$", re.I)
+            ).first
         if not await more_btn.count():
-            more_btn = self._page.get_by_role("button", name=re.compile(r"^More$", re.I)).last
+            more_btn = self._page.get_by_role(
+                "button", name=re.compile(r"^More$", re.I)
+            ).last
         if not await more_btn.count():
             raise RuntimeError("Could not find the profile 'More' overflow button.")
 
@@ -2662,9 +2774,13 @@ class LinkedInBrowser:
 
         save_pdf = self._page.locator("[aria-label='Save to PDF'][role='button']").first
         if not await save_pdf.count():
-            save_pdf = self._page.get_by_role("menuitem", name=re.compile(r"Save to PDF", re.I)).first
+            save_pdf = self._page.get_by_role(
+                "menuitem", name=re.compile(r"Save to PDF", re.I)
+            ).first
         if not await save_pdf.count():
-            save_pdf = self._page.get_by_role("button", name=re.compile(r"Save to PDF", re.I)).first
+            save_pdf = self._page.get_by_role(
+                "button", name=re.compile(r"Save to PDF", re.I)
+            ).first
         if not await save_pdf.count():
             save_pdf = self._page.locator("text=Save to PDF").first
         if not await save_pdf.count():
@@ -2683,7 +2799,9 @@ class LinkedInBrowser:
         dest = save_path / out_name
 
         await download.save_as(str(dest))
-        logger.info("Profile PDF saved to %s (suggested=%s)", dest, download.suggested_filename)
+        logger.info(
+            "Profile PDF saved to %s (suggested=%s)", dest, download.suggested_filename
+        )
         return dest
 
     # ── Evidence capture ──────────────────────────────────────────────────────
@@ -2692,7 +2810,7 @@ class LinkedInBrowser:
         """Save a full-page screenshot for audit / debugging purposes."""
         evidence_dir = STORAGE_DIR / "evidence"
         evidence_dir.mkdir(parents=True, exist_ok=True)
-        ts   = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         dest = evidence_dir / f"{ts}_{label}.png"
         await self._page.screenshot(path=str(dest), full_page=True)
         return dest

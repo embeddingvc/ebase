@@ -40,7 +40,9 @@ def test_rate_limit_blocks_at_cap(isolated_home: Path, monkeypatch: pytest.Monke
     assert err == rl._ERROR_MESSAGES[rl.REQUEST_CONNECTION]
 
 
-def test_rate_limit_check_does_not_consume(isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+def test_rate_limit_check_does_not_consume(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setenv("LINKEDIN_RATE_LIMIT_DMS", "1")
 
     assert rl.rate_limit("dm", record=False) is None
@@ -92,32 +94,50 @@ def test_alias_env_vars(isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LINKEDIN_RATE_LIMIT_VIEWS", "1")
 
     assert rl.rate_limit("connection_request", record=True) is None
-    assert rl.rate_limit("connection_request", record=False) == rl._ERROR_MESSAGES[rl.REQUEST_CONNECTION]
+    assert (
+        rl.rate_limit("connection_request", record=False)
+        == rl._ERROR_MESSAGES[rl.REQUEST_CONNECTION]
+    )
 
     assert rl.rate_limit("dm", record=True) is None
     assert rl.rate_limit("dm", record=False) == rl._ERROR_MESSAGES[rl.REQUEST_DM]
 
     assert rl.rate_limit("profile_view", record=True) is None
-    assert rl.rate_limit("profile_view", record=False) == rl._ERROR_MESSAGES[rl.REQUEST_PROFILE_VIEW]
+    assert (
+        rl.rate_limit("profile_view", record=False)
+        == rl._ERROR_MESSAGES[rl.REQUEST_PROFILE_VIEW]
+    )
 
 
-def test_malformed_primary_falls_through_to_alias(isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+def test_malformed_primary_falls_through_to_alias(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Malformed primary env var falls through to valid alias."""
     monkeypatch.setenv("LINKEDIN_RATE_LIMIT_CONNECTION_REQUESTS", "not-a-number")
     monkeypatch.setenv("LINKEDIN_RATE_LIMIT_CONNECTIONS", "1")
 
     assert rl.rate_limit("connection_request", record=True) is None
-    assert rl.rate_limit("connection_request", record=False) == rl._ERROR_MESSAGES[rl.REQUEST_CONNECTION]
+    assert (
+        rl.rate_limit("connection_request", record=False)
+        == rl._ERROR_MESSAGES[rl.REQUEST_CONNECTION]
+    )
 
 
-def test_primary_env_overrides_alias(isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+def test_primary_env_overrides_alias(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Primary env var takes precedence over alias when both are set."""
     monkeypatch.setenv("LINKEDIN_RATE_LIMIT_CONNECTION_REQUESTS", "2")
-    monkeypatch.setenv("LINKEDIN_RATE_LIMIT_CONNECTIONS", "1")  # alias — should be ignored
+    monkeypatch.setenv(
+        "LINKEDIN_RATE_LIMIT_CONNECTIONS", "1"
+    )  # alias — should be ignored
 
     assert rl.rate_limit("connection_request", record=True) is None
     assert rl.rate_limit("connection_request", record=True) is None
-    assert rl.rate_limit("connection_request", record=False) == rl._ERROR_MESSAGES[rl.REQUEST_CONNECTION]
+    assert (
+        rl.rate_limit("connection_request", record=False)
+        == rl._ERROR_MESSAGES[rl.REQUEST_CONNECTION]
+    )
 
 
 def test_disabled_skips_limits(isolated_home: Path, monkeypatch: pytest.MonkeyPatch):

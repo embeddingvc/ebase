@@ -22,8 +22,8 @@ sys.path.insert(0, BASE_DIR)
 from outreach.planner import plan_message  # noqa: E402
 
 PROSPECTS_DIR = os.path.join(BASE_DIR, "outreach", "prospects")
-CONVOS_DIR    = os.path.join(BASE_DIR, "outreach", "conversations")
-LOGS_DIR      = os.path.join(BASE_DIR, "outreach", "logs")
+CONVOS_DIR = os.path.join(BASE_DIR, "outreach", "conversations")
+LOGS_DIR = os.path.join(BASE_DIR, "outreach", "logs")
 
 BANNED_PHRASES = [
     "i came across your profile",
@@ -37,15 +37,20 @@ BANNED_PHRASES = [
 
 # ── Validators ────────────────────────────────────────────────────────────────
 
+
 def validate_message(result: dict, prospect: dict) -> list:
     failures = []
-    msg    = result["message"].lower()
+    msg = result["message"].lower()
     action = result["action"]
 
     if action == "send_connection_request" and len(result["message"]) > 300:
-        failures.append(f"Connection note too long: {len(result['message'])} chars (limit 300)")
+        failures.append(
+            f"Connection note too long: {len(result['message'])} chars (limit 300)"
+        )
     if action == "send_followup_message" and len(result["message"]) > 500:
-        failures.append(f"Follow-up too long: {len(result['message'])} chars (limit 500)")
+        failures.append(
+            f"Follow-up too long: {len(result['message'])} chars (limit 500)"
+        )
 
     for phrase in BANNED_PHRASES:
         if phrase in msg:
@@ -67,6 +72,7 @@ def validate_message(result: dict, prospect: dict) -> list:
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 def load_fixture(prospect_file: str, conversation_file: str):
     with open(os.path.join(PROSPECTS_DIR, prospect_file)) as f:
         prospect = json.load(f)
@@ -83,6 +89,7 @@ def log_result(result: dict):
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 
+
 def run_test(name: str, prospect_file: str, conversation_file: str) -> bool:
     print(f"\n{'─'*60}")
     print(f"TEST: {name}")
@@ -91,7 +98,7 @@ def run_test(name: str, prospect_file: str, conversation_file: str) -> bool:
 
     try:
         prospect, conversation = load_fixture(prospect_file, conversation_file)
-        result   = plan_message(prospect, conversation)
+        result = plan_message(prospect, conversation)
         failures = validate_message(result, prospect)
 
         print(f"\n  Mode:    {result['mode']}")
@@ -112,7 +119,9 @@ def run_test(name: str, prospect_file: str, conversation_file: str) -> bool:
 
     except Exception as e:
         print(f"\n  ❌ ERROR — {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
         return False
 
 
@@ -123,13 +132,21 @@ if __name__ == "__main__":
     print(f"Running in {mode} mode")
 
     tests = [
-        ("Cold prospect — connection request",  "sample_alex_chen.json", "sample_alex_chen.json"),
-        ("Replied prospect — follow-up message", "sample_alex_chen.json", "sample_alex_chen_replied.json"),
+        (
+            "Cold prospect — connection request",
+            "sample_alex_chen.json",
+            "sample_alex_chen.json",
+        ),
+        (
+            "Replied prospect — follow-up message",
+            "sample_alex_chen.json",
+            "sample_alex_chen_replied.json",
+        ),
     ]
 
     results = [run_test(*t) for t in tests]
 
-    total  = len(results)
+    total = len(results)
     passed = sum(results)
     print(f"\n{'═'*60}")
     print(f"Results: {passed}/{total} passed")

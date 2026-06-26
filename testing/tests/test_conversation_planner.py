@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 
 try:
     import certifi
+
     _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 except ImportError:
     _SSL_CONTEXT = ssl.create_default_context()
@@ -33,17 +34,18 @@ except ImportError:
 # ── Paths ────────────────────────────────────────────────────────────────────
 
 TESTING_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASE_DIR     = os.path.dirname(TESTING_ROOT)  # core repo root
+BASE_DIR = os.path.dirname(TESTING_ROOT)  # core repo root
 FIXTURES_DIR = os.path.join(TESTING_ROOT, "tests", "fixtures", "conversation-planner")
-SKILL_PATH   = os.path.join(
+SKILL_PATH = os.path.join(
     BASE_DIR, "outreach", "skills", "conversation-planner", "SKILL.md"
 )
-LOGS_DIR     = os.path.join(BASE_DIR, "outreach", "logs")
+LOGS_DIR = os.path.join(BASE_DIR, "outreach", "logs")
 PLANNER_CONFIG_PATH = os.path.join(
     BASE_DIR, "outreach", "config", "conversation_planner.json.example"
 )
 
 # ── Load .env ────────────────────────────────────────────────────────────────
+
 
 def _load_dotenv():
     env_path = os.path.join(BASE_DIR, ".env")
@@ -58,6 +60,7 @@ def _load_dotenv():
             key, val = key.strip(), val.strip()
             if val and key not in os.environ:
                 os.environ[key] = val
+
 
 _load_dotenv()
 
@@ -85,17 +88,22 @@ VALID_ACTIONS = {
 }
 
 VALID_STAGES = {
-    "cold", "pending_connection", "engaged", "replied",
-    "converted", "ended", "dead",
+    "cold",
+    "pending_connection",
+    "engaged",
+    "replied",
+    "converted",
+    "ended",
+    "dead",
 }
 
 # ── API caller ───────────────────────────────────────────────────────────────
 
+
 def call_claude(system_prompt: str, user_prompt: str) -> str:
     """Call the Anthropic Messages API and return the assistant text."""
-    api_key = (
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get(
+        "CLAUDE_CODE_OAUTH_TOKEN"
     )
     if not api_key:
         raise RuntimeError(
@@ -104,14 +112,16 @@ def call_claude(system_prompt: str, user_prompt: str) -> str:
 
     model = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 
-    payload = json.dumps({
-        "model": model,
-        "max_tokens": 1024,
-        "system": system_prompt,
-        "messages": [
-            {"role": "user", "content": user_prompt},
-        ],
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": model,
+            "max_tokens": 1024,
+            "system": system_prompt,
+            "messages": [
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+    ).encode()
 
     req = urllib.request.Request(
         "https://api.anthropic.com/v1/messages",
@@ -134,12 +144,15 @@ def call_claude(system_prompt: str, user_prompt: str) -> str:
 
 # ── Prompt builders ──────────────────────────────────────────────────────────
 
+
 def load_skill_prompt() -> str:
     with open(SKILL_PATH) as f:
         return f.read()
 
 
-def build_user_prompt(prospect: dict, conversation: dict, extra_context: str = "") -> str:
+def build_user_prompt(
+    prospect: dict, conversation: dict, extra_context: str = ""
+) -> str:
     """Build the user turn that simulates invoking the conversation-planner."""
     lines = [
         "You are being invoked as the conversation-planner skill.",
@@ -165,6 +178,7 @@ def build_user_prompt(prospect: dict, conversation: dict, extra_context: str = "
 
 
 # ── JSON extraction ──────────────────────────────────────────────────────────
+
 
 def extract_json(raw: str) -> dict:
     """
@@ -197,6 +211,7 @@ def extract_json(raw: str) -> dict:
 
 # ── Validators ───────────────────────────────────────────────────────────────
 
+
 def validate_planned_message(result: dict, prospect: dict, expected: dict) -> list:
     """
     Validate a PlannedMessage dict.
@@ -206,8 +221,14 @@ def validate_planned_message(result: dict, prospect: dict, expected: dict) -> li
 
     # ── Required fields ──────────────────────────────────────────────────
     required_fields = [
-        "prospect_id", "stage", "sequence_step", "action",
-        "message", "end_conversation", "ended_reason", "generated_at",
+        "prospect_id",
+        "stage",
+        "sequence_step",
+        "action",
+        "message",
+        "end_conversation",
+        "ended_reason",
+        "generated_at",
     ]
     for field in required_fields:
         if field not in result:
@@ -285,11 +306,14 @@ def validate_planned_message(result: dict, prospect: dict, expected: dict) -> li
         first_name = prospect["name"].split()[0].lower()
         if first_name not in msg_lower:
             # Print warning but don't add to failures
-            print(f"  [WARN] Message does not contain prospect's first name '{first_name}'")
+            print(
+                f"  [WARN] Message does not contain prospect's first name '{first_name}'"
+            )
 
         # Must not be empty when a send action is expected
         if not msg.strip() and result["action"] in (
-            "send_connection_request", "send_followup_message"
+            "send_connection_request",
+            "send_followup_message",
         ):
             failures.append("Message is empty but action requires a send")
 
@@ -393,7 +417,7 @@ TEST_CASES = [
         "conversation_file": "conv_no_reply_timeout.json",
         "extra_context": (
             "Runtime planner config snapshot:\n"
-            '{\n'
+            "{\n"
             '  "router": {\n'
             '    "step_timeout_hours": 24,\n'
             '    "signal_routes": {\n'
@@ -417,6 +441,7 @@ TEST_CASES = [
 
 
 # ── Log writer ───────────────────────────────────────────────────────────────
+
 
 class TestLogger:
     """Writes a dated log file in outreach/logs/."""
@@ -462,6 +487,7 @@ class TestLogger:
 
 # ── Runner ───────────────────────────────────────────────────────────────────
 
+
 def run_test(tc: dict, skill_prompt: str, logger: TestLogger) -> bool:
     name = tc["name"]
     logger.section(f"TEST: {name}")
@@ -469,7 +495,7 @@ def run_test(tc: dict, skill_prompt: str, logger: TestLogger) -> bool:
     print(f"TEST: {name}")
 
     prospect_path = os.path.join(FIXTURES_DIR, tc["prospect_file"])
-    conv_path     = os.path.join(FIXTURES_DIR, tc["conversation_file"])
+    conv_path = os.path.join(FIXTURES_DIR, tc["conversation_file"])
 
     with open(prospect_path) as f:
         prospect = json.load(f)
@@ -489,10 +515,14 @@ def run_test(tc: dict, skill_prompt: str, logger: TestLogger) -> bool:
     except Exception as e:
         msg = f"  API ERROR: {e}"
         logger.line(msg)
-        logger.record({
-            "test": name, "status": "error", "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        logger.record(
+            {
+                "test": name,
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         print(msg)
         return False
 
@@ -505,12 +535,15 @@ def run_test(tc: dict, skill_prompt: str, logger: TestLogger) -> bool:
     except ValueError as e:
         msg = f"  JSON PARSE ERROR: {e}"
         logger.line(msg)
-        logger.record({
-            "test": name, "status": "error",
-            "error": f"JSON parse: {e}",
-            "raw_response": raw_response[:500],
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        logger.record(
+            {
+                "test": name,
+                "status": "error",
+                "error": f"JSON parse: {e}",
+                "raw_response": raw_response[:500],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         print(msg)
         return False
 
@@ -519,12 +552,14 @@ def run_test(tc: dict, skill_prompt: str, logger: TestLogger) -> bool:
 
     # Pretty-print key fields
     msg_text = result.get("message") or "(none)"
-    msg_len  = len(msg_text) if result.get("message") else 0
+    msg_len = len(msg_text) if result.get("message") else 0
     print(f"  Step:    {result.get('sequence_step')}")
     print(f"  Action:  {result.get('action')}")
     print(f"  End:     {result.get('end_conversation')}")
     print(f"  Reason:  {result.get('ended_reason')}")
-    print(f"  Message ({msg_len} chars): {msg_text[:120]}{'...' if msg_len > 120 else ''}")
+    print(
+        f"  Message ({msg_len} chars): {msg_text[:120]}{'...' if msg_len > 120 else ''}"
+    )
 
     # Validate
     failures = validate_planned_message(result, prospect, tc["expected"])
@@ -558,8 +593,11 @@ def run_test(tc: dict, skill_prompt: str, logger: TestLogger) -> bool:
 
 # ── Entry point ──────────────────────────────────────────────────────────────
 
+
 def main():
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get(
+        "CLAUDE_CODE_OAUTH_TOKEN"
+    )
     if not api_key:
         print("ERROR: No ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN found.")
         print("Set one in .env or export it before running.")
@@ -625,7 +663,7 @@ def main():
         passed = run_test(tc, skill_prompt, logger)
         results.append(passed)
 
-    total  = len(results)
+    total = len(results)
     passed = sum(results)
 
     logger.header(f"SUMMARY: {passed}/{total} passed")

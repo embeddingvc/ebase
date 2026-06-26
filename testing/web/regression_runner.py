@@ -48,7 +48,9 @@ class RegressionState:
     rejected with ``RegressionBusyError``.
     """
 
-    status: str = "idle"  # idle | starting | running | passed | failed | error | cancelled
+    status: str = (
+        "idle"  # idle | starting | running | passed | failed | error | cancelled
+    )
     case_id: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
@@ -184,9 +186,7 @@ class RegressionRunner:
         log_path = log_dir / "regression.log"
         # Truncate so each run owns its own log; previous tails stay in the UI
         # ring buffer until a refresh.
-        header = (
-            f"# regression run case={case_id}  started_at={_now_iso()}\n"
-        )
+        header = f"# regression run case={case_id}  started_at={_now_iso()}\n"
         log_path.write_text(header, encoding="utf-8")
         return log_path
 
@@ -212,8 +212,10 @@ class RegressionRunner:
         env["PYTHONUNBUFFERED"] = "1"
         # Ensure ``claude`` and ``uv`` resolve from common install dirs.
         home = env.get("HOME", "")
-        env["PATH"] = (
-            f"{home}/.local/bin:{home}/.cargo/bin:/opt/homebrew/bin:" + env.get("PATH", "")
+        env[
+            "PATH"
+        ] = f"{home}/.local/bin:{home}/.cargo/bin:/opt/homebrew/bin:" + env.get(
+            "PATH", ""
         )
         return env
 

@@ -84,13 +84,13 @@ from urllib.parse import urlparse
 # is live-only). It lives under ``testing/`` and needs both roots importable:
 # the core root for ``outreach.browser`` and ``tools/`` helpers, the testing
 # root for ``outreach.mock`` (namespace package portion) and ``tools/mock.py``.
-_TOOLS_DIR = Path(__file__).resolve().parent   # testing/tools
-_ROOT = _TOOLS_DIR.parent                      # testing/
-_CORE_ROOT = _ROOT.parent                      # core repo root
+_TOOLS_DIR = Path(__file__).resolve().parent  # testing/tools
+_ROOT = _TOOLS_DIR.parent  # testing/
+_CORE_ROOT = _ROOT.parent  # core repo root
 sys.path.append(str(_CORE_ROOT))
 sys.path.append(str(_ROOT))
-sys.path.append(str(_CORE_ROOT / "tools"))     # notify, rate_limits
-sys.path.append(str(_TOOLS_DIR))               # import mock
+sys.path.append(str(_CORE_ROOT / "tools"))  # notify, rate_limits
+sys.path.append(str(_TOOLS_DIR))  # import mock
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -109,18 +109,16 @@ logger = logging.getLogger("linkedin.server")
 
 from mcp.server.fastmcp import FastMCP
 
-import mock as _mock                    # testing/tools/mock.py
-import notify as _notify                # core tools/notify.py
+import mock as _mock  # testing/tools/mock.py
+import notify as _notify  # core tools/notify.py
 from outreach.browser import LinkedInBrowser
-from rate_limits import rate_limit      # core tools/rate_limits.py
+from rate_limits import rate_limit  # core tools/rate_limits.py
 
 # ── MCP server ────────────────────────────────────────────────────────────────
 
 mcp = FastMCP(
     "linkedin",
-    instructions=(
-        "Controls a LinkedIn browser session via Playwright CDP. "
-    ),
+    instructions=("Controls a LinkedIn browser session via Playwright CDP. "),
 )
 
 # ── Background task handle (live mode only) ───────────────────────────────────
@@ -130,6 +128,7 @@ _browse_lock = asyncio.Lock()
 
 
 # ── Mock mode flag ────────────────────────────────────────────────────────────
+
 
 def _mock_mcp_enabled() -> bool:
     """Return True to run in mock mode (no browser, scripted responses).
@@ -163,6 +162,7 @@ def _outreach_base() -> Path:
 # ═════════════════════════════════════════════════════════════════════════════
 # LINKEDIN TOOLS (mock delegates to mock.py; live drives the browser)
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 @mcp.tool()
 async def scrape_profile(
@@ -395,7 +395,9 @@ async def send_connection_request(
 
     logger.info(
         "send_connection_request called  url=%s  note_len=%d  cdp=%s",
-        profile_url, len(note), cdp_url,
+        profile_url,
+        len(note),
+        cdp_url,
     )
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
@@ -617,7 +619,10 @@ async def download_profile_pdf(
     """
     if _mock_mcp_enabled():
         return json.dumps(
-            {"ok": False, "error": "download_profile_pdf is not supported in mock mode."},
+            {
+                "ok": False,
+                "error": "download_profile_pdf is not supported in mock mode.",
+            },
             ensure_ascii=False,
             indent=2,
         )
@@ -632,7 +637,9 @@ async def download_profile_pdf(
     logger.info("download_profile_pdf called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
-        path = await li.download_profile_pdf(profile_url, save_dir=save_dir, filename=filename)
+        path = await li.download_profile_pdf(
+            profile_url, save_dir=save_dir, filename=filename
+        )
 
     rate_limit("profile_view", profile_url=profile_url, record=True)
     out = {
@@ -691,7 +698,8 @@ async def browse_forever(
         async def _run() -> None:
             logger.info(
                 "browse_forever session started  cdp=%s  reaction=%s",
-                cdp_url, reaction,
+                cdp_url,
+                reaction,
             )
             try:
                 async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
@@ -706,9 +714,7 @@ async def browse_forever(
         loop = asyncio.get_event_loop()
         _browse_task = loop.create_task(_run())
 
-    logger.info(
-        "browse_forever task created  cdp=%s  reaction=%s", cdp_url, reaction
-    )
+    logger.info("browse_forever task created  cdp=%s  reaction=%s", cdp_url, reaction)
     return (
         f"browse_forever started — reaction={reaction!r}, cdp={cdp_url}. "
         "The session runs in the background until the server process exits."
@@ -793,7 +799,12 @@ def _style_example_prompts_path() -> Path:
 
 
 def _bundled_style_example_prompts_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "outreach" / "config" / "style_example_prompts.json"
+    return (
+        Path(__file__).resolve().parent.parent
+        / "outreach"
+        / "config"
+        / "style_example_prompts.json"
+    )
 
 
 def _load_style_example_prompts() -> dict:
@@ -811,7 +822,9 @@ def _load_style_example_prompts() -> dict:
     return {"version": 1, "tone_questions": [], "style_example_prompts": []}
 
 
-_ALLOWED_PLANNER_PERSONA_KEYS = frozenset({"name", "role", "organization", "specialization"})
+_ALLOWED_PLANNER_PERSONA_KEYS = frozenset(
+    {"name", "role", "organization", "specialization"}
+)
 _ALLOWED_PLANNER_ORGANIZATION_KEYS = frozenset({"description"})
 
 
@@ -846,7 +859,9 @@ def _load_planner_identity() -> dict:
     try:
         data = json.loads(persona_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        logger.exception("_load_planner_identity: invalid or unreadable %s", persona_path)
+        logger.exception(
+            "_load_planner_identity: invalid or unreadable %s", persona_path
+        )
         return base
     if not isinstance(data, dict):
         return base
@@ -999,9 +1014,7 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
                 return "message_rules.style_examples must be an array"
             for idx, item in enumerate(examples):
                 if not isinstance(item, dict):
-                    return (
-                        f"message_rules.style_examples[{idx}] must be an object"
-                    )
+                    return f"message_rules.style_examples[{idx}] must be an object"
                 reply = item.get("reply")
                 if not isinstance(reply, str) or not reply.strip():
                     return (
@@ -1026,13 +1039,9 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
                 return f"conversation_end_goals.{bucket} must be an array"
             for idx, item in enumerate(items):
                 if not isinstance(item, dict):
-                    return (
-                        f"conversation_end_goals.{bucket}[{idx}] must be an object"
-                    )
+                    return f"conversation_end_goals.{bucket}[{idx}] must be an object"
                 if not item.get("id"):
-                    return (
-                        f"conversation_end_goals.{bucket}[{idx}].id is required"
-                    )
+                    return f"conversation_end_goals.{bucket}[{idx}].id is required"
 
     router = config.get("router")
     if isinstance(router, dict):
@@ -1044,7 +1053,9 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
             if not isinstance(priorities, list) or not all(
                 isinstance(item, str) and item.strip() for item in priorities
             ):
-                return "router.step4_path_priority must be an array of non-empty strings"
+                return (
+                    "router.step4_path_priority must be an array of non-empty strings"
+                )
         routes = router.get("signal_routes")
         if routes is not None and not isinstance(routes, dict):
             return "router.signal_routes must be an object"
@@ -1339,7 +1350,14 @@ async def save_connection(
             data = {"connections": []}
 
         connections = data["connections"]
-        idx = next((i for i, c in enumerate(connections) if c.get("profile_url") == profile_url), None)
+        idx = next(
+            (
+                i
+                for i, c in enumerate(connections)
+                if c.get("profile_url") == profile_url
+            ),
+            None,
+        )
         previous: dict | None = connections[idx] if idx is not None else None
 
         explicit = _normalize_prospect_id_slug(prospect_id)
@@ -1351,7 +1369,8 @@ async def save_connection(
         connected_at = _iso_now()
         if previous and previous.get("connected_at"):
             if status == "ended" or (
-                status == "connected" and previous.get("connection_status") == "connected"
+                status == "connected"
+                and previous.get("connection_status") == "connected"
             ):
                 connected_at = previous["connected_at"]
 
@@ -1377,9 +1396,7 @@ async def save_connection(
             resolved_pid,
             path,
         )
-        return (
-            f"ok — saved {clean_name} ({profile_url}) prospect_id={resolved_pid!r} to {path}"
-        )
+        return f"ok — saved {clean_name} ({profile_url}) prospect_id={resolved_pid!r} to {path}"
     except Exception as exc:
         logger.exception("save_connection failed")
         return f"error: {exc}"
@@ -1621,9 +1638,7 @@ async def upsert_conversation(
         _atomic_write_json(path, data)
         stage = data.get("outreach_stage") if isinstance(data, dict) else None
         if stage in _TERMINAL_CONVERSATION_STAGES:
-            linkedin_url = (
-                data.get("linkedin_url") if isinstance(data, dict) else None
-            )
+            linkedin_url = data.get("linkedin_url") if isinstance(data, dict) else None
             _mark_connection_ended(prospect_id, linkedin_url)
             _sync_prospect_outreach_stage(prospect_id, str(stage))
             if prior_stage not in _TERMINAL_CONVERSATION_STAGES:

@@ -39,14 +39,22 @@ def outreach_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     conv = {
         "prospect_id": "jane_doe",
         "outreach_stage": "replied",
-        "messages": [{"sender": "prospect", "text": "Let's meet", "timestamp": "2026-05-02T10:00:00Z"}],
+        "messages": [
+            {
+                "sender": "prospect",
+                "text": "Let's meet",
+                "timestamp": "2026-05-02T10:00:00Z",
+            }
+        ],
         "last_action": "send_followup_message",
         "last_action_timestamp": "2026-05-02T09:00:00+00:00",
         "meeting_link": "https://zoom.us/j/123",
         "email": "jane@example.com",
         "ended_reason": "call_scheduled",
     }
-    (base / "conversations" / "jane_doe.json").write_text(json.dumps(conv), encoding="utf-8")
+    (base / "conversations" / "jane_doe.json").write_text(
+        json.dumps(conv), encoding="utf-8"
+    )
 
     (base / "config" / "conversation_planner.json").write_text(
         json.dumps({"campaign": {"goal": "Test campaign"}}),
@@ -151,7 +159,9 @@ def test_get_meetings(outreach_tmp: Path) -> None:
     assert data["meetings"][0]["channel"] == "Zoom"
 
 
-def test_get_execution_history(outreach_tmp: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_execution_history(
+    outreach_tmp: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     logs = outreach_tmp / "logs"
     (logs / "routine_runs.jsonl").write_text(
         json.dumps(
