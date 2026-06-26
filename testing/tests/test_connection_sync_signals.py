@@ -4,6 +4,7 @@ from outreach.browser import (
     connection_accepted_from_signals,
     connection_dm_ready_from_signals,
     pending_invite_aria_label_matches,
+    profile_action_row_ready,
 )
 
 
@@ -35,6 +36,23 @@ def test_connection_accepted_rejects_pending_or_connect_cta():
         degree=1,
         has_pending_invite=False,
         has_connect_cta=True,
+    )
+
+
+def test_profile_action_row_ready():
+    assert profile_action_row_ready(
+        has_connect=False,
+        has_more=True,
+        has_follow=False,
+        has_pending=False,
+        has_message=False,
+    )
+    assert not profile_action_row_ready(
+        has_connect=False,
+        has_more=False,
+        has_follow=False,
+        has_pending=False,
+        has_message=False,
     )
 
 

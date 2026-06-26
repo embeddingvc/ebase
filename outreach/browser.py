@@ -144,11 +144,19 @@ _FOLLOWERS_ONLY_MSG = (
     "not Connect). Connect may be unavailable — try following and using "
     "Message instead."
 )
+_PENDING_INVITE_EXISTS_MSG = (
+    "Connection request could not be sent. "
+    "A pending invitation to this profile already exists on LinkedIn."
+)
 _INVITE_VERIFY_FAILED_MSG = (
     "Could not verify the connection invitation was sent. "
     "LinkedIn did not show a confirmation or Pending state — "
     "check the profile manually before saving pipeline state."
 )
+# SDUI profile top-card action row can render several seconds after main.
+_PROFILE_ACTION_ROW_TIMEOUT_S = 15.0
+_MORE_MENU_CONNECT_TIMEOUT_S = 18.0
+_CONNECT_DISCOVERY_ATTEMPTS = 2
 
 # Paths
 STORAGE_DIR = Path(__file__).parent / "storage"
@@ -216,6 +224,18 @@ def connection_dm_ready_from_signals(
     if degree is not None:
         return False
     return has_profile_message_cta
+
+
+def profile_action_row_ready(
+    *,
+    has_connect: bool,
+    has_more: bool,
+    has_follow: bool,
+    has_pending: bool,
+    has_message: bool,
+) -> bool:
+    """Return True when the profile top-card action row looks rendered."""
+    return has_connect or has_more or has_follow or has_pending or has_message
 
 
 _STEALTH_SCRIPT = """
@@ -1548,6 +1568,64 @@ class LinkedInBrowser:
                 continue
         return False
 
+    async def _profile_action_row_ready(self, workspace: Locator) -> bool:
+        return profile_action_row_ready(
+            has_connect=await self._find_direct_connect_control(workspace) is not None,
+            has_more=await self._find_profile_more_button(workspace) is not None,
+            has_follow=await self._profile_has_follow_primary_cta(workspace),
+            has_pending=await self._profile_has_pending_invite_cta(),
+            has_message=await self._profile_has_dm_message_cta(),
+        )
+
+    async def _wait_for_profile_action_row(self, workspace: Locator) -> None:
+        """Wait for Connect / More / Follow / Pending / Message CTAs to appear."""
+        deadline = asyncio.get_running_loop().time() + _PROFILE_ACTION_ROW_TIMEOUT_S
+        while asyncio.get_running_loop().time() < deadline:
+            if await self._profile_action_row_ready(workspace):
+                await _human_pause(0.3, 0.6)
+                return
+            await self._page.wait_for_timeout(200)
+        logger.warning(
+            "send_connection_request: profile action row did not render in time"
+        )
+
+    async def _poll_connect_in_more_menu(self, timeout_s: float) -> Locator | None:
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        while asyncio.get_running_loop().time() < deadline:
+            connect_btn = await self._find_connect_control_in_open_menu()
+            if connect_btn is not None:
+                return connect_btn
+            await self._page.wait_for_timeout(200)
+        return None
+
+    async def _discover_connect_control(
+        self,
+        workspace: Locator,
+        profile_url: str,
+    ) -> tuple[Locator | None, str | None]:
+        if await self._profile_has_pending_invite_cta():
+            return None, _PENDING_INVITE_EXISTS_MSG
+
+        connect_btn = await self._find_direct_connect_control(workspace)
+        if connect_btn is not None:
+            return connect_btn, None
+
+        return await self._open_more_and_find_connect(workspace, profile_url)
+
+    async def _prepare_connect_send_page(self, profile_url: str) -> Locator:
+        try:
+            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
+        except Exception:
+            logger.warning(
+                "send_connection_request: main/workspace not ready for %s",
+                profile_url,
+            )
+        await self._page.evaluate("window.scrollTo(0, 0)")
+        await _human_mouse_move(self._page)
+        workspace = self._page.locator("main, #workspace")
+        await self._wait_for_profile_action_row(workspace)
+        return workspace
+
     async def _open_more_and_find_connect(
         self,
         workspace: Locator,
@@ -1568,15 +1646,27 @@ class LinkedInBrowser:
             "More overflow menu for %s",
             profile_url,
         )
-        await _human_click(self._page, more_btn)
-        await _human_pause(0.2, 0.5)
 
-        deadline = asyncio.get_running_loop().time() + (EL_TIMEOUT / 1000.0)
-        while asyncio.get_running_loop().time() < deadline:
-            connect_btn = await self._find_connect_control_in_open_menu()
+        half_timeout = _MORE_MENU_CONNECT_TIMEOUT_S / 2.0
+        more_attempted = False
+        for menu_attempt in range(2):
+            if menu_attempt > 0:
+                try:
+                    await self._page.keyboard.press("Escape")
+                except Exception:
+                    pass
+                await _human_pause(0.2, 0.4)
+                more_btn = await self._find_profile_more_button(workspace)
+                if more_btn is None:
+                    break
+
+            await _human_click(self._page, more_btn)
+            more_attempted = True
+            await _human_pause(0.3, 0.7)
+
+            connect_btn = await self._poll_connect_in_more_menu(half_timeout)
             if connect_btn is not None:
                 return connect_btn, None
-            await self._page.wait_for_timeout(150)
 
         logger.warning(
             "send_connection_request: Connect option not present in More "
@@ -1584,7 +1674,9 @@ class LinkedInBrowser:
             "pending invite, be followers-only, or be restricted to InMail.",
             profile_url,
         )
-        if await self._profile_has_follow_primary_cta(workspace):
+        if await self._profile_has_pending_invite_cta():
+            return None, _PENDING_INVITE_EXISTS_MSG
+        if more_attempted and await self._profile_has_follow_primary_cta(workspace):
             return None, _FOLLOWERS_ONLY_MSG
         return None, _CONNECT_NOT_FOUND_MSG
 
@@ -1608,26 +1700,32 @@ class LinkedInBrowser:
         if len(note) > 300:
             raise ValueError(f"Connection note too long: {len(note)} chars (LinkedIn limit: 300)")
 
-        await self._ensure_profile_tab(profile_url)
-        try:
-            await self._page.wait_for_selector("main, #workspace", timeout=NAV_TIMEOUT)
-            await _human_pause(0.4, 0.9)
-        except Exception:
-            logger.warning("send_connection_request: main/workspace not ready for %s", profile_url)
+        connect_btn: Locator | None = None
+        last_err = _CONNECT_NOT_FOUND_MSG
 
-        # Keep the top-card action row in view — scrolling down first often hides Connect.
-        await self._page.evaluate("window.scrollTo(0, 0)")
-        await _human_mouse_move(self._page)
+        for attempt in range(_CONNECT_DISCOVERY_ATTEMPTS):
+            if attempt > 0:
+                logger.info(
+                    "send_connection_request: retrying connect discovery for %s",
+                    profile_url,
+                )
+                await self._page.goto(
+                    profile_url, timeout=NAV_TIMEOUT, wait_until="domcontentloaded"
+                )
+                await _human_pause(1.5, 2.5)
+            else:
+                await self._ensure_profile_tab(profile_url)
+                await _human_pause(0.4, 0.9)
 
-        workspace = self._page.locator("main, #workspace")
-
-        connect_btn = await self._find_direct_connect_control(workspace)
-        if connect_btn is None:
-            connect_btn, err = await self._open_more_and_find_connect(
+            workspace = await self._prepare_connect_send_page(profile_url)
+            connect_btn, last_err = await self._discover_connect_control(
                 workspace, profile_url
             )
-            if err:
-                return err
+            if connect_btn is not None:
+                break
+
+        if connect_btn is None:
+            return last_err
 
         try:
             await expect(connect_btn).to_be_visible(timeout=EL_TIMEOUT)

@@ -403,6 +403,18 @@ async def send_connection_request(
         logger.info("send_connection_request finished  url=%s", profile_url)
         return "ok"
     logger.warning("send_connection_request failed  url=%s  err=%s", profile_url, err)
+    try:
+        _append_action_log_row(
+            {
+                "action": "connection_request_failed",
+                "profile_url": profile_url.strip(),
+                "error": err,
+                "note_char_count": len(note),
+                "timestamp": _iso_now(),
+            }
+        )
+    except Exception:
+        logger.exception("send_connection_request: failed to write action log")
     return err
 
 
@@ -685,6 +697,14 @@ from datetime import datetime, timezone
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _append_action_log_row(row: dict) -> None:
+    """Append one validated JSON object to logs/actions.jsonl."""
+    path = _outreach_base() / "logs" / "actions.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -1623,10 +1643,8 @@ async def append_action_log(
     """
     path = _outreach_base() / "logs" / "actions.jsonl"
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
         parsed = json.loads(entry)  # validate it's real JSON before writing
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(parsed, ensure_ascii=False) + "\n")
+        _append_action_log_row(parsed)
         logger.info("append_action_log: wrote to %s", path)
         return "ok"
     except Exception as exc:
