@@ -742,19 +742,19 @@ class LinkedInBrowser:
         """
         Return True if the attached Chrome session has an active LinkedIn session.
 
-        Uses Playwright's context cookie API (reads HttpOnly cookies that JS cannot).
-        Falls back to URL check when context is unavailable, True on any exception.
+        If the tab is not already on LinkedIn, navigates to the feed first — the
+        resulting URL reveals whether the session is authenticated (login/authwall = no).
         """
         if self._page is None or self._page.is_closed():
             return False
         try:
-            ctx = getattr(self, "_ctx", None)
-            if ctx:
-                cookies = await ctx.cookies()
-                return any(c.get("name") == "li_at" for c in cookies)
-            # No context — fall back to URL heuristic
             url = (self._page.url or "").lower()
-            return "linkedin.com" in url and "/login" not in url and "/authwall" not in url
+            if "linkedin.com" not in url:
+                await self._page.goto(
+                    FEED_URL, timeout=NAV_TIMEOUT, wait_until="domcontentloaded"
+                )
+                url = (self._page.url or "").lower()
+            return "/login" not in url and "/authwall" not in url
         except Exception:
             return True  # ponytail: can't check in some states — don't block attach mode
 

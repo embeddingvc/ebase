@@ -8,34 +8,31 @@ from unittest.mock import AsyncMock, MagicMock
 
 @pytest.fixture
 def browser():
-    """LinkedInBrowser instance with mocked page + context — no Playwright needed."""
+    """LinkedInBrowser instance with a mocked page — no Playwright needed."""
     from outreach.browser import LinkedInBrowser
 
     li = object.__new__(LinkedInBrowser)
     li._page = MagicMock()
     li._page.is_closed.return_value = False
     li._page.url = "https://www.linkedin.com/feed/"
-    li._ctx = MagicMock()
-    li._ctx.cookies = AsyncMock(return_value=[])
+    li._page.goto = AsyncMock()
     return li
 
 
 @pytest.mark.asyncio
-async def test_is_logged_in_true_when_li_at_cookie_present(browser):
-    browser._ctx.cookies.return_value = [{"name": "li_at", "value": "tok123"}]
+async def test_is_logged_in_true_when_already_on_linkedin(browser):
+    browser._page.url = "https://www.linkedin.com/feed/"
     assert await browser.is_logged_in() is True
 
 
 @pytest.mark.asyncio
-async def test_is_logged_in_false_when_no_cookie_and_login_url(browser):
-    browser._ctx.cookies.return_value = []
+async def test_is_logged_in_false_when_on_login_page(browser):
     browser._page.url = "https://www.linkedin.com/login"
     assert await browser.is_logged_in() is False
 
 
 @pytest.mark.asyncio
-async def test_is_logged_in_false_when_no_cookie_and_authwall(browser):
-    browser._ctx.cookies.return_value = []
+async def test_is_logged_in_false_when_on_authwall(browser):
     browser._page.url = "https://www.linkedin.com/authwall"
     assert await browser.is_logged_in() is False
 
@@ -47,14 +44,36 @@ async def test_is_logged_in_false_when_page_is_none(browser):
 
 
 @pytest.mark.asyncio
-async def test_is_logged_in_true_fallback_on_cookies_error(browser):
-    browser._ctx.cookies.side_effect = Exception("context crashed")
+async def test_is_logged_in_navigates_when_not_on_linkedin(browser):
+    browser._page.url = "about:blank"
+
+    async def _nav(*args, **kwargs):
+        browser._page.url = "https://www.linkedin.com/feed/"
+
+    browser._page.goto = AsyncMock(side_effect=_nav)
+    assert await browser.is_logged_in() is True
+
+
+@pytest.mark.asyncio
+async def test_is_logged_in_false_when_navigation_hits_authwall(browser):
+    browser._page.url = "about:blank"
+
+    async def _nav(*args, **kwargs):
+        browser._page.url = "https://www.linkedin.com/authwall"
+
+    browser._page.goto = AsyncMock(side_effect=_nav)
+    assert await browser.is_logged_in() is False
+
+
+@pytest.mark.asyncio
+async def test_is_logged_in_true_fallback_on_nav_error(browser):
+    browser._page.url = "about:blank"
+    browser._page.goto = AsyncMock(side_effect=Exception("nav failed"))
     assert await browser.is_logged_in() is True
 
 
 @pytest.mark.asyncio
 async def test_assert_logged_in_raises_when_not_logged_in(browser):
-    browser._ctx.cookies.return_value = []
     browser._page.url = "https://www.linkedin.com/login"
     with pytest.raises(RuntimeError, match="run /setup-outreach"):
         await browser.assert_logged_in()
@@ -62,5 +81,5 @@ async def test_assert_logged_in_raises_when_not_logged_in(browser):
 
 @pytest.mark.asyncio
 async def test_assert_logged_in_passes_when_logged_in(browser):
-    browser._ctx.cookies.return_value = [{"name": "li_at", "value": "tok123"}]
+    browser._page.url = "https://www.linkedin.com/feed/"
     await browser.assert_logged_in()  # should not raise
