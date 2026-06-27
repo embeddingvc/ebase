@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.3] - 2026-06-26
+
+### Fixed
+- Auth check now navigates to the LinkedIn feed before inspecting the URL, replacing the unreliable `li_at` cookie heuristic — correctly detects unauthenticated sessions when the tab is not already on LinkedIn
+- Updated error messages in `browser.py` for clearer diagnostics on auth and connection failures
+- LinkedIn profile action-row selector updated from legacy `artdeco-dropdown` to SDUI `aria-label='More'` — fixes connect/message button detection on the redesigned profile layout
+- Connection sync sweep calls `is_connection_accepted` instead of `is_first_degree_connection` — aligns sweep logic with the correct acceptance-state check
+
 ## [1.0.0.2] - 2026-06-25
 
 ### Added
