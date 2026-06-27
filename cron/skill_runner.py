@@ -56,7 +56,9 @@ def _claude_env() -> dict[str, str]:
 def run_skill_prompt(prompt: str, *, timeout_sec: int | None = None) -> SkillRunResult:
     """Run an arbitrary ``claude -p`` prompt from repo root."""
     timeout = timeout_sec or int(os.environ.get("CLAUDE_WEB_TIMEOUT_SEC", "600"))
-    perm = os.environ.get("REGRESSION_CLAUDE_PERMISSION_MODE", "bypassPermissions").strip()
+    perm = os.environ.get(
+        "REGRESSION_CLAUDE_PERMISSION_MODE", "bypassPermissions"
+    ).strip()
     model = os.environ.get("CLAUDE_MODEL", "haiku").strip()
     cmd = ["claude", "-p", prompt, "--model", model, "--permission-mode", perm]
 

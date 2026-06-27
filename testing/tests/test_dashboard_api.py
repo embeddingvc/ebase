@@ -19,7 +19,6 @@ def outreach_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     base = tmp_path / "outreach"
     (base / "prospects").mkdir(parents=True)
     (base / "conversations").mkdir(parents=True)
-    (base / "queue").mkdir(parents=True)
     (base / "logs").mkdir(parents=True)
     (base / "config").mkdir(parents=True)
 
@@ -40,34 +39,23 @@ def outreach_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     conv = {
         "prospect_id": "jane_doe",
         "outreach_stage": "replied",
-        "messages": [{"sender": "prospect", "text": "Let's meet", "timestamp": "2026-05-02T10:00:00Z"}],
+        "messages": [
+            {
+                "sender": "prospect",
+                "text": "Let's meet",
+                "timestamp": "2026-05-02T10:00:00Z",
+            }
+        ],
         "last_action": "send_followup_message",
         "last_action_timestamp": "2026-05-02T09:00:00+00:00",
         "meeting_link": "https://zoom.us/j/123",
         "email": "jane@example.com",
         "ended_reason": "call_scheduled",
     }
-    (base / "conversations" / "jane_doe.json").write_text(json.dumps(conv), encoding="utf-8")
+    (base / "conversations" / "jane_doe.json").write_text(
+        json.dumps(conv), encoding="utf-8"
+    )
 
-    (base / "queue" / "pending.json").write_text(
-        json.dumps({"queue": [{"action": "send_followup_message", "prospect_id": "jane_doe", "added_at": "2026-05-03T10:00:00+00:00"}]}),
-        encoding="utf-8",
-    )
-    (base / "queue" / "completed.json").write_text(
-        json.dumps(
-            {
-                "completed": [
-                    {
-                        "action": "send_connection_request",
-                        "prospect_id": "jane_doe",
-                        "added_at": "2026-05-01T09:00:00+00:00",
-                        "finished_at": "2026-05-01T09:01:00+00:00",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
     (base / "config" / "conversation_planner.json").write_text(
         json.dumps({"campaign": {"goal": "Test campaign"}}),
         encoding="utf-8",
@@ -171,7 +159,9 @@ def test_get_meetings(outreach_tmp: Path) -> None:
     assert data["meetings"][0]["channel"] == "Zoom"
 
 
-def test_get_execution_history(outreach_tmp: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_execution_history(
+    outreach_tmp: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     logs = outreach_tmp / "logs"
     (logs / "routine_runs.jsonl").write_text(
         json.dumps(
@@ -230,5 +220,3 @@ def test_get_health_structure(monkeypatch: pytest.MonkeyPatch) -> None:
     health = dd.get_health()
     assert "claude_cli" in health
     assert "cdp_browser" in health
-    assert "queue" in health
-    assert "worker" not in health

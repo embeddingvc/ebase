@@ -110,10 +110,6 @@ function renderHealth(data) {
     })
     .join("");
 
-  const q = data.queue || {};
-  el("queue-load").textContent = `${q.load_pct ?? 0}%`;
-  el("queue-bar").style.width = `${q.load_pct ?? 0}%`;
-  el("queue-detail").textContent = `${q.pending ?? 0} pending · ${q.completed ?? 0} done · ${q.failed ?? 0} failed`;
   const modeLabel = data.mcp_mode === "mock" ? "Mock" : "Live";
   el("system-tip").textContent = `${modeLabel} · ${data.data_root || "—"}`;
   el("mode-badge").textContent = modeLabel;

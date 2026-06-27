@@ -98,10 +98,9 @@ flowchart TD
         BUILD_CONV --> UC1["MCP  upsert_conversation"]
         UC1 --> AL1["MCP  append_action_log\nconnection_request_sent"]
         AL1 --> PL1["MCP  append_planned_message_log"]
-        PL1 --> RQ1["MCP  remove_pending_queue_entry"]
     end
 
-    RQ1 --> WAIT_ACCEPT
+    PL1 --> WAIT_ACCEPT
 
     subgraph PENDING ["4  Await Connection Acceptance"]
         direction TB

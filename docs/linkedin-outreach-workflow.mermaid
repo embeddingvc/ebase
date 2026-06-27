@@ -54,10 +54,9 @@ flowchart TD
         BUILD_CONV --> MCP_UPSERT_CONV1["<b>MCP: upsert_conversation(id, json)</b>"]
         MCP_UPSERT_CONV1 --> MCP_ACTION_LOG1["<b>MCP: append_action_log</b><br/>action: connection_request_sent"]
         MCP_ACTION_LOG1 --> MCP_PLANNED1["<b>MCP: append_planned_message_log</b><br/>PlannedMessage JSON"]
-        MCP_PLANNED1 --> MCP_REMOVE_Q["<b>MCP: remove_pending_queue_entry</b>"]
     end
 
-    MCP_REMOVE_Q --> WAIT_ACCEPT
+    MCP_PLANNED1 --> WAIT_ACCEPT
 
     %% ═══════════════════════════════════════════════
     %% WAITING FOR ACCEPTANCE

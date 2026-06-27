@@ -38,7 +38,9 @@ def _atomic_write_json(path: Path, data: dict) -> None:
         raise
 
 
-def _prompt_line(label: str, *, example: str | None = None, required: bool = False) -> str:
+def _prompt_line(
+    label: str, *, example: str | None = None, required: bool = False
+) -> str:
     if example:
         print(f"  e.g. {example}")
     suffix = "" if required else " (Enter to skip)"
@@ -83,7 +85,10 @@ def run_questionnaire(
     style_prompts = questionnaire.get("style_example_prompts") or []
 
     if not interactive or not sys.stdin.isatty():
-        print("[install] Non-interactive — skipping tone / style questionnaire.", file=sys.stderr)
+        print(
+            "[install] Non-interactive — skipping tone / style questionnaire.",
+            file=sys.stderr,
+        )
         return 2
 
     print()
@@ -105,7 +110,9 @@ def run_questionnaire(
     except EOFError:
         proceed = ""
     if proceed.lower() not in {"y", "yes"}:
-        print("[install] Skipped — run later via Claude Code: /setup-outreach (Step 3).")
+        print(
+            "[install] Skipped — run later via Claude Code: /setup-outreach (Step 3)."
+        )
         return 3
 
     tone_short = ""
@@ -123,7 +130,9 @@ def run_questionnaire(
             continue
         print()
         print(f"  {question}")
-        answer = _prompt_line("  Your answer", example=str(example) if example else None)
+        answer = _prompt_line(
+            "  Your answer", example=str(example) if example else None
+        )
         if not answer:
             continue
         if qid == "tone_adjectives" or item.get("maps_to") == "message_rules.tone":
@@ -146,14 +155,16 @@ def run_questionnaire(
         if not isinstance(prompt, dict):
             continue
         question = str(prompt.get("question") or "").strip()
-        label = str(prompt.get("label") or prompt.get("id") or f"scenario {idx}").strip()
+        label = str(
+            prompt.get("label") or prompt.get("id") or f"scenario {idx}"
+        ).strip()
         hint = str(prompt.get("hint") or "").strip()
         incoming = prompt.get("incoming")
 
         print(f"  [{idx}/{total}] {label}")
         print(f"  {question}")
         if isinstance(incoming, str) and incoming.strip():
-            print(f"  Prospect said: \"{incoming.strip()}\"")
+            print(f'  Prospect said: "{incoming.strip()}"')
         if hint:
             print(f"  Hint: {hint}")
 
@@ -196,7 +207,9 @@ def run_questionnaire(
         f"[install]   tone_guidelines:  "
         f"{rules.get('tone_guidelines', '') or '(blank)'}"
     )
-    print(f"[install]   style_examples:   {len(rules.get('style_examples', []))} entry(ies)")
+    print(
+        f"[install]   style_examples:   {len(rules.get('style_examples', []))} entry(ies)"
+    )
     return 0
 
 

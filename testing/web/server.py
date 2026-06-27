@@ -248,9 +248,7 @@ async def api_mock_regression_status() -> JSONResponse:
 @app.post("/api/mock/regression/run")
 async def api_mock_regression_run(body: RegressionRunBody) -> JSONResponse:
     try:
-        state = await asyncio.to_thread(
-            regression_runner.runner.start, body.case_id
-        )
+        state = await asyncio.to_thread(regression_runner.runner.start, body.case_id)
     except regression_runner.RegressionBusyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return JSONResponse(state)

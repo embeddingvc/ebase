@@ -23,7 +23,13 @@ def base_prospect(**overrides):
         "title": "Engineer",
         "linkedin_url": "https://www.linkedin.com/in/jamie-lee/",
         "outreach_stage": "cold",
-        "recent_posts": [{"text": "Shipped a cache layer last week.", "likes": 3, "timestamp": "2026-01-01"}],
+        "recent_posts": [
+            {
+                "text": "Shipped a cache layer last week.",
+                "likes": 3,
+                "timestamp": "2026-01-01",
+            }
+        ],
         "notes": "Met at conference.",
     }
     p.update(overrides)
@@ -47,7 +53,10 @@ def cold_conversation():
         ({"end_goal": "obtain_resume"}, "obtain_resume"),
         ({"target_action": "request_resume"}, "obtain_resume"),
         ({"target_action": "schedule_call"}, "schedule_meeting"),
-        ({"end_goal": "schedule_meeting", "target_action": "request_resume"}, "schedule_meeting"),
+        (
+            {"end_goal": "schedule_meeting", "target_action": "request_resume"},
+            "schedule_meeting",
+        ),
     ],
 )
 def test_resolve_end_goal(prospect_kwargs, expected):
@@ -69,7 +78,17 @@ def test_stub_connection_none_has_no_meeting_language():
 def test_stub_followup_obtain_resume_mentions_resume():
     r = plan_message(
         base_prospect(end_goal="obtain_resume"),
-        {**cold_conversation(), "next_action": "send_followup_message", "messages": [{"sender": "operator", "text": "hi", "timestamp": "2026-01-01T00:00:00Z"}]},
+        {
+            **cold_conversation(),
+            "next_action": "send_followup_message",
+            "messages": [
+                {
+                    "sender": "operator",
+                    "text": "hi",
+                    "timestamp": "2026-01-01T00:00:00Z",
+                }
+            ],
+        },
     )
     assert "resume" in r["message"].lower()
 

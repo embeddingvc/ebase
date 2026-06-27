@@ -41,7 +41,7 @@ from typing import Any
 logger = logging.getLogger("outreach.regression")
 
 TESTING_ROOT = Path(__file__).resolve().parent.parent  # testing/
-CORE_ROOT = TESTING_ROOT.parent                         # core repo root
+CORE_ROOT = TESTING_ROOT.parent  # core repo root
 _TOOLS = TESTING_ROOT / "tools"
 for _p in (str(CORE_ROOT), str(TESTING_ROOT), str(_TOOLS)):
     if _p not in sys.path:
@@ -76,7 +76,9 @@ def get_server_module() -> Any:
     import importlib.util
 
     path = TESTING_ROOT / "tools" / "server.py"
-    spec = importlib.util.spec_from_file_location("linkedin_mcp_server_regression", path)
+    spec = importlib.util.spec_from_file_location(
+        "linkedin_mcp_server_regression", path
+    )
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load server spec from {path}")
     mod = importlib.util.module_from_spec(spec)
@@ -169,7 +171,9 @@ async def _run_regression_connection_sync(mod: Any, profile_url: str) -> None:
         try:
             return bool(json.loads(raw).get("first_degree", False))
         except (json.JSONDecodeError, AttributeError, TypeError):
-            return raw if isinstance(raw, str) else f"error: bad probe response: {raw!r}"
+            return (
+                raw if isinstance(raw, str) else f"error: bad probe response: {raw!r}"
+            )
 
     rcfg = {
         "active": True,
@@ -195,7 +199,9 @@ async def _run_regression_connection_sync(mod: Any, profile_url: str) -> None:
     del profile_url  # silence unused — the sweep walks all pending rows
 
 
-async def reset_regression_artifacts(mod: Any, profile_url: str, prospect_id: str) -> None:
+async def reset_regression_artifacts(
+    mod: Any, profile_url: str, prospect_id: str
+) -> None:
     """Clear mock session state and on-disk mock outreach rows for a clean scenario run."""
     key = _mock.normalise_url(profile_url)
     _mock.sessions.pop(key, None)
@@ -367,9 +373,7 @@ async def seed_regression_conversation_from_mock(
         )
 
     last_action_ts = (
-        messages[-1]["timestamp"]
-        if messages
-        else _utc_ts(now - timedelta(hours=3))
+        messages[-1]["timestamp"] if messages else _utc_ts(now - timedelta(hours=3))
     )
     conversation: dict[str, Any] = {
         "prospect_id": prospect_id,
@@ -519,7 +523,9 @@ def invoke_claude_cli(prompt: str) -> str:
     aliases supported by the Claude CLI.
     """
     timeout = int(os.environ.get("REGRESSION_CLAUDE_TIMEOUT_SEC", "600"))
-    perm = os.environ.get("REGRESSION_CLAUDE_PERMISSION_MODE", "bypassPermissions").strip()
+    perm = os.environ.get(
+        "REGRESSION_CLAUDE_PERMISSION_MODE", "bypassPermissions"
+    ).strip()
     model = os.environ.get("CLAUDE_MODEL", "haiku").strip()
     cmd = [
         "claude",
@@ -555,6 +561,7 @@ def invoke_claude_cli(prompt: str) -> str:
             f"claude exited {proc.returncode}. stdout+stderr tail:\n{out[-4000:]}"
         )
     return proc.stdout or ""
+
 
 # Transition specs: loaded from outreach/mock/fixtures/*.json
 RoundSpec = dict[str, Any]
@@ -700,8 +707,13 @@ async def apply_regression_schedule_fallback(
         pytest.fail(f"regression schedule fallback failed: {result}")
 
 
-def scenario_terminal_satisfied(case_id: str, session: _mock.MockSession, plan: dict[str, Any]) -> bool:
-    if plan.get("end_conversation") or plan.get("action") in ("mark_ended", "mark_dead"):
+def scenario_terminal_satisfied(
+    case_id: str, session: _mock.MockSession, plan: dict[str, Any]
+) -> bool:
+    if plan.get("end_conversation") or plan.get("action") in (
+        "mark_ended",
+        "mark_dead",
+    ):
         return True
 
     fixture = get_fixture(case_id) or {}
@@ -713,7 +725,9 @@ def scenario_terminal_satisfied(case_id: str, session: _mock.MockSession, plan: 
     if ended_reason in (terminal.get("ended_reasons") or []):
         return True
 
-    if terminal.get("require_resume_attachment") and _prospect_has_resume_in_history(session):
+    if terminal.get("require_resume_attachment") and _prospect_has_resume_in_history(
+        session
+    ):
         return True
 
     phrase = terminal.get("prospect_phrase")
@@ -811,7 +825,9 @@ async def run_scenario_async(case_id: str) -> None:
             pytest.fail(
                 f"{case_id}: exhausted spec rounds ({len(rounds_spec)}) at loop {round_index}"
             )
-        spec_idx = round_index if round_index < len(rounds_spec) else len(rounds_spec) - 1
+        spec_idx = (
+            round_index if round_index < len(rounds_spec) else len(rounds_spec) - 1
+        )
         spec = rounds_spec[spec_idx]
 
         try:
@@ -834,9 +850,7 @@ async def run_scenario_async(case_id: str) -> None:
         await promote_connection_ended_from_conversation(mod, url, prospect_id)
         if spec.get("assert_meeting"):
             await assert_meeting_scheduled(mod, prospect_id, profile_url=url)
-        await assert_connection_ended_when_conversation_terminal(
-            mod, url, prospect_id
-        )
+        await assert_connection_ended_when_conversation_terminal(mod, url, prospect_id)
 
         round_index += 1
 

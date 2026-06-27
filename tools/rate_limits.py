@@ -25,11 +25,13 @@ REQUEST_CONNECTION = "connection_request"
 REQUEST_DM = "dm"
 REQUEST_PROFILE_VIEW = "profile_view"
 
-_VALID_REQUESTS = frozenset({
-    REQUEST_CONNECTION,
-    REQUEST_DM,
-    REQUEST_PROFILE_VIEW,
-})
+_VALID_REQUESTS = frozenset(
+    {
+        REQUEST_CONNECTION,
+        REQUEST_DM,
+        REQUEST_PROFILE_VIEW,
+    }
+)
 
 # Internal queue keys in rate_limits.json
 _CATEGORY_CONNECTION = "connection_requests"
@@ -68,13 +70,9 @@ _DEFAULT_LIMITS = {
 }
 
 _ERROR_MESSAGES = {
-    REQUEST_CONNECTION: (
-        "Daily connection request limit reached. Resume tomorrow."
-    ),
+    REQUEST_CONNECTION: ("Daily connection request limit reached. Resume tomorrow."),
     REQUEST_DM: "Daily DM limit reached. Resume tomorrow.",
-    REQUEST_PROFILE_VIEW: (
-        "Daily profile view limit reached. Resume tomorrow."
-    ),
+    REQUEST_PROFILE_VIEW: ("Daily profile view limit reached. Resume tomorrow."),
 }
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -88,16 +86,19 @@ def _maybe_migrate_state_dir(new_home: Path) -> None:
     if old_home == new_home:
         return
     import shutil
+
     try:
         shutil.copytree(str(old_home), str(new_home))
         logger.info(
             "migrated state dir %s → %s",
-            old_home, new_home,
+            old_home,
+            new_home,
         )
     except OSError:
         logger.warning(
             "could not migrate state dir %s → %s",
-            old_home, new_home,
+            old_home,
+            new_home,
             exc_info=True,
         )
 
@@ -354,7 +355,10 @@ def get_usage_snapshot() -> dict[str, Any]:
         return {
             "day": state.get("day"),
             "limits": {
-                req: limits.get(_REQUEST_TO_CATEGORY[req], _DEFAULT_LIMITS[_REQUEST_TO_CATEGORY[req]])
+                req: limits.get(
+                    _REQUEST_TO_CATEGORY[req],
+                    _DEFAULT_LIMITS[_REQUEST_TO_CATEGORY[req]],
+                )
                 for req in _VALID_REQUESTS
             },
             "usage": usage,

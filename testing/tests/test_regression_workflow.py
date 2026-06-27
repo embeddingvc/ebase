@@ -32,6 +32,7 @@ from outreach.mock.fixtures_loader import list_case_ids  # noqa: E402
 
 ALL_MOCK_CASES = list_case_ids()
 
+
 @pytest.mark.local_regression
 @pytest.mark.parametrize("case_id", ALL_MOCK_CASES)
 def test_regression_mock_scenario(case_id: str) -> None:

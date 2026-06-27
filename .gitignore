@@ -17,8 +17,9 @@ htmlcov/
 *.log
 logs/
 
-# Local outreach identity (copy persona.json.example → persona.json)
+# Local outreach config (copy *.json.example → local file; not shared across teammates)
 outreach/config/persona.json
+outreach/config/conversation_planner.json
 
 # Outreach runtime data (per-user; not shared across teammates)
 outreach/prospects/

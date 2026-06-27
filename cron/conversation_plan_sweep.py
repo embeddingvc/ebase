@@ -222,14 +222,8 @@ def _classify_outcome(
         if ts is not None and ts >= started_at:
             return "success", "sent"
 
-        before_ts = _parse_iso(
-            (snapshot_before or {}).get("last_action_timestamp")
-        )
-        if (
-            ts is not None
-            and before_ts is not None
-            and ts > before_ts
-        ):
+        before_ts = _parse_iso((snapshot_before or {}).get("last_action_timestamp"))
+        if ts is not None and before_ts is not None and ts > before_ts:
             return "success", "sent"
 
     return "no_change", "no_action"
@@ -355,8 +349,7 @@ async def run_plan_sweep(
                 (
                     r
                     for r in refreshed
-                    if isinstance(r, dict)
-                    and r.get("prospect_id") == prospect_id
+                    if isinstance(r, dict) and r.get("prospect_id") == prospect_id
                 ),
                 None,
             )
@@ -417,10 +410,7 @@ async def run_plan_sweep(
             current = _load_connections()
             replaced = False
             for i, r in enumerate(current.get("connections") or []):
-                if (
-                    isinstance(r, dict)
-                    and r.get("prospect_id") == prospect_id
-                ):
+                if isinstance(r, dict) and r.get("prospect_id") == prospect_id:
                     current["connections"][i] = target_row
                     replaced = True
                     break
@@ -433,11 +423,7 @@ async def run_plan_sweep(
     # purely-skipped ticks land in routine_ticks.jsonl for diagnostics so
     # the operator can still see the scheduler is healthy without polluting
     # the run history.
-    did_work = (
-        result.dispatched > 0
-        or result.errors
-        or result.skipped_rate_limited > 0
-    )
+    did_work = result.dispatched > 0 or result.errors or result.skipped_rate_limited > 0
     log_row: dict[str, Any] = {
         "routine_id": "conversation_plan",
         "kind": "plan_sweep",

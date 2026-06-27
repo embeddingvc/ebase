@@ -90,7 +90,11 @@ def _end_goal_instructions(end_goal: str, action: str) -> str:
     return (
         "End goal: schedule_meeting (default). "
         "It is OK to suggest a brief intro call or meeting when natural"
-        + ("; the connection note can lightly tee that up without being pushy" if action == "send_connection_request" else "")
+        + (
+            "; the connection note can lightly tee that up without being pushy"
+            if action == "send_connection_request"
+            else ""
+        )
         + "."
     )
 
@@ -103,10 +107,10 @@ def _build_user_prompt(prospect: dict, conversation: dict, action: str) -> str:
     )
 
     prior_messages = conversation.get("messages", [])
-    history_text = "\n".join(
-        f'[{m["sender"]}] {m["text"]}'
-        for m in prior_messages[-4:]
-    ) or "(no prior messages)"
+    history_text = (
+        "\n".join(f'[{m["sender"]}] {m["text"]}' for m in prior_messages[-4:])
+        or "(no prior messages)"
+    )
 
     first_name = prospect.get("name", "").split()[0]
     char_limit = 300 if action == "send_connection_request" else 500
@@ -145,21 +149,26 @@ Write the message now. Return only the message text.
 
 # ── API planner ───────────────────────────────────────────────────────────────
 
+
 def _plan_with_api(prospect: dict, conversation: dict, action: str) -> str:
-    api_key = (
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get(
+        "CLAUDE_CODE_OAUTH_TOKEN"
     )
     model = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 
-    payload = json.dumps({
-        "model": model,
-        "max_tokens": 256,
-        "system": SYSTEM_PROMPT,
-        "messages": [
-            {"role": "user", "content": _build_user_prompt(prospect, conversation, action)},
-        ],
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": model,
+            "max_tokens": 256,
+            "system": SYSTEM_PROMPT,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": _build_user_prompt(prospect, conversation, action),
+                },
+            ],
+        }
+    ).encode()
 
     req = urllib.request.Request(
         "https://api.anthropic.com/v1/messages",
@@ -181,14 +190,21 @@ def _plan_with_api(prospect: dict, conversation: dict, action: str) -> str:
 
 # ── Stub planner (offline / testing) ─────────────────────────────────────────
 
+
 def _plan_stub(prospect: dict, conversation: dict, action: str) -> str:
-    name  = prospect["name"].split()[0]
+    name = prospect["name"].split()[0]
     posts = prospect.get("recent_posts", [])
-    hook  = posts[0]["text"][:60] if posts else prospect.get("notes", "your background")[:60]
+    hook = (
+        posts[0]["text"][:60]
+        if posts
+        else prospect.get("notes", "your background")[:60]
+    )
     end_goal = resolve_end_goal(prospect)
     topic = _outreach_topic_line(prospect, conversation)
     topic_bit = (
-        f" On {topic} —" if topic != "(no dedicated topic — use notes and profile signals only)" else ""
+        f" On {topic} —"
+        if topic != "(no dedicated topic — use notes and profile signals only)"
+        else ""
     )
 
     if action == "send_connection_request":
@@ -230,6 +246,7 @@ def _plan_stub(prospect: dict, conversation: dict, action: str) -> str:
 
 # ── Public interface ──────────────────────────────────────────────────────────
 
+
 def plan_message(prospect: dict, conversation: dict) -> dict:
     """
     Returns a planned message dict.
@@ -245,10 +262,10 @@ def plan_message(prospect: dict, conversation: dict) -> dict:
         mode = "stub"
 
     return {
-        "prospect_id":  prospect["id"],
-        "stage":        prospect.get("outreach_stage", "cold"),
-        "action":       action,
-        "message":      message,
+        "prospect_id": prospect["id"],
+        "stage": prospect.get("outreach_stage", "cold"),
+        "action": action,
+        "message": message,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "mode":         mode,
+        "mode": mode,
     }

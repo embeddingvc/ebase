@@ -1,0 +1,433 @@
+#!/usr/bin/env bash
+# browser-service — install/manage LinkedIn Chrome (CDP) via launchd or systemd.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+REPO_ROOT="${OUTREACH_REPO_ROOT:-${EBASE_DIR:-${DEFAULT_REPO_ROOT}}}"
+CDP_PORT="${CDP_PORT:-9222}"
+CHROME_PROFILE="${CHROME_PROFILE:-${HOME}/.linkedin-chrome-profile}"
+CHROME_BIN="${CHROME_BIN:-}"
+BROWSER_LOG="${BROWSER_LOG:-logs/browser.log}"
+
+LAUNCHD_LABEL="com.embeddingvc.ebase.browser"
+SYSTEMD_UNIT="ebase-browser.service"
+
+info() { printf '%s\n' "[browser-service] $*"; }
+warn() { printf '%s\n' "[browser-service] $*" >&2; }
+
+usage() {
+  cat <<'EOF'
+Usage: browser-service <command>
+
+Commands:
+  install     Write launchd/systemd unit and enable auto-start on login/boot
+  uninstall   Disable and remove the unit (does not delete the Chrome profile)
+  start       Start Chrome via the service manager (or direct launch fallback)
+  stop        Stop managed Chrome / free the CDP port
+  status      Print whether a managed service is installed and CDP is up
+  is-managed  Exit 0 if a unit file is installed, 1 otherwise
+  json-status Print JSON for scripts
+  daemon      Internal: start Chrome with CDP if not already running (for launchd)
+
+Environment:
+  OUTREACH_REPO_ROOT / EBASE_DIR   Repository root (default: parent of bin/)
+  CDP_PORT                         Chrome remote debugging port (default 9222)
+  CHROME_PROFILE                   Chrome user-data-dir (default ~/.linkedin-chrome-profile)
+  CHROME_BIN                       Override Chrome binary path
+  BROWSER_LOG                      Log file relative to repo (default logs/browser.log)
+EOF
+}
+
+resolve_repo() {
+  REPO_ROOT="$(cd "${REPO_ROOT}" && pwd)"
+  if [[ ! -f "${REPO_ROOT}/pyproject.toml" ]]; then
+    warn "Not an ebase repo: ${REPO_ROOT}"
+    exit 1
+  fi
+}
+
+resolve_chrome() {
+  if [[ -n "${CHROME_BIN}" ]] && [[ -x "${CHROME_BIN}" ]]; then
+    return 0
+  fi
+  local mac_chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  if [[ "$(uname -s)" == "Darwin" ]] && [[ -x "${mac_chrome}" ]]; then
+    CHROME_BIN="${mac_chrome}"
+    return 0
+  fi
+  if command -v google-chrome >/dev/null 2>&1; then
+    CHROME_BIN="$(command -v google-chrome)"
+    return 0
+  fi
+  if command -v chromium >/dev/null 2>&1; then
+    CHROME_BIN="$(command -v chromium)"
+    return 0
+  fi
+  if command -v chromium-browser >/dev/null 2>&1; then
+    CHROME_BIN="$(command -v chromium-browser)"
+    return 0
+  fi
+  warn "Google Chrome / Chromium not found."
+  return 1
+}
+
+backend() {
+  case "$(uname -s)" in
+    Darwin) printf '%s\n' "launchd" ;;
+    Linux)
+      if command -v systemctl >/dev/null 2>&1; then
+        printf '%s\n' "systemd"
+      else
+        printf '%s\n' "none"
+      fi
+      ;;
+    *) printf '%s\n' "none" ;;
+  esac
+}
+
+cdp_url() {
+  printf 'http://127.0.0.1:%s/json/version\n' "${CDP_PORT}"
+}
+
+browser_running() {
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -sf "$(cdp_url)" >/dev/null 2>&1
+}
+
+launchd_plist_path() {
+  printf '%s\n' "${HOME}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
+}
+
+systemd_unit_path() {
+  printf '%s\n' "${HOME}/.config/systemd/user/${SYSTEMD_UNIT}"
+}
+
+launchd_domain() {
+  printf 'gui/%s\n' "$(id -u)"
+}
+
+linux_display() {
+  if [[ -n "${DISPLAY:-}" ]]; then
+    printf '%s\n' "${DISPLAY}"
+    return 0
+  fi
+  printf ':0\n'
+}
+
+write_launchd_plist() {
+  local plist_path log_path svc_path
+  plist_path="$(launchd_plist_path)"
+  log_path="${REPO_ROOT}/${BROWSER_LOG}"
+  svc_path="${REPO_ROOT}/bin/browser-service"
+  mkdir -p "$(dirname "${plist_path}")" "$(dirname "${log_path}")" "${CHROME_PROFILE}"
+  cat >"${plist_path}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LAUNCHD_LABEL}</string>
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${svc_path}</string>
+    <string>daemon</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OUTREACH_REPO_ROOT</key>
+    <string>${REPO_ROOT}</string>
+    <key>CDP_PORT</key>
+    <string>${CDP_PORT}</string>
+    <key>CHROME_PROFILE</key>
+    <string>${CHROME_PROFILE}</string>
+    <key>CHROME_BIN</key>
+    <string>${CHROME_BIN}</string>
+    <key>BROWSER_LOG</key>
+    <string>${BROWSER_LOG}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${log_path}</string>
+  <key>StandardErrorPath</key>
+  <string>${log_path}</string>
+</dict>
+</plist>
+EOF
+  info "Wrote ${plist_path}"
+}
+
+write_systemd_unit() {
+  local unit_path log_path svc_path display
+  unit_path="$(systemd_unit_path)"
+  log_path="${REPO_ROOT}/${BROWSER_LOG}"
+  svc_path="${REPO_ROOT}/bin/browser-service"
+  display="$(linux_display)"
+  mkdir -p "$(dirname "${unit_path}")" "$(dirname "${log_path}")" "${CHROME_PROFILE}"
+  cat >"${unit_path}" <<EOF
+[Unit]
+Description=ebase LinkedIn Chrome (CDP debugging)
+After=graphical-session.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${REPO_ROOT}
+Environment=OUTREACH_REPO_ROOT=${REPO_ROOT}
+Environment=CDP_PORT=${CDP_PORT}
+Environment=CHROME_PROFILE=${CHROME_PROFILE}
+Environment=CHROME_BIN=${CHROME_BIN}
+Environment=BROWSER_LOG=${BROWSER_LOG}
+Environment=DISPLAY=${display}
+ExecStart=${svc_path} daemon
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:${log_path}
+StandardError=append:${log_path}
+
+[Install]
+WantedBy=default.target
+EOF
+  info "Wrote ${unit_path}"
+}
+
+launchd_load() {
+  local plist_path domain
+  plist_path="$(launchd_plist_path)"
+  domain="$(launchd_domain)"
+  launchctl bootout "${domain}" "${plist_path}" >/dev/null 2>&1 || true
+  launchctl bootstrap "${domain}" "${plist_path}"
+  launchctl enable "${domain}/${LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+  launchctl kickstart -k "${domain}/${LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+}
+
+launchd_unload() {
+  local plist_path domain
+  plist_path="$(launchd_plist_path)"
+  domain="$(launchd_domain)"
+  launchctl bootout "${domain}" "${plist_path}" >/dev/null 2>&1 || true
+  rm -f "${plist_path}"
+}
+
+systemd_reload() {
+  systemctl --user daemon-reload
+}
+
+systemd_enable_start() {
+  systemd_reload
+  systemctl --user enable --now "${SYSTEMD_UNIT}"
+}
+
+systemd_stop_disable() {
+  systemctl --user disable --now "${SYSTEMD_UNIT}" >/dev/null 2>&1 || true
+  systemd_reload
+  rm -f "$(systemd_unit_path)"
+}
+
+wait_for_cdp() {
+  local max="${1:-40}"
+  local i
+  for i in $(seq 1 "${max}"); do
+    if browser_running; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+launch_chrome_direct() {
+  resolve_repo
+  resolve_chrome || return 1
+  mkdir -p "${CHROME_PROFILE}"
+  if browser_running; then
+    return 0
+  fi
+  info "Launching Chrome (CDP port ${CDP_PORT})"
+  "${CHROME_BIN}" \
+    --remote-debugging-port="${CDP_PORT}" \
+    --user-data-dir="${CHROME_PROFILE}" \
+    --no-first-run \
+    --no-default-browser-check \
+    --disable-extensions-except= \
+    >/dev/null 2>&1 &
+  wait_for_cdp 40
+}
+
+cmd_daemon() {
+  resolve_repo
+  resolve_chrome || exit 1
+  mkdir -p "${CHROME_PROFILE}"
+  if browser_running; then
+    exit 0
+  fi
+  exec "${CHROME_BIN}" \
+    --remote-debugging-port="${CDP_PORT}" \
+    --user-data-dir="${CHROME_PROFILE}" \
+    --no-first-run \
+    --no-default-browser-check \
+    --disable-extensions-except=
+}
+
+cmd_install() {
+  resolve_repo
+  resolve_chrome || return 1
+  local be
+  be="$(backend)"
+  case "${be}" in
+    launchd)
+      write_launchd_plist
+      launchd_load
+      info "launchd service enabled (Chrome CDP starts at login / after reboot)"
+      ;;
+    systemd)
+      write_systemd_unit
+      systemd_enable_start
+      if command -v loginctl >/dev/null 2>&1 && ! loginctl show-user "$(id -un)" -p Linger 2>/dev/null | grep -q 'Linger=yes'; then
+        info "Tip: for Chrome without an active login session, run: loginctl enable-linger $(id -un)"
+      fi
+      info "systemd user service enabled (starts at login)"
+      ;;
+    *)
+      warn "No supported service manager on this OS; use manual: make browser"
+      return 1
+      ;;
+  esac
+  wait_for_cdp 40 || warn "Chrome service installed but CDP not ready yet"
+}
+
+cmd_uninstall() {
+  local be
+  be="$(backend)"
+  case "${be}" in
+    launchd)
+      if [[ -f "$(launchd_plist_path)" ]]; then
+        launchd_unload
+        info "Removed launchd service ${LAUNCHD_LABEL}"
+      fi
+      ;;
+    systemd)
+      if [[ -f "$(systemd_unit_path)" ]]; then
+        systemd_stop_disable
+        info "Removed systemd user service ${SYSTEMD_UNIT}"
+      fi
+      ;;
+    *)
+      info "No managed browser service found"
+      ;;
+  esac
+}
+
+cmd_start() {
+  if cmd_is_managed >/dev/null 2>&1; then
+    resolve_repo
+    case "$(backend)" in
+      launchd)
+        launchctl kickstart -k "$(launchd_domain)/${LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+        ;;
+      systemd)
+        systemctl --user start "${SYSTEMD_UNIT}"
+        ;;
+    esac
+    wait_for_cdp 40 || true
+    info "Started managed browser service"
+    return 0
+  fi
+  launch_chrome_direct
+}
+
+cmd_stop() {
+  if cmd_is_managed >/dev/null 2>&1; then
+    case "$(backend)" in
+      launchd)
+        launchctl kill SIGTERM "$(launchd_domain)/${LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+        ;;
+      systemd)
+        systemctl --user stop "${SYSTEMD_UNIT}" >/dev/null 2>&1 || true
+        ;;
+    esac
+    info "Stopped managed browser service"
+    return 0
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -ti ":${CDP_PORT}" | xargs kill 2>/dev/null || true
+  fi
+}
+
+managed_paths() {
+  case "$(backend)" in
+    launchd) [[ -f "$(launchd_plist_path)" ]] && return 0 ;;
+    systemd) [[ -f "$(systemd_unit_path)" ]] && return 0 ;;
+  esac
+  return 1
+}
+
+cmd_is_managed() {
+  managed_paths
+}
+
+cmd_status() {
+  local be running managed
+  be="$(backend)"
+  managed="no"
+  if managed_paths; then managed="yes"; fi
+  running="no"
+  if browser_running; then running="yes"; fi
+  info "backend=${be}  managed=${managed}  cdp_running=${running}  url=$(cdp_url)"
+  if [[ "${managed}" == "yes" ]]; then
+    case "${be}" in
+      launchd) info "unit $(launchd_plist_path)" ;;
+      systemd) info "unit $(systemd_unit_path)" ;;
+    esac
+  fi
+}
+
+cmd_json_status() {
+  local be running managed path="" version=""
+  be="$(backend)"
+  managed="false"
+  if managed_paths; then
+    managed="true"
+    case "${be}" in
+      launchd) path="$(launchd_plist_path)" ;;
+      systemd) path="$(systemd_unit_path)" ;;
+    esac
+  fi
+  running="false"
+  if browser_running; then
+    running="true"
+    version="$(curl -sf "$(cdp_url)" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("Browser",""))' 2>/dev/null || true)"
+  fi
+  python3 -c "import json,sys; d=dict(zip(sys.argv[1::2],sys.argv[2::2])); print(json.dumps({**d,'managed':d['managed']=='true','running':d['running']=='true'}))" \
+    managed "${managed}" backend "${be}" running "${running}" \
+    cdp_url "$(cdp_url)" browser "${version}" profile "${CHROME_PROFILE}" \
+    unit_path "${path}" repo_root "${REPO_ROOT}"
+}
+
+main() {
+  local cmd="${1:-}"
+  case "${cmd}" in
+    install) cmd_install ;;
+    uninstall) cmd_uninstall ;;
+    start) cmd_start ;;
+    stop) cmd_stop ;;
+    status) cmd_status ;;
+    is-managed) cmd_is_managed ;;
+    json-status) cmd_json_status ;;
+    daemon) cmd_daemon ;;
+    -h|--help|help|"") usage ;;
+    *)
+      warn "Unknown command: ${cmd}"
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
