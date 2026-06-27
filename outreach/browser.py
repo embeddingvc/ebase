@@ -723,9 +723,6 @@ class LinkedInBrowser:
 
     async def __aexit__(self, *_: Any) -> None:
         if self._is_attached:
-            # Close only the tab we opened — leave the rest of the browser alone.
-            if self._owned_page and self._page and not self._page.is_closed():
-                await self._page.close()
             logger.info("Detaching from Chrome (browser stays open).")
             if self._pw:
                 await self._pw.stop()
@@ -743,27 +740,29 @@ class LinkedInBrowser:
 
     async def is_logged_in(self) -> bool:
         """
-        Return True if the attached Chrome session is already logged in to LinkedIn.
+        Return True if the attached Chrome session has an active LinkedIn session.
 
-        Login is always done manually by the user in the browser window.
-        Run `make browser`, log in once, and every subsequent session will
-        reuse the profile from the Chrome profile directory.
+        Uses Playwright's context cookie API (reads HttpOnly cookies that JS cannot).
+        Falls back to URL check when context is unavailable, True on any exception.
         """
-        return True  # avoid refresh, assume user is logged in
-        await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT)
-        return "/login" not in self._page.url
+        if self._page is None or self._page.is_closed():
+            return False
+        try:
+            ctx = getattr(self, "_ctx", None)
+            if ctx:
+                cookies = await ctx.cookies()
+                return any(c.get("name") == "li_at" for c in cookies)
+            # No context — fall back to URL heuristic
+            url = (self._page.url or "").lower()
+            return "linkedin.com" in url and "/login" not in url and "/authwall" not in url
+        except Exception:
+            return True  # ponytail: can't check in some states — don't block attach mode
 
     async def assert_logged_in(self) -> None:
-        """
-        Raise a clear error if the user is not logged in, with instructions
-        on how to fix it.  Call this at the start of any job that needs auth.
-        """
+        """Raise RuntimeError with recovery instructions if not logged in."""
         if not await self.is_logged_in():
             raise RuntimeError(
-                "Not logged in to LinkedIn.\n"
-                "  1. Run `make browser` to open Chrome.\n"
-                "  2. Log in to LinkedIn manually in that window.\n"
-                "  3. Retry the action."
+                "error: not logged in to LinkedIn — run /setup-outreach to restore your browser session"
             )
 
     async def _read_connection_degree_on_page(self) -> int | None:
