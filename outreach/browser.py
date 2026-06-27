@@ -592,27 +592,30 @@ class LinkedInBrowser:
 
     async def is_logged_in(self) -> bool:
         """
-        Return True if the attached Chrome session is already logged in to LinkedIn.
+        Return True if the attached Chrome session has an active LinkedIn session.
 
-        Login is always done manually by the user in the browser window.
-        Run `make browser`, log in once, and every subsequent `make run` will
-        reuse the session from the Chrome profile directory.
+        Uses a JS cookie check — no navigation, no page reload.
+        Falls back to True if the check cannot be performed (no page yet).
         """
-        return True  # avoid refresh, assume user is logged in
-        await self._page.goto(FEED_URL, timeout=NAV_TIMEOUT)
-        return "/login" not in self._page.url
+        if self._page is None or self._page.is_closed():
+            return False
+        try:
+            has_cookie = await self._page.evaluate(
+                "() => document.cookie.split(';').some(c => c.trim().startsWith('li_at='))"
+            )
+            if has_cookie:
+                return True
+            url = (self._page.url or "").lower()
+            if "linkedin.com" in url and "/login" not in url and "/authwall" not in url:
+                return True
+            return False
+        except Exception:
+            return True  # ponytail: can't check in attach mode — assume ok
 
     async def assert_logged_in(self) -> None:
-        """
-        Raise a clear error if the user is not logged in, with instructions
-        on how to fix it.  Call this at the start of any job that needs auth.
-        """
         if not await self.is_logged_in():
             raise RuntimeError(
-                "Not logged in to LinkedIn.\n"
-                "  1. Run `make browser` to open Chrome.\n"
-                "  2. Log in to LinkedIn manually in that window.\n"
-                "  3. Re-run `make server` (or `make run`)."
+                "error: not logged in to LinkedIn — run /setup-outreach to restore your browser session"
             )
 
     async def _read_connection_degree_on_page(self) -> int | None:
