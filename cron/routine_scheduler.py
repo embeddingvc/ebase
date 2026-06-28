@@ -33,6 +33,17 @@ from cron.skill_runner import run_named_skill
 logger = logging.getLogger("cron.routine_scheduler")
 
 TICK_SECONDS = 30
+
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _fire(coro) -> asyncio.Task:
+    t = asyncio.create_task(coro)
+    _background_tasks.add(t)
+    t.add_done_callback(_background_tasks.discard)
+    return t
+
+
 _running_locks: dict[str, asyncio.Lock] = {}
 
 # Per-sweep locks for per_prospect mode so a long sweep cannot stack.
@@ -247,17 +258,17 @@ async def _tick_per_prospect(cfg: dict[str, Any]) -> None:
 
     sync_cfg = pp.get(routines_config.ROUTINE_KIND_CONNECTION_SYNC) or {}
     if _per_prospect_due(routines_config.ROUTINE_KIND_CONNECTION_SYNC, now):
-        asyncio.create_task(_run_sync_sweep_routine(sync_cfg))
+        _fire(_run_sync_sweep_routine(sync_cfg))
 
     plan_cfg = pp.get(routines_config.ROUTINE_KIND_CONVERSATION_PLAN) or {}
     if _per_prospect_due(routines_config.ROUTINE_KIND_CONVERSATION_PLAN, now):
-        asyncio.create_task(_run_plan_sweep_routine(plan_cfg))
+        _fire(_run_plan_sweep_routine(plan_cfg))
 
 
 async def _tick_loop(cfg: dict[str, Any]) -> None:
     for routine in cfg.get("routines") or []:
         if _due(routine):
-            asyncio.create_task(_run_one(routine))
+            _fire(_run_one(routine))
 
 
 async def _tick() -> None:

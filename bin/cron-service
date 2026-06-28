@@ -253,12 +253,19 @@ cmd_uninstall() {
 nohup_start() {
   resolve_repo
   resolve_uv
-  local pid_file log_file
+  local pid_file log_file lock_fd
   pid_file="${REPO_ROOT}/outreach/storage/cron.pid"
   log_file="${REPO_ROOT}/${CRON_LOG}"
   mkdir -p "$(dirname "${pid_file}")" "$(dirname "${log_file}")"
+  exec {lock_fd}>"${pid_file}.lock"
+  if ! flock -n "${lock_fd}"; then
+    info "Cron already starting (lock held)"
+    exec {lock_fd}>&-
+    return 0
+  fi
   if cron_running; then
     info "Cron already running at $(health_url)"
+    exec {lock_fd}>&-
     return 0
   fi
   cd "${REPO_ROOT}"
@@ -266,6 +273,7 @@ nohup_start() {
     --host "${WEB_HOST}" --port "${WEB_PORT}" >>"${log_file}" 2>&1 &
   echo $! >"${pid_file}"
   info "Started cron via nohup (pid=$(cat "${pid_file}"))"
+  exec {lock_fd}>&-
 }
 
 nohup_stop() {

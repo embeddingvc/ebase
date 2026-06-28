@@ -105,10 +105,10 @@ def _last_event_for(
     return best
 
 
-def _gate_label(row: dict[str, Any]) -> str:
+def _gate_label(row: dict[str, Any], *, now: datetime | None = None) -> str:
     if not row.get("active"):
         return "inactive"
-    if not routines_config.in_active_window(row):
+    if not routines_config.in_active_window(row, now=now):
         return "outside window"
     return "ready"
 
@@ -271,7 +271,7 @@ def _sweep_status(
             row.get("active_window_start"),
             row.get("active_window_end"),
         ),
-        "gate": _gate_label(row),
+        "gate": _gate_label(row, now=now),
         "last_event": _event_summary(last, now=now),
     }
 
@@ -314,7 +314,7 @@ def build_cron_status(*, now: datetime | None = None) -> dict[str, Any]:
                         routine.get("active_window_start"),
                         routine.get("active_window_end"),
                     ),
-                    "gate": _gate_label(routine),
+                    "gate": _gate_label(routine, now=now),
                     "last_run_at": routine.get("last_run_at"),
                     "last_status": routine.get("last_status"),
                     "last_event": _event_summary(

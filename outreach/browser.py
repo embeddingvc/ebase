@@ -1493,14 +1493,8 @@ class LinkedInBrowser:
                 return None
 
             if await self._invite_dialog_still_awaiting_send():
-                logger.warning(
-                    "send_connection_request: invite dialog still open for %s",
-                    profile_url,
-                )
-                return (
-                    "LinkedIn invite dialog is still open after clicking Send — "
-                    "the invitation may not have been submitted."
-                )
+                await self._page.wait_for_timeout(400)
+                continue
 
             await self._page.wait_for_timeout(400)
 

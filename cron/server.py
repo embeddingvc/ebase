@@ -48,6 +48,8 @@ async def lifespan(app: FastAPI):
         _scheduler_stop.set()
     if _scheduler_task:
         await _scheduler_task
+    if routine_scheduler._background_tasks:
+        await asyncio.gather(*routine_scheduler._background_tasks, return_exceptions=True)
 
 
 app = FastAPI(title="ebase Cron", lifespan=lifespan)

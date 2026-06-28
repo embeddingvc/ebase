@@ -265,7 +265,8 @@ cmd_daemon() {
   resolve_chrome || exit 1
   mkdir -p "${CHROME_PROFILE}"
   if browser_running; then
-    exit 0
+    # ponytail: block instead of exit 0 — KeepAlive/Restart-on-failure would relaunch a tight loop otherwise
+    exec sleep infinity
   fi
   exec "${CHROME_BIN}" \
     --remote-debugging-port="${CDP_PORT}" \
