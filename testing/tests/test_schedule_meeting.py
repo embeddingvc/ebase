@@ -48,9 +48,7 @@ def _clear_smtp_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def live_outreach_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def live_outreach_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the live server at a temp outreach tree with one seeded connection."""
     mod = get_server_module()
     (tmp_path / "conversations").mkdir()
@@ -176,9 +174,7 @@ async def test_server_schedule_meeting_mock_mode(
 
 
 @pytest.fixture
-def ended_outreach_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def ended_outreach_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """
     Outreach tree pre-seeded for an end-of-sequence write: an existing
     ``engaged`` conversation, a connection row, and a prospect file. The
@@ -293,9 +289,7 @@ async def test_upsert_conversation_calls_ended_notifier(
         calls.append(kwargs)
         return "sent"
 
-    monkeypatch.setattr(
-        mod._notify, "send_conversation_ended_email", _fake_send
-    )
+    monkeypatch.setattr(mod._notify, "send_conversation_ended_email", _fake_send)
 
     conv = {
         "prospect_id": PROSPECT_ID,
@@ -337,9 +331,7 @@ async def test_upsert_conversation_notifier_idempotent(
         calls.append(kwargs)
         return "sent"
 
-    monkeypatch.setattr(
-        mod._notify, "send_conversation_ended_email", _fake_send
-    )
+    monkeypatch.setattr(mod._notify, "send_conversation_ended_email", _fake_send)
 
     conv = {
         "prospect_id": PROSPECT_ID,
@@ -369,9 +361,7 @@ async def test_upsert_conversation_no_notify_for_non_terminal(
         calls.append(kwargs)
         return "sent"
 
-    monkeypatch.setattr(
-        mod._notify, "send_conversation_ended_email", _fake_send
-    )
+    monkeypatch.setattr(mod._notify, "send_conversation_ended_email", _fake_send)
 
     conv = {
         "prospect_id": PROSPECT_ID,
@@ -394,9 +384,7 @@ async def test_upsert_conversation_survives_ended_notifier_error(
     def _boom(**_kwargs):
         return "error: SMTP server down"
 
-    monkeypatch.setattr(
-        mod._notify, "send_conversation_ended_email", _boom
-    )
+    monkeypatch.setattr(mod._notify, "send_conversation_ended_email", _boom)
 
     conv = {
         "prospect_id": PROSPECT_ID,
@@ -552,9 +540,7 @@ async def test_live_schedule_meeting_survives_notifier_error(
     assert data["status"] == "scheduled"
     assert data["notified"] is False
     assert data["notify_status"].startswith("error:")
-    assert (
-        live_outreach_root / "conversations" / f"{PROSPECT_ID}.json"
-    ).is_file()
+    assert (live_outreach_root / "conversations" / f"{PROSPECT_ID}.json").is_file()
 
 
 def test_notify_smtp_disabled_when_unconfigured(

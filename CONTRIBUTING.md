@@ -34,9 +34,9 @@ docs/                        # Architecture, install, operations docs
 
 ```bash
 make browser        # launch Chrome with CDP on port 9222
-make server         # start the queue-draining worker
+make cron           # start the scheduler (connection sync + DM planning)
 make test           # run the pytest suite (delegates to testing/)
-make status         # check if Chrome + worker are running
+make status         # check if Chrome and cron are running
 ```
 
 ## Testing

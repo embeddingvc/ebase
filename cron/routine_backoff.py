@@ -52,7 +52,9 @@ class BackoffPolicy:
     error_jitter: bool = True
 
     @staticmethod
-    def from_config(raw: dict[str, Any] | None, *, defaults: "BackoffPolicy") -> "BackoffPolicy":
+    def from_config(
+        raw: dict[str, Any] | None, *, defaults: "BackoffPolicy"
+    ) -> "BackoffPolicy":
         """Build a policy from a possibly-partial config dict, falling back to defaults."""
         cfg = raw if isinstance(raw, dict) else {}
         try:
@@ -193,7 +195,9 @@ def apply_result(
         KEY_NEXT_AT: next_at.isoformat(),
         KEY_LAST_RESULT: result,
         KEY_LAST_ERROR: error if result == "tool_error" else None,
-        KEY_CONSECUTIVE: prev_consecutive + 1 if result == "no_change" else prev_consecutive,
+        KEY_CONSECUTIVE: prev_consecutive + 1
+        if result == "no_change"
+        else prev_consecutive,
     }
     return record
 

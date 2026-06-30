@@ -100,7 +100,9 @@ def test_get_mock_conversations_lists_all_fixtures(
         "no_reply",
         "not_interested",
     }
-    placeholder = next(s for s in data["sessions"] if s["test_case_id"] == "not_interested")
+    placeholder = next(
+        s for s in data["sessions"] if s["test_case_id"] == "not_interested"
+    )
     assert placeholder["live"] is False
     assert len(placeholder["scripted_replies"]) == 1
 

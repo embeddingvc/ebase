@@ -2,7 +2,7 @@
 
 The `conversation-planner` skill supports live runtime configuration from two files (the MCP tool **`get_conversation_planner_config`** returns them merged as one JSON):
 
-- `outreach/config/conversation_planner.json` — campaign, end goals, message rules, router (tracked in git)
+- `outreach/config/conversation_planner.json` — campaign, end goals, message rules, router (gitignored; copy from `outreach/config/conversation_planner.json.example`)
 - `outreach/config/persona.json` — operator `persona` and `organization` (gitignored; copy from `outreach/config/persona.json.example`)
 
 `conversation_planner.json` controls:
@@ -28,7 +28,7 @@ Run the **`setup-outreach`** skill in Claude Code (`/setup-outreach`). It **`scr
 
 You can update config in either way:
 
-1. Edit `outreach/config/conversation_planner.json` and/or `outreach/config/persona.json` directly (create `persona.json` from `persona.json.example` if you do not have one).
+1. Edit `outreach/config/conversation_planner.json` and/or `outreach/config/persona.json` directly (create each from its `*.json.example` template if you do not have one; `./install.sh` copies the planner template automatically).
 2. Use MCP tools (often via a skill):
    - `get_conversation_planner_config` — merged view of both files
    - `upsert_conversation_planner_config` — replace **`conversation_planner.json` only** (payload must not include `persona` / `organization`)

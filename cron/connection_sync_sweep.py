@@ -2,7 +2,7 @@
 Deterministic connection-sync sweep (no LLM).
 
 Walks ``connections.json`` rows whose ``connection_status == "pending"``,
-calls ``is_first_degree_connection`` for each row whose ``sync_backoff``
+calls ``is_connection_accepted`` for each row whose ``sync_backoff``
 says it is due, promotes accepted invites to ``connected``, and advances
 the per-row backoff state on every observation.
 
@@ -97,6 +97,7 @@ def _default_live_probe() -> SyncProbe:
 
     Imported lazily so unit tests don't need Playwright installed.
     """
+
     async def _probe(profile_url: str) -> bool | str:
         try:
             # Make tools/ importable so the shared rate_limits module resolves.
@@ -115,7 +116,7 @@ def _default_live_probe() -> SyncProbe:
         try:
             async with LinkedInBrowser(mode="attach") as li:
                 await li.assert_logged_in()
-                first = await li.is_first_degree_connection(profile_url)
+                first = await li.is_connection_accepted(profile_url)
         except Exception as exc:
             return f"error: browser: {exc}"
 
@@ -266,12 +267,8 @@ async def run_sync_sweep(
 
         if isinstance(res, str):
             # Probe returned an error string.
-            _record_error(
-                row, policy=policy, rcfg=rcfg, now=now, error=res
-            )
-            result.errors.append(
-                {"prospect_id": row.get("prospect_id"), "error": res}
-            )
+            _record_error(row, policy=policy, rcfg=rcfg, now=now, error=res)
+            result.errors.append({"prospect_id": row.get("prospect_id"), "error": res})
             _append_jsonl(
                 ACTIONS_LOG,
                 {

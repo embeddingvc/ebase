@@ -3,21 +3,24 @@
 Day-to-day, the simplest flow is:
 
 ```bash
-make run
+make browser
+make cron
 ```
 
 That will:
 
 - Start Chrome (if not already running) with a dedicated profile and CDP port.
-- Start the worker in the foreground (`make server`).
+- Start the cron scheduler (connection sync + conversation planning sweeps).
+
+`install.sh` starts Chrome and registers cron auto-start (launchd/systemd); after reboot, cron restarts at login automatically.
 
 Then log into LinkedIn in the Chrome window (first time per profile) and use either:
 
 - **Claude CLI** (recommended for installation)
   - `make claude-install` — default: `--scope user` MCP + sync skills to `~/.claude/skills`
   - `make claude-install LOCAL=1` — `--scope local` MCP only; skills stay under `outreach/skills/` in the repo
-- **Claude + MCP tools**
-- **Queue files + worker** (recommended for batch automation)
+- **Claude + MCP tools** for interactive outreach
+- **Cron scheduler** for unattended sync and follow-up planning
 
 ## Live mode checklist
 
@@ -29,7 +32,13 @@ Then log into LinkedIn in the Chrome window (first time per profile) and use eit
 
 2. Sign in to LinkedIn in that Chrome window.
 
-3. Use Claude with the MCP tools as usual.
+3. Start the scheduler (if not already running from install):
+
+   ```bash
+   make cron
+   ```
+
+4. Use Claude with the MCP tools as usual.
 
 If Chrome is not running with remote debugging, live tools will fail until `make browser` (or an equivalent launch) is used.
 

@@ -1,7 +1,7 @@
 ---
 name: outreach-uninstall
 description: >-
-  Remove ebase from Claude Code: stop dashboard/worker, unregister
+  Remove ebase from Claude Code: stop cron scheduler, unregister
   MCP, clean permissions, optionally delete synced skills and local outreach
   data. Use when the user asks to uninstall, remove, or tear down outreach.
 ---

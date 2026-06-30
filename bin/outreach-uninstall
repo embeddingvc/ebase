@@ -8,7 +8,6 @@ DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CDP_PORT="${CDP_PORT:-9222}"
 WEB_PORT="${WEB_PORT:-3847}"
 WEB_PID_FILE="${WEB_PID_FILE:-outreach/storage/web.pid}"
-WORKER_PID_FILE="${WORKER_PID_FILE:-outreach/storage/worker.pid}"
 CHROME_PROFILE="${CHROME_PROFILE:-${HOME}/.linkedin-chrome-profile}"
 CLAUDE_MCP_SERVER_NAME="${CLAUDE_MCP_SERVER_NAME:-linkedin}"
 SKILL_SRC="${SKILL_SRC:-outreach/skills}"
@@ -37,7 +36,7 @@ Usage: outreach-uninstall [options]
   Default (interactive): confirm each category before removing anything.
 
   Core (recommended):
-    - Stop web dashboard + worker
+    - Stop cron scheduler
     - Remove LinkedIn MCP (user / local / project scopes)
     - Remove mcp__linkedin from Claude permissions
     - Remove outreach skills from ~/.claude/skills/
@@ -148,7 +147,42 @@ confirm() {
 stop_processes() {
   local repo="$1"
   local web_pid="${repo}/${WEB_PID_FILE}"
-  local worker_pid="${repo}/${WORKER_PID_FILE}"
+  local svc="${repo}/bin/cron-service"
+  local browser_svc="${repo}/bin/browser-service"
+
+  if [[ -x "${browser_svc}" ]]; then
+    OUTREACH_REPO_ROOT="${repo}" CDP_PORT="${CDP_PORT}" "${browser_svc}" stop >/dev/null 2>&1 || true
+    if [[ "$YES" -eq 1 ]] || confirm "Remove browser auto-start service (launchd/systemd)?"; then
+      OUTREACH_REPO_ROOT="${repo}" "${browser_svc}" uninstall
+      note "ok: browser auto-start service removed"
+    else
+      note "skip: browser auto-start service left installed"
+    fi
+  elif command -v lsof >/dev/null 2>&1; then
+    if lsof -ti ":${CDP_PORT}" >/dev/null 2>&1; then
+      lsof -ti ":${CDP_PORT}" | xargs kill 2>/dev/null || true
+      info "Stopped process on CDP port ${CDP_PORT}"
+      note "ok: CDP port ${CDP_PORT} cleared"
+    fi
+  fi
+
+  if [[ -x "${svc}" ]]; then
+    OUTREACH_REPO_ROOT="${repo}" WEB_PORT="${WEB_PORT}" "${svc}" stop >/dev/null 2>&1 || true
+    info "Stopped cron scheduler"
+    note "ok: cron scheduler stopped"
+    if [[ "$YES" -eq 1 ]] || confirm "Remove cron auto-start service (launchd/systemd)?"; then
+      OUTREACH_REPO_ROOT="${repo}" "${svc}" uninstall
+      note "ok: cron auto-start service removed"
+    else
+      note "skip: cron auto-start service left installed"
+    fi
+  elif command -v lsof >/dev/null 2>&1; then
+    if lsof -ti ":${WEB_PORT}" >/dev/null 2>&1; then
+      lsof -ti ":${WEB_PORT}" | xargs kill 2>/dev/null || true
+      info "Stopped process on port ${WEB_PORT}"
+      note "ok: cron port ${WEB_PORT} cleared"
+    fi
+  fi
 
   if [[ -f "$web_pid" ]]; then
     local pid
@@ -159,23 +193,6 @@ stop_processes() {
       note "ok: web dashboard stopped"
     fi
     rm -f "$web_pid"
-  elif command -v lsof >/dev/null 2>&1; then
-    if lsof -ti ":${WEB_PORT}" >/dev/null 2>&1; then
-      lsof -ti ":${WEB_PORT}" | xargs kill 2>/dev/null || true
-      info "Stopped process on port ${WEB_PORT}"
-      note "ok: web port ${WEB_PORT} cleared"
-    fi
-  fi
-
-  if [[ -f "$worker_pid" ]]; then
-    local pid
-    pid="$(cat "$worker_pid" 2>/dev/null || true)"
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
-      info "Stopped worker (pid=${pid})"
-      note "ok: worker stopped"
-    fi
-    rm -f "$worker_pid"
   fi
 }
 
@@ -285,14 +302,11 @@ remove_repo_data() {
   local paths=(
     "outreach/connections.json"
     "outreach/config/persona.json"
+    "outreach/config/conversation_planner.json"
     "outreach/config/dashboard_routines.json"
     "outreach/logs/actions.jsonl"
     "outreach/logs/planned_messages.jsonl"
-    "outreach/queue/pending.json"
-    "outreach/queue/completed.json"
-    "outreach/queue/failed.json"
     "outreach/storage/web.pid"
-    "outreach/storage/worker.pid"
   )
   local p removed=0
   for p in "${paths[@]}"; do
@@ -384,7 +398,7 @@ main() {
   fi
 
   if [[ "$MCP_ONLY" -eq 0 ]]; then
-    if confirm "Stop web dashboard and worker?"; then
+    if confirm "Stop cron scheduler?"; then
       stop_processes "$repo"
     else
       note "skip: services left running"

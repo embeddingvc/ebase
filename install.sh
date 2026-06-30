@@ -310,6 +310,16 @@ ensure_repo() {
   step_done "Repository"
 }
 
+ensure_local_planner_config() {
+  local example="${REPO_ROOT}/outreach/config/conversation_planner.json.example"
+  local local_cfg="${REPO_ROOT}/outreach/config/conversation_planner.json"
+  if [[ -f "${example}" ]] && [[ ! -f "${local_cfg}" ]]; then
+    cp "${example}" "${local_cfg}"
+    info "Created outreach/config/conversation_planner.json from conversation_planner.json.example"
+    note "ok: local planner config created from template"
+  fi
+}
+
 install_project_deps() {
   step_begin "Installing Python dependencies and Playwright Chromium"
   cd "${REPO_ROOT}"
@@ -495,7 +505,7 @@ open_linkedin_tab_in_cdp() {
 
 launch_chrome_cdp() {
   step_begin "Launching Chrome with CDP for LinkedIn"
-  local chrome
+  local chrome svc="${REPO_ROOT}/bin/browser-service"
   chrome="$(chrome_binary)"
   if [[ -z "${chrome}" ]]; then
     warn "Google Chrome not found."
@@ -508,34 +518,66 @@ launch_chrome_cdp() {
   info "Chrome binary: ${chrome}"
   info "Profile: ${CHROME_PROFILE}  |  CDP: http://localhost:${CDP_PORT}"
 
-  if command -v curl >/dev/null 2>&1 && curl -sf "http://localhost:${CDP_PORT}/json/version" >/dev/null 2>&1; then
-    info "Chrome already exposing CDP on port ${CDP_PORT} — skipping launch."
-    open_linkedin_tab_in_cdp
-    note "ok: Chrome CDP already running on port ${CDP_PORT}"
+  if [[ ! -f "${svc}" ]]; then
+    warn "bin/browser-service not found — launching Chrome directly"
+    check_cdp_port
+    "${chrome}" \
+      --remote-debugging-port="${CDP_PORT}" \
+      --user-data-dir="${CHROME_PROFILE}" \
+      --no-first-run \
+      --no-default-browser-check \
+      --disable-extensions-except= \
+      "${LINKEDIN_LOGIN_URL}" \
+      >/dev/null 2>&1 &
+    wait_for_cdp 40 || true
+    step_done "Chrome"
+    return 0
+  fi
+  chmod +x "${svc}" 2>/dev/null || true
+
+  export OUTREACH_REPO_ROOT="${REPO_ROOT}"
+  export CDP_PORT CHROME_PROFILE
+  export CHROME_BIN="${chrome}"
+
+  info "Running bin/browser-service install…"
+  if ! "${svc}" install; then
+    warn "launchd/systemd install unavailable; launching Chrome directly"
+    check_cdp_port
+    "${chrome}" \
+      --remote-debugging-port="${CDP_PORT}" \
+      --user-data-dir="${CHROME_PROFILE}" \
+      --no-first-run \
+      --no-default-browser-check \
+      --disable-extensions-except= \
+      "${LINKEDIN_LOGIN_URL}" \
+      >/dev/null 2>&1 &
+    if wait_for_cdp 40; then
+      note "ok: Chrome launched (manual — no auto-start on reboot)"
+    else
+      note "warn: Chrome CDP not ready on port ${CDP_PORT}"
+    fi
     step_done "Chrome"
     return 0
   fi
 
-  check_cdp_port
+  case "$(uname -s)" in
+    Darwin)
+      note "ok: bin/browser-service install — launchd auto-start enabled"
+      ;;
+    Linux)
+      note "ok: bin/browser-service install — systemd user auto-start enabled"
+      ;;
+    *)
+      note "ok: bin/browser-service install completed"
+      ;;
+  esac
 
-  info "Opening Chrome with remote debugging (CDP port ${CDP_PORT})."
-  info "Playwright attaches to this live session (not headless Chromium)."
-  "${chrome}" \
-    --remote-debugging-port="${CDP_PORT}" \
-    --user-data-dir="${CHROME_PROFILE}" \
-    --no-first-run \
-    --no-default-browser-check \
-    --disable-extensions-except= \
-    "${LINKEDIN_LOGIN_URL}" \
-    >/dev/null 2>&1 &
-
-  info "Waiting for CDP (up to ~10s)…"
-  if wait_for_cdp 40; then
+  open_linkedin_tab_in_cdp
+  if wait_for_cdp 10; then
     info "Chrome CDP is ready on port ${CDP_PORT}."
-    note "ok: Chrome launched with CDP on port ${CDP_PORT}"
   else
-    warn "Chrome started but CDP port ${CDP_PORT} is not ready yet."
-    warn "Check for port conflicts: lsof -i :${CDP_PORT}   or retry: make browser"
+    warn "Chrome service installed but CDP port ${CDP_PORT} is not ready yet."
+    warn "Check: bin/browser-service status   or   make status"
     note "warn: Chrome CDP not ready on port ${CDP_PORT}"
   fi
   step_done "Chrome"
@@ -571,7 +613,7 @@ prompt_linkedin_login() {
   printf '%s\n' "  2. Sign in with your LinkedIn account."
   printf '%s\n' "  3. Confirm you see your feed or home — not the login page."
   printf '%s\n' ""
-  printf '%s\n' "  The outreach engine (MCP, worker, scheduler, skills) uses this"
+  printf '%s\n' "  The outreach engine (MCP, scheduler, skills) uses this"
   printf '%s\n' "  browser session only. Do not use a different Chrome profile."
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   printf '\n'
@@ -684,7 +726,7 @@ setup_planner_tone_and_examples() {
   fi
   if [[ ! -f "${cfg_path}" ]]; then
     info "Planner config not found at ${cfg_path} — skipping tone setup."
-    info "It will be created with defaults the first time the MCP runs."
+    info "Copy outreach/config/conversation_planner.json.example → conversation_planner.json, or re-run ./install.sh."
     note "skip: planner tone / examples (config missing)"
     step_done "Planner tone / examples (skipped)"
     return 0
@@ -740,80 +782,84 @@ persist_outreach_upgrade_config() {
 
 start_cron_server() {
   if [[ "${SKIP_WEB}" == "1" ]]; then
-    step_begin "Starting cron scheduler server"
+    step_begin "Installing cron scheduler service"
     info "Skipped — --no-cron / LINKEDIN_OUTREACH_SKIP_WEB=1"
     note "skip: cron server not started (--no-cron)"
     step_done "Cron server (skipped)"
     return 0
   fi
 
-  step_begin "Starting cron scheduler server"
+  step_begin "Installing cron scheduler service"
   cd "${REPO_ROOT}"
-  local pid_file="${REPO_ROOT}/${CRON_PID_FILE}"
-  local log_file="${REPO_ROOT}/${CRON_LOG}"
+  local svc="${REPO_ROOT}/bin/cron-service"
   local health_url="http://${WEB_HOST}:${WEB_PORT}/health"
+  local log_file="${REPO_ROOT}/${CRON_LOG}"
 
-  mkdir -p "$(dirname "${pid_file}")" "$(dirname "${log_file}")"
+  mkdir -p "$(dirname "${log_file}")" outreach/storage
 
-  if [[ -f "${pid_file}" ]]; then
-    local old_pid
-    old_pid="$(cat "${pid_file}")"
-    if kill -0 "${old_pid}" 2>/dev/null && curl -sf "${health_url}" >/dev/null 2>&1; then
-      info "Cron server already running at ${health_url} (pid=${old_pid})"
-      note "ok: cron server at ${health_url}"
-      step_done "Cron server"
-      return 0
-    fi
-    rm -f "${pid_file}"
-  fi
-
-  if command -v curl >/dev/null 2>&1 && curl -sf "${health_url}" >/dev/null 2>&1; then
-    info "Cron server already reachable at ${health_url}"
-    note "ok: cron server already running at ${health_url}"
-    step_done "Cron server"
+  if [[ ! -f "${svc}" ]]; then
+    warn "bin/cron-service not found — cannot install auto-start"
+    note "warn: cron service installer missing"
+    step_done "Cron server (installer missing)"
     return 0
   fi
+  chmod +x "${svc}" 2>/dev/null || true
+
+  export OUTREACH_REPO_ROOT="${REPO_ROOT}"
+  export WEB_HOST WEB_PORT CRON_LOG
+  export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 
   if port_in_use "${WEB_PORT}"; then
-    local holder
-    holder="$(describe_port_holder "${WEB_PORT}")"
-    warn "Port ${WEB_PORT} is in use but cron health check failed."
-    [[ -n "${holder}" ]] && warn "  ${holder}"
-    warn "Free the port or set WEB_PORT, then run: make cron"
-    note "warn: cron port ${WEB_PORT} conflict — server not started"
+    warn "Port ${WEB_PORT} is already in use — cron server may fail to bind."
+    warn "Free the port first, then re-run: make cron"
+    note "warn: port ${WEB_PORT} in use — cron server not started"
     step_done "Cron server (port conflict)"
     return 0
   fi
 
-  info "Health URL: ${health_url}  |  Log: ${log_file}"
-  if ! nohup uv run uvicorn cron.server:app --host "${WEB_HOST}" --port "${WEB_PORT}" \
-    >>"${log_file}" 2>&1 & then
-    warn "Failed to start uvicorn. See ${log_file} or run: make cron"
-    note "warn: cron server failed to start"
-    step_done "Cron server (start failed)"
-    return 0
+  info "Running bin/cron-service install…"
+  if ! "${svc}" install; then
+    warn "launchd/systemd install unavailable; starting cron via nohup fallback"
+    if ! "${svc}" start; then
+      warn "Failed to start cron. See ${log_file} or run: make cron"
+      note "warn: cron server failed to start"
+      step_done "Cron server (start failed)"
+      return 0
+    fi
+    note "ok: cron server started (nohup fallback — no auto-start on reboot)"
+  else
+    case "$(uname -s)" in
+      Darwin)
+        note "ok: bin/cron-service install — launchd auto-start enabled"
+        ;;
+      Linux)
+        note "ok: bin/cron-service install — systemd user auto-start enabled"
+        ;;
+      *)
+        note "ok: bin/cron-service install completed"
+        ;;
+    esac
   fi
-  echo $! >"${pid_file}"
 
   if command -v curl >/dev/null 2>&1; then
     info "Waiting for cron health (up to ~10s)…"
     local i
     for i in $(seq 1 40); do
       if curl -sf "${health_url}" >/dev/null 2>&1; then
-        info "Cron server ready (pid=$(cat "${pid_file}"))"
-        note "ok: cron server at ${health_url}"
+        info "Cron server ready at ${health_url}"
+        info "Log: ${log_file}"
         step_done "Cron server"
         return 0
       fi
       sleep 0.25
     done
-    warn "Cron server process started but health check did not succeed yet."
+    warn "Cron service started but health check did not succeed yet."
     warn "Tail logs: tail -f ${log_file}"
-    warn "Restart: make stop-cron && make cron"
-    note "warn: cron server started but health check pending — see ${log_file}"
+    warn "Status: make status   |   bin/cron-service status"
+    note "warn: cron health check pending — see ${log_file}"
   else
-    info "Cron server process started (pid=$(cat "${pid_file}")); install curl to verify health."
-    note "ok: cron server process started (health not verified — no curl)"
+    info "Cron service started; install curl to verify health."
+    note "ok: cron service started (health not verified — no curl)"
   fi
   step_done "Cron server"
 }
@@ -1022,6 +1068,8 @@ print_final_summary() {
   fi
   if [[ "${SKIP_WEB}" != "1" ]]; then
     printf '  • Cron scheduler health: %s\n' "${cron_health_url}"
+    printf '  • Browser auto-start: launchd (macOS) or systemd user unit (Linux) via bin/browser-service\n'
+    printf '  • Cron auto-start: launchd (macOS) or systemd user unit (Linux) via bin/cron-service\n'
     printf '  • Stop scheduler: make stop-cron   |   Status: make status\n'
   fi
   printf '  • Dev dashboard + mock regression: see testing/README.md\n'
@@ -1033,7 +1081,7 @@ print_final_summary() {
   else
     printf '  • MCP is registered for all projects; skills live in %s/\n' "${USER_CLAUDE_SKILLS}"
   fi
-  printf '  • Day-to-day: make browser   make cron   make run\n'
+  printf '  • Day-to-day: make status   (Chrome + cron auto-start via install.sh)\n'
   printf '%s\n' "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
@@ -1043,6 +1091,8 @@ main() {
   ensure_repo
   [[ -n "${REPO_ROOT}" ]] || { warn "Could not determine repository root."; exit 1; }
   REPO_ROOT="$(cd "${REPO_ROOT}" && pwd)"
+
+  ensure_local_planner_config
 
   install_project_deps
   sync_claude_skills_to_home

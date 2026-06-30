@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.2] - 2026-06-25
+
+### Added
+- `bin/cron-service` — systemd-compatible cron scheduler service with port-conflict guard and graceful shutdown
+- `bin/browser-service` — standalone browser service with `json-status` subcommand for machine-readable health output
+- `bin/outreach-upgrade` — in-place upgrade script that stops the cron service gracefully before reinstalling
+- `cron/status_report.py` — structured status reporting for the cron scheduler
+- `cron/system_status.py` — system-level health and status checks
+- MCP `get_cron_status` tool for querying cron scheduler state from Claude
+- Connection-request send verification: `_verify_connection_request_sent` polls after submission to confirm delivery
+- Tests for connection-request verification (`test_connection_request_verify.py`), status report (`test_status_report.py`), and system status (`test_system_status.py`)
+
+### Changed
+- Removed worker queue (`outreach/worker.py`) — job dispatch is now handled directly by the cron scheduler
+- `conversation_planner.json` replaced by `conversation_planner.json.example` to avoid committing live operator config
+- `outreach/browser.py` substantially expanded with async probe helpers and connection-health utilities
+- `install.sh` overhauled to register and start the new systemd service units
+- `Makefile` simplified; removed duplicate `browser` target
+- `tools/server.py` and `testing/tools/server.py` refactored to align with new service architecture
+
+### Fixed
+- Cron service stops gracefully before reinstall in `outreach-upgrade` (prevented stale lock files)
+- Port-conflict guard restored in `start_cron_server` (was accidentally dropped in a prior refactor)
+- `browser-service json-status` now uses `python3 -c json.dumps` for safe, locale-independent JSON output
+- systemd `ExecStart` paths quoted to handle spaces in install directories
+- `_verify_connection_request_sent` adds an initial delay before polling (prevents false negatives on slow pages)
+- Replaced deprecated `asyncio.get_event_loop()` with `asyncio.get_running_loop()` in async methods
+- `probe_cron_server` now decouples `reachable` from `ok` so partial failures are reported accurately
+- `_parse_iso` catches `AttributeError` for non-string values in JSONL log entries
+
 ## [1.0.0.1] - 2026-06-15
 
 ### Added

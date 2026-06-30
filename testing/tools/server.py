@@ -59,7 +59,8 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     append_action_log         Append one JSON line to .../logs/actions.jsonl.
     append_planned_message_log Append one JSON line to planned_messages.jsonl.
     save_outreach_report      Write .../storage/reports/<id>.md.
-    remove_pending_queue_entry Remove a prospect from .../queue/pending.json.
+    get_cron_status           Cron scheduler health, sweep config, and recent activity (JSON).
+    get_browser_status        Chrome CDP health and auto-start service status (JSON).
 
 ── Mock logic ────────────────────────────────────────────────────────────────
 
@@ -83,13 +84,13 @@ from urllib.parse import urlparse
 # is live-only). It lives under ``testing/`` and needs both roots importable:
 # the core root for ``outreach.browser`` and ``tools/`` helpers, the testing
 # root for ``outreach.mock`` (namespace package portion) and ``tools/mock.py``.
-_TOOLS_DIR = Path(__file__).resolve().parent   # testing/tools
-_ROOT = _TOOLS_DIR.parent                      # testing/
-_CORE_ROOT = _ROOT.parent                      # core repo root
+_TOOLS_DIR = Path(__file__).resolve().parent  # testing/tools
+_ROOT = _TOOLS_DIR.parent  # testing/
+_CORE_ROOT = _ROOT.parent  # core repo root
 sys.path.append(str(_CORE_ROOT))
 sys.path.append(str(_ROOT))
-sys.path.append(str(_CORE_ROOT / "tools"))     # notify, rate_limits
-sys.path.append(str(_TOOLS_DIR))               # import mock
+sys.path.append(str(_CORE_ROOT / "tools"))  # notify, rate_limits
+sys.path.append(str(_TOOLS_DIR))  # import mock
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -108,18 +109,16 @@ logger = logging.getLogger("linkedin.server")
 
 from mcp.server.fastmcp import FastMCP
 
-import mock as _mock                    # testing/tools/mock.py
-import notify as _notify                # core tools/notify.py
+import mock as _mock  # testing/tools/mock.py
+import notify as _notify  # core tools/notify.py
 from outreach.browser import LinkedInBrowser
-from rate_limits import rate_limit      # core tools/rate_limits.py
+from rate_limits import rate_limit  # core tools/rate_limits.py
 
 # ── MCP server ────────────────────────────────────────────────────────────────
 
 mcp = FastMCP(
     "linkedin",
-    instructions=(
-        "Controls a LinkedIn browser session via Playwright CDP. "
-    ),
+    instructions=("Controls a LinkedIn browser session via Playwright CDP. "),
 )
 
 # ── Background task handle (live mode only) ───────────────────────────────────
@@ -129,6 +128,7 @@ _browse_lock = asyncio.Lock()
 
 
 # ── Mock mode flag ────────────────────────────────────────────────────────────
+
 
 def _mock_mcp_enabled() -> bool:
     """Return True to run in mock mode (no browser, scripted responses).
@@ -162,6 +162,7 @@ def _outreach_base() -> Path:
 # ═════════════════════════════════════════════════════════════════════════════
 # LINKEDIN TOOLS (mock delegates to mock.py; live drives the browser)
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 @mcp.tool()
 async def scrape_profile(
@@ -394,21 +395,31 @@ async def send_connection_request(
 
     logger.info(
         "send_connection_request called  url=%s  note_len=%d  cdp=%s",
-        profile_url, len(note), cdp_url,
+        profile_url,
+        len(note),
+        cdp_url,
     )
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
-        success = await li.send_connection_request(profile_url, note=note)
-    if success:
+        err = await li.send_connection_request(profile_url, note=note)
+    if err is None:
         rate_limit("connection_request", profile_url=profile_url, record=True)
         logger.info("send_connection_request finished  url=%s", profile_url)
         return "ok"
-    return (
-        "Connection request could not be sent. "
-        "The Connect button was not found — the profile may already be a "
-        "connection, have a pending request, or the button is hidden behind "
-        "the More menu."
-    )
+    logger.warning("send_connection_request failed  url=%s  err=%s", profile_url, err)
+    try:
+        _append_action_log_row(
+            {
+                "action": "connection_request_failed",
+                "profile_url": profile_url.strip(),
+                "error": err,
+                "note_char_count": len(note),
+                "timestamp": _iso_now(),
+            }
+        )
+    except Exception:
+        logger.exception("send_connection_request: failed to write action log")
+    return err
 
 
 @mcp.tool()
@@ -608,7 +619,10 @@ async def download_profile_pdf(
     """
     if _mock_mcp_enabled():
         return json.dumps(
-            {"ok": False, "error": "download_profile_pdf is not supported in mock mode."},
+            {
+                "ok": False,
+                "error": "download_profile_pdf is not supported in mock mode.",
+            },
             ensure_ascii=False,
             indent=2,
         )
@@ -623,7 +637,9 @@ async def download_profile_pdf(
     logger.info("download_profile_pdf called  url=%s  cdp=%s", profile_url, cdp_url)
     async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
         await li.assert_logged_in()
-        path = await li.download_profile_pdf(profile_url, save_dir=save_dir, filename=filename)
+        path = await li.download_profile_pdf(
+            profile_url, save_dir=save_dir, filename=filename
+        )
 
     rate_limit("profile_view", profile_url=profile_url, record=True)
     out = {
@@ -682,7 +698,8 @@ async def browse_forever(
         async def _run() -> None:
             logger.info(
                 "browse_forever session started  cdp=%s  reaction=%s",
-                cdp_url, reaction,
+                cdp_url,
+                reaction,
             )
             try:
                 async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
@@ -697,9 +714,7 @@ async def browse_forever(
         loop = asyncio.get_event_loop()
         _browse_task = loop.create_task(_run())
 
-    logger.info(
-        "browse_forever task created  cdp=%s  reaction=%s", cdp_url, reaction
-    )
+    logger.info("browse_forever task created  cdp=%s  reaction=%s", cdp_url, reaction)
     return (
         f"browse_forever started — reaction={reaction!r}, cdp={cdp_url}. "
         "The session runs in the background until the server process exits."
@@ -718,6 +733,13 @@ from datetime import datetime, timezone
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _append_action_log_row(row: dict) -> None:
+    path = _outreach_base() / "logs" / "actions.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -743,6 +765,31 @@ def _planner_config_path() -> Path:
     return _outreach_base() / "config" / "conversation_planner.json"
 
 
+def _bundled_planner_example_path() -> Path:
+    return (
+        Path(__file__).resolve().parent.parent
+        / "outreach"
+        / "config"
+        / "conversation_planner.json.example"
+    )
+
+
+def _load_planner_core() -> dict:
+    """Load campaign/rules/router from local file, bundled example, or defaults."""
+    for path in (_planner_config_path(), _bundled_planner_example_path()):
+        if not path.exists():
+            continue
+        try:
+            core = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.exception("_load_planner_core: invalid %s", path)
+            continue
+        if isinstance(core, dict):
+            _strip_legacy_identity_from_core(core)
+            return core
+    return _default_conversation_planner_config()
+
+
 def _persona_path() -> Path:
     return _outreach_base() / "config" / "persona.json"
 
@@ -752,7 +799,12 @@ def _style_example_prompts_path() -> Path:
 
 
 def _bundled_style_example_prompts_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "outreach" / "config" / "style_example_prompts.json"
+    return (
+        Path(__file__).resolve().parent.parent
+        / "outreach"
+        / "config"
+        / "style_example_prompts.json"
+    )
 
 
 def _load_style_example_prompts() -> dict:
@@ -770,7 +822,9 @@ def _load_style_example_prompts() -> dict:
     return {"version": 1, "tone_questions": [], "style_example_prompts": []}
 
 
-_ALLOWED_PLANNER_PERSONA_KEYS = frozenset({"name", "role", "organization", "specialization"})
+_ALLOWED_PLANNER_PERSONA_KEYS = frozenset(
+    {"name", "role", "organization", "specialization"}
+)
 _ALLOWED_PLANNER_ORGANIZATION_KEYS = frozenset({"description"})
 
 
@@ -805,7 +859,9 @@ def _load_planner_identity() -> dict:
     try:
         data = json.loads(persona_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        logger.exception("_load_planner_identity: invalid or unreadable %s", persona_path)
+        logger.exception(
+            "_load_planner_identity: invalid or unreadable %s", persona_path
+        )
         return base
     if not isinstance(data, dict):
         return base
@@ -958,9 +1014,7 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
                 return "message_rules.style_examples must be an array"
             for idx, item in enumerate(examples):
                 if not isinstance(item, dict):
-                    return (
-                        f"message_rules.style_examples[{idx}] must be an object"
-                    )
+                    return f"message_rules.style_examples[{idx}] must be an object"
                 reply = item.get("reply")
                 if not isinstance(reply, str) or not reply.strip():
                     return (
@@ -985,13 +1039,9 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
                 return f"conversation_end_goals.{bucket} must be an array"
             for idx, item in enumerate(items):
                 if not isinstance(item, dict):
-                    return (
-                        f"conversation_end_goals.{bucket}[{idx}] must be an object"
-                    )
+                    return f"conversation_end_goals.{bucket}[{idx}] must be an object"
                 if not item.get("id"):
-                    return (
-                        f"conversation_end_goals.{bucket}[{idx}].id is required"
-                    )
+                    return f"conversation_end_goals.{bucket}[{idx}].id is required"
 
     router = config.get("router")
     if isinstance(router, dict):
@@ -1003,7 +1053,9 @@ def _validate_conversation_planner_config(config: dict) -> str | None:
             if not isinstance(priorities, list) or not all(
                 isinstance(item, str) and item.strip() for item in priorities
             ):
-                return "router.step4_path_priority must be an array of non-empty strings"
+                return (
+                    "router.step4_path_priority must be an array of non-empty strings"
+                )
         routes = router.get("signal_routes")
         if routes is not None and not isinstance(routes, dict):
             return "router.signal_routes must be an object"
@@ -1298,7 +1350,14 @@ async def save_connection(
             data = {"connections": []}
 
         connections = data["connections"]
-        idx = next((i for i, c in enumerate(connections) if c.get("profile_url") == profile_url), None)
+        idx = next(
+            (
+                i
+                for i, c in enumerate(connections)
+                if c.get("profile_url") == profile_url
+            ),
+            None,
+        )
         previous: dict | None = connections[idx] if idx is not None else None
 
         explicit = _normalize_prospect_id_slug(prospect_id)
@@ -1310,7 +1369,8 @@ async def save_connection(
         connected_at = _iso_now()
         if previous and previous.get("connected_at"):
             if status == "ended" or (
-                status == "connected" and previous.get("connection_status") == "connected"
+                status == "connected"
+                and previous.get("connection_status") == "connected"
             ):
                 connected_at = previous["connected_at"]
 
@@ -1336,9 +1396,7 @@ async def save_connection(
             resolved_pid,
             path,
         )
-        return (
-            f"ok — saved {clean_name} ({profile_url}) prospect_id={resolved_pid!r} to {path}"
-        )
+        return f"ok — saved {clean_name} ({profile_url}) prospect_id={resolved_pid!r} to {path}"
     except Exception as exc:
         logger.exception("save_connection failed")
         return f"error: {exc}"
@@ -1580,9 +1638,7 @@ async def upsert_conversation(
         _atomic_write_json(path, data)
         stage = data.get("outreach_stage") if isinstance(data, dict) else None
         if stage in _TERMINAL_CONVERSATION_STAGES:
-            linkedin_url = (
-                data.get("linkedin_url") if isinstance(data, dict) else None
-            )
+            linkedin_url = data.get("linkedin_url") if isinstance(data, dict) else None
             _mark_connection_ended(prospect_id, linkedin_url)
             _sync_prospect_outreach_stage(prospect_id, str(stage))
             if prior_stage not in _TERMINAL_CONVERSATION_STAGES:
@@ -1640,10 +1696,8 @@ async def append_action_log(
     """
     path = _outreach_base() / "logs" / "actions.jsonl"
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
         parsed = json.loads(entry)  # validate it's real JSON before writing
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(parsed, ensure_ascii=False) + "\n")
+        _append_action_log_row(parsed)
         logger.info("append_action_log: wrote to %s", path)
         return "ok"
     except Exception as exc:
@@ -1713,39 +1767,46 @@ async def save_outreach_report(
 
 
 @mcp.tool()
-async def remove_pending_queue_entry(prospect_id: str) -> str:
+async def get_browser_status() -> str:
     """
-    Remove every queue item with matching ``prospect_id`` from queue/pending.json under the active outreach root.
-    No-op if the file is missing or the id is not present.
+    Return Chrome CDP health and launchd/systemd auto-start status as JSON.
+
+    Includes whether CDP is reachable on the configured port, Chrome version
+    string when up, profile path, and service manager registration.
     """
-    path = _outreach_base() / "queue" / "pending.json"
     try:
-        if not path.exists():
-            return "ok — no pending queue file"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        queue = data.get("queue")
-        if not isinstance(queue, list):
-            return "error: pending.json missing a list at key 'queue'"
-        before = len(queue)
-        data["queue"] = [
-            item
-            for item in queue
-            if not (isinstance(item, dict) and item.get("prospect_id") == prospect_id)
-        ]
-        if len(data["queue"]) == before:
-            return "ok — prospect not in queue (no change)"
-        _atomic_write_json(path, data)
-        logger.info("remove_pending_queue_entry: removed %s", prospect_id)
-        return "ok"
+        from cron.system_status import probe_browser
+
+        return json.dumps(probe_browser(), indent=2, ensure_ascii=False)
     except Exception as exc:
-        logger.exception("remove_pending_queue_entry failed")
+        logger.exception("get_browser_status failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def get_cron_status() -> str:
+    """
+    Return cron scheduler health, per-sweep configuration, and recent tick/run
+    activity as JSON.
+
+    Includes whether the cron HTTP server is reachable, whether a launchd/systemd
+    auto-start unit is installed, configured sweeps (connection sync and
+    conversation plan), and restart hints.
+    """
+    try:
+        from cron.status_report import build_cron_status
+
+        return json.dumps(build_cron_status(), indent=2, ensure_ascii=False)
+    except Exception as exc:
+        logger.exception("get_cron_status failed")
         return f"error: {exc}"
 
 
 @mcp.tool()
 async def get_conversation_planner_config() -> str:
     """
-    Read planner config from config/conversation_planner.json and identity from
+    Read planner config from config/conversation_planner.json (or the bundled
+    conversation_planner.json.example when local file is absent) and identity from
     config/persona.json under the active outreach data root (optional; defaults apply if absent).
 
     Returns a single merged JSON object (persona + organization + campaign, rules,
@@ -1753,19 +1814,7 @@ async def get_conversation_planner_config() -> str:
     edits are reflected immediately.
     """
     try:
-        planner_path = _planner_config_path()
-        if not planner_path.exists():
-            core = _default_conversation_planner_config()
-            _atomic_write_json(planner_path, core)
-        else:
-            core = json.loads(planner_path.read_text(encoding="utf-8"))
-            if not isinstance(core, dict):
-                return (
-                    "error: "
-                    + str(planner_path)
-                    + " must contain a JSON object at top level"
-                )
-            _strip_legacy_identity_from_core(core)
+        core = _load_planner_core()
         err = _validate_conversation_planner_config(core)
         if err:
             return f"error: {err}"

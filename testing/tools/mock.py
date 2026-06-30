@@ -75,7 +75,12 @@ _MOCK_STORE_VERSION = 1
 
 def sessions_store_path() -> Path:
     """JSON store under ``outreach/mock/``, same tree as MCP outreach filesystem in mock mode."""
-    return Path(__file__).resolve().parent.parent / "outreach" / "mock" / _MOCK_SESSIONS_FILENAME
+    return (
+        Path(__file__).resolve().parent.parent
+        / "outreach"
+        / "mock"
+        / _MOCK_SESSIONS_FILENAME
+    )
 
 
 def _atomic_write_json(path: Path, data: object) -> None:
@@ -141,6 +146,7 @@ TEST_CASES: dict[str, dict[str, Any]] = load_test_cases()
 # SESSION STATE
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class MockSession:
     """
@@ -156,6 +162,7 @@ class MockSession:
         Count of operator bubbles in ``history`` after each tool call (synced for
         mock state previews).  The connection note counts as one operator message.
     """
+
     test_case_id: str
     profile_url: str
     connection_accepted: bool = False
@@ -175,6 +182,7 @@ sessions: dict[str, MockSession] = {}
 # ═════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 def normalise_url(url: str) -> str:
     """
@@ -242,7 +250,9 @@ _END_CONDITION_TO_REASON: dict[str, str] = {
 }
 
 
-def _mock_mark_connection_ended(prospect_id: str, profile_url: str | None = None) -> None:
+def _mock_mark_connection_ended(
+    prospect_id: str, profile_url: str | None = None
+) -> None:
     """Mirror server ``_mark_connection_ended`` for mock outreach data."""
     path = _mock_outreach_base() / "connections.json"
     if not path.is_file():
@@ -280,9 +290,14 @@ def _maybe_mark_session_ended(session: MockSession) -> None:
                 conv = json.loads(conv_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 conv = None
-            if isinstance(conv, dict) and conv.get("outreach_stage") in ("ended", "dead"):
+            if isinstance(conv, dict) and conv.get("outreach_stage") in (
+                "ended",
+                "dead",
+            ):
                 session.ended = True
-                session.ended_reason = conv.get("ended_reason") or _END_CONDITION_TO_REASON.get(
+                session.ended_reason = conv.get(
+                    "ended_reason"
+                ) or _END_CONDITION_TO_REASON.get(
                     TEST_CASES[session.test_case_id].get("end_condition", ""),
                     conv.get("ended_reason"),
                 )
@@ -423,21 +438,24 @@ def _append_prospect_reply(session: MockSession, reply_index: int) -> None:
 # MANAGEMENT HANDLERS
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 async def handle_list_test_cases() -> str:
     """Return a JSON summary of all built-in test cases."""
     result = []
     for tc_id, tc in TEST_CASES.items():
         replies = tc.get("replies", [])
         non_null = sum(1 for r in replies if r is not None)
-        result.append({
-            "test_case_id": tc_id,
-            "description": tc["description"],
-            "connection_accepted": tc["connection_accepted"],
-            "end_condition": tc["end_condition"],
-            "total_reply_slots": len(replies),
-            "non_null_replies": non_null,
-            "prospect_name": tc["prospect"].get("name"),
-        })
+        result.append(
+            {
+                "test_case_id": tc_id,
+                "description": tc["description"],
+                "connection_accepted": tc["connection_accepted"],
+                "end_condition": tc["end_condition"],
+                "total_reply_slots": len(replies),
+                "non_null_replies": non_null,
+                "prospect_name": tc["prospect"].get("name"),
+            }
+        )
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 
@@ -461,7 +479,9 @@ async def handle_load_test_case(test_case_id: str, profile_url: str) -> str:
         profile_url=profile_url,
         connection_accepted=tc["connection_accepted"],
     )
-    logger.info("handle_load_test_case  test_case=%s  profile=%s", test_case_id, profile_url)
+    logger.info(
+        "handle_load_test_case  test_case=%s  profile=%s", test_case_id, profile_url
+    )
     _persist_mock_sessions()
 
     replies = tc.get("replies", [])
@@ -498,7 +518,7 @@ async def handle_get_mock_state(profile_url: str) -> str:
     replies = tc.get("replies", [])
     remaining_slots = len(replies) - session.messages_sent
     remaining_non_null = sum(
-        1 for r in replies[session.messages_sent:] if r is not None
+        1 for r in replies[session.messages_sent :] if r is not None
     )
 
     history_preview = [
@@ -534,6 +554,7 @@ async def handle_get_mock_state(profile_url: str) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 # TOOL HANDLERS
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 async def handle_scrape_profile(profile_url: str) -> str:
     """
@@ -684,14 +705,43 @@ async def handle_parse_profile(profile_url: str) -> str:
         },
         "crawl_log": [
             {"phase": "main_profile", "status": "ok", "mock": True},
-            {"phase": "mutual_connections", "status": "ok", "count": len(mutual_objs), "mock": True},
-            {"phase": "experience", "status": "ok", "items": len(experience), "mock": True},
-            {"phase": "education", "status": "ok", "items": len(education), "mock": True},
+            {
+                "phase": "mutual_connections",
+                "status": "ok",
+                "count": len(mutual_objs),
+                "mock": True,
+            },
+            {
+                "phase": "experience",
+                "status": "ok",
+                "items": len(experience),
+                "mock": True,
+            },
+            {
+                "phase": "education",
+                "status": "ok",
+                "items": len(education),
+                "mock": True,
+            },
             {"phase": "skills", "status": "ok", "items": len(skills), "mock": True},
-            {"phase": "recommendations", "status": "ok", "items": len(recommendations), "mock": True},
-            {"phase": "activity_feed", "status": "ok", "posts": len(updates), "mock": True},
+            {
+                "phase": "recommendations",
+                "status": "ok",
+                "items": len(recommendations),
+                "mock": True,
+            },
+            {
+                "phase": "activity_feed",
+                "status": "ok",
+                "posts": len(updates),
+                "mock": True,
+            },
         ],
-        "meta": {"parsed_at": parsed_at, "schema": "linkedin.parse_profile/v2", "mock": True},
+        "meta": {
+            "parsed_at": parsed_at,
+            "schema": "linkedin.parse_profile/v2",
+            "mock": True,
+        },
     }
     logger.info(
         "parse_profile MOCK (test case: %s)  url=%s",
@@ -730,7 +780,9 @@ async def handle_send_connection_request(profile_url: str, note: str) -> str:
 
     logger.info(
         "send_connection_request MOCK (test case: %s)  url=%s  note_len=%d",
-        session.test_case_id, profile_url, len(note),
+        session.test_case_id,
+        profile_url,
+        len(note),
     )
 
     if session.connection_accepted:
@@ -789,7 +841,9 @@ async def handle_fetch_chat_history(profile_url: str) -> str:
 
     logger.info(
         "fetch_chat_history MOCK (test case: %s)  url=%s  history_len=%d",
-        session.test_case_id, profile_url, len(session.history),
+        session.test_case_id,
+        profile_url,
+        len(session.history),
     )
     return json.dumps(session.history, ensure_ascii=False, indent=2)
 

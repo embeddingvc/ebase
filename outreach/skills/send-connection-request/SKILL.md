@@ -1,6 +1,6 @@
 ---
 name: send-connection-request
-description: Send a LinkedIn connection request via the MCP send_connection_request tool (no note by default; optional personalised note only when the user supplies one or explicitly asks for a message), then persist pipeline state with save_connection, upsert_conversation, append_action_log, and remove_pending_queue_entry — never raw outreach/ paths. When a note is requested, ground it in the runtime planner campaign with per-prospect and per-invocation overrides. Use when the user asks to connect with, invite, or add a LinkedIn profile.
+description: Send a LinkedIn connection request via the MCP send_connection_request tool (no note by default; optional personalised note only when the user supplies one or explicitly asks for a message), then persist pipeline state with save_connection, upsert_conversation, and append_action_log — never raw outreach/ paths. When a note is requested, ground it in the runtime planner campaign with per-prospect and per-invocation overrides. Use when the user asks to connect with, invite, or add a LinkedIn profile.
 ---
 
 # Send Connection Request
@@ -55,7 +55,7 @@ Scrape a LinkedIn profile, then immediately send a connection request — no con
 
 **Filesystem rule:** Do not read or write `outreach/` files via workspace paths. Use MCP tools from
 `tools/server.py`: **`get_conversation_planner_config`**, **`save_connection`**, **`get_conversation`**,
-**`upsert_conversation`**, **`upsert_prospect`**, **`append_action_log`**, **`remove_pending_queue_entry`**.
+**`upsert_conversation`**, **`upsert_prospect`**, **`append_action_log`**.
 
 **Test / fixtures:** Never read, edit, or overwrite `tests/fixtures/` or other `tests/` files during
 connection flows. Do not seed MCP upserts from fixture JSON unless the user is explicitly maintaining tests.
@@ -199,9 +199,8 @@ When you have a `prospect_id` for the pipeline:
 ```json
 { "action": "connection_request_sent", "prospect_id": "<id>", "timestamp": "<ISO>", "note_char_count": <n>, "outreach_topic": "<resolved topic>" }
 ```
-6. If you use the pending queue: **`remove_pending_queue_entry(prospect_id)`**
 
-### 7. Update the connections list (MCP)
+### 6. Update the connections list (MCP)
 
 Call **`save_connection`** with:
 

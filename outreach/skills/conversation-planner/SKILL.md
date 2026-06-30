@@ -65,7 +65,7 @@ those tools.
 commands. The MCP host’s cwd is unknown — always use the **outreach filesystem tools** in
 `tools/server.py` (`get_connections`, `get_prospect`, `get_conversation`, `upsert_conversation`,
 `upsert_prospect`, `save_connection`, `append_action_log`, `append_planned_message_log`,
-`save_outreach_report`, `remove_pending_queue_entry`).
+`save_outreach_report`, `save_connection`).
 
 For each prospect run, treat this skill as the **conductor**: run the phases below in order unless
 the user asks for a read-only sync or plan-only mode.
@@ -77,7 +77,7 @@ the source of truth for operator profile, campaign goal/topic, and desired end s
 across runs; always read fresh so file edits apply immediately without skill reload or server restart.
 
 Server-managed files:
-- Planner (campaign, end goals, message rules, router): `outreach/config/conversation_planner.json`
+- Planner (campaign, end goals, message rules, router): `outreach/config/conversation_planner.json` (typically gitignored — copy `conversation_planner.json.example` locally; `./install.sh` does this on first run)
 - Operator identity (**`persona`**, **`organization`**): `outreach/config/persona.json` (typically gitignored — copy `persona.json.example` locally)
 
 The MCP **`get_conversation_planner_config`** response merges both so you always have one JSON with `persona` + `organization` + the rest.
@@ -125,7 +125,6 @@ allows it; rely on documented fields below and MCP-returned JSON.
 | `append_planned_message_log` | Append one PlannedMessage object (`entry` = stringified JSON). |
 | `merge_conversation_planner_identity` | Shallow-merge `persona` and/or `organization` JSON blobs into `outreach/config/persona.json` after you distill copy (typically following Skill `sync-planner-persona-from-linkedin`). |
 | `save_outreach_report` | Write markdown body for end-of-sequence reports (`prospect_id`, `content`). |
-| `remove_pending_queue_entry` | Remove a prospect from `pending.json` when the pipeline uses the queue. |
 | `schedule_meeting` | Book (mock) or reserve a call after email + time are known; persist `meeting_link` on the conversation. |
 
 ---
@@ -208,8 +207,6 @@ After a **successful** send:
    `{ "action": "message_sent", "prospect_id": "<id>", "last_action": "<action>", "timestamp": "<ISO>" }`.
 4. If `conversation.outreach_stage` changed, merge the same `outreach_stage` into `prospect` and call
    **`upsert_prospect(prospect_id, json.dumps(prospect))`**.
-5. If the pipeline uses the pending queue, **`remove_pending_queue_entry(prospect_id)`** when
-   appropriate.
 
 ### Modes
 
@@ -561,8 +558,7 @@ Expected: `end_conversation = true`, `ended_reason = "no_response"`, `message = 
   shell HTTP clients against `linkedin.com`. See **Browser tool policy** at
   the top of this skill for the full enforcement rules.
 - **MCP only for outreach data I/O.** Use `get_*`, `upsert_*`, `append_*`,
-  `save_outreach_report`, `save_connection`,
-  `remove_pending_queue_entry` — **never** construct `outreach/...` paths or
+  `save_outreach_report`, `save_connection` — **never** construct `outreach/...` paths or
   use workspace file tools for these records.
 - **One outbound touch per run.** Never compose or send two sequence steps
   in a single execution.

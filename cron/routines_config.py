@@ -236,9 +236,7 @@ def _normalize_per_prospect(
             v = backoff_dict.get(k)
             try:
                 if v is not None:
-                    merged_backoff[k] = (
-                        float(v) if k == "multiplier" else int(v)
-                    )
+                    merged_backoff[k] = float(v) if k == "multiplier" else int(v)
             except (TypeError, ValueError):
                 pass
         if "error_jitter" in backoff_dict:
@@ -294,9 +292,7 @@ def _minutes_of_day(hhmm: str) -> int:
     return int(hh) * 60 + int(mm)
 
 
-def in_active_window(
-    routine: dict[str, Any], *, now: datetime | None = None
-) -> bool:
+def in_active_window(routine: dict[str, Any], *, now: datetime | None = None) -> bool:
     """True if ``routine`` may run at ``now`` (default: server local time).
 
     Unset/blank window means "always on". When ``start == end`` the routine
@@ -420,7 +416,9 @@ def _validate_per_prospect_row_strict(row: dict[str, Any]) -> str | None:
     except ValueError as exc:
         return str(exc)
     if (start is None) != (end is None):
-        return "active_window_start and active_window_end must both be set or both blank"
+        return (
+            "active_window_start and active_window_end must both be set or both blank"
+        )
     if start is not None and start == end:
         return "active_window_start and active_window_end must differ"
 
@@ -536,7 +534,9 @@ def validate_routine(row: dict[str, Any]) -> str | None:
     except ValueError as exc:
         return str(exc)
     if (start is None) != (end is None):
-        return "active_window_start and active_window_end must both be set or both blank"
+        return (
+            "active_window_start and active_window_end must both be set or both blank"
+        )
     if start is not None and start == end:
         return "active_window_start and active_window_end must differ"
     return None

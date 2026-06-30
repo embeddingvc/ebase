@@ -67,9 +67,7 @@ def test_is_due_when_no_record_or_past_next() -> None:
 
 
 def test_apply_no_change_starts_from_initial() -> None:
-    record = apply_result(
-        None, policy=SYNC_DEFAULT, result="no_change", now=NOW
-    )
+    record = apply_result(None, policy=SYNC_DEFAULT, result="no_change", now=NOW)
     assert record is not None
     # First bump: 30 * 1.5 = 45 minutes.
     assert record[KEY_INTERVAL] == 45
@@ -135,19 +133,14 @@ def test_apply_tool_error_no_jitter_policy() -> None:
 
 def test_reschedule_to_window_no_op_without_window() -> None:
     record = {KEY_NEXT_AT: NOW.isoformat()}
-    assert (
-        reschedule_to_window(record, window_start=None, window_end=None)
-        == record
-    )
+    assert reschedule_to_window(record, window_start=None, window_end=None) == record
 
 
 def test_reschedule_to_window_same_day_pushes_forward() -> None:
     # Server-local 03:00 falls outside 09:00–17:00; should push to next 09:00.
     local_three_am = datetime(2026, 5, 28, 3, 0, 0).astimezone()
     record = {KEY_NEXT_AT: local_three_am.astimezone(timezone.utc).isoformat()}
-    updated = reschedule_to_window(
-        record, window_start="09:00", window_end="17:00"
-    )
+    updated = reschedule_to_window(record, window_start="09:00", window_end="17:00")
     assert updated is not None
     # The window-open time same date, in local TZ.
     expected_local = local_three_am.replace(hour=9, minute=0, second=0, microsecond=0)
@@ -158,18 +151,14 @@ def test_reschedule_to_window_same_day_pushes_forward() -> None:
 def test_reschedule_to_window_inside_window_unchanged() -> None:
     local_noon = datetime(2026, 5, 28, 12, 0, 0).astimezone()
     record = {KEY_NEXT_AT: local_noon.astimezone(timezone.utc).isoformat()}
-    updated = reschedule_to_window(
-        record, window_start="09:00", window_end="17:00"
-    )
+    updated = reschedule_to_window(record, window_start="09:00", window_end="17:00")
     assert updated == record
 
 
 def test_reschedule_to_window_after_window_pushes_to_next_day() -> None:
     local_evening = datetime(2026, 5, 28, 20, 0, 0).astimezone()
     record = {KEY_NEXT_AT: local_evening.astimezone(timezone.utc).isoformat()}
-    updated = reschedule_to_window(
-        record, window_start="09:00", window_end="17:00"
-    )
+    updated = reschedule_to_window(record, window_start="09:00", window_end="17:00")
     assert updated is not None
     expected_local = local_evening.replace(
         hour=9, minute=0, second=0, microsecond=0
@@ -182,18 +171,12 @@ def test_reschedule_to_window_handles_overnight_window() -> None:
     # 22:00–06:00 window. 03:00 local is inside.
     local_three = datetime(2026, 5, 28, 3, 0, 0).astimezone()
     record = {KEY_NEXT_AT: local_three.astimezone(timezone.utc).isoformat()}
-    updated = reschedule_to_window(
-        record, window_start="22:00", window_end="06:00"
-    )
+    updated = reschedule_to_window(record, window_start="22:00", window_end="06:00")
     assert updated == record
 
 
 def test_consecutive_counter_increments_on_no_change() -> None:
-    record = apply_result(
-        None, policy=SYNC_DEFAULT, result="no_change", now=NOW
-    )
+    record = apply_result(None, policy=SYNC_DEFAULT, result="no_change", now=NOW)
     assert record is not None and record["consecutive_no_change"] == 1
-    record2 = apply_result(
-        record, policy=SYNC_DEFAULT, result="no_change", now=NOW
-    )
+    record2 = apply_result(record, policy=SYNC_DEFAULT, result="no_change", now=NOW)
     assert record2 is not None and record2["consecutive_no_change"] == 2
