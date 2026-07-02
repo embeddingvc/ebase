@@ -211,9 +211,12 @@ async def scrape_profile(
         return err
 
     logger.info("scrape_profile called  url=%s  cdp=%s", profile_url, cdp_url)
-    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-        await li.assert_logged_in()
-        profile = await li.scrape_profile(profile_url)
+    try:
+        async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+            await li.assert_logged_in()
+            profile = await li.scrape_profile(profile_url)
+    except RuntimeError as exc:
+        return str(exc)
     rate_limit("profile_view", profile_url=profile_url, record=True)
     logger.info("scrape_profile finished  name=%s", profile.get("name"))
     return json.dumps(profile, ensure_ascii=False, indent=2)
@@ -279,14 +282,17 @@ async def parse_profile(
         cdp_url,
         max_activity_posts,
     )
-    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-        await li.assert_logged_in()
-        parsed = await li.parse_profile(
-            profile_url,
-            max_activity_posts=max_activity_posts,
-            detail_scroll_rounds=detail_scroll_rounds,
-            activity_extra_scroll_rounds=activity_extra_scroll_rounds,
-        )
+    try:
+        async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+            await li.assert_logged_in()
+            parsed = await li.parse_profile(
+                profile_url,
+                max_activity_posts=max_activity_posts,
+                detail_scroll_rounds=detail_scroll_rounds,
+                activity_extra_scroll_rounds=activity_extra_scroll_rounds,
+            )
+    except RuntimeError as exc:
+        return str(exc)
     rate_limit("profile_view", profile_url=profile_url, record=True)
     subj = parsed.get("subject") or {}
     ident = subj.get("identity") or {}
@@ -335,9 +341,12 @@ async def is_first_degree_connection(
     logger.info(
         "is_first_degree_connection called  url=%s  cdp=%s", profile_url, cdp_url
     )
-    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-        await li.assert_logged_in()
-        first = await li.is_first_degree_connection(profile_url)
+    try:
+        async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+            await li.assert_logged_in()
+            first = await li.is_first_degree_connection(profile_url)
+    except RuntimeError as exc:
+        return str(exc)
     rate_limit("profile_view", profile_url=profile_url, record=True)
     out = {
         "first_degree": first,
@@ -396,9 +405,12 @@ async def send_connection_request(
         len(note),
         cdp_url,
     )
-    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-        await li.assert_logged_in()
-        err = await li.send_connection_request(profile_url, note=note)
+    try:
+        async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+            await li.assert_logged_in()
+            err = await li.send_connection_request(profile_url, note=note)
+    except RuntimeError as exc:
+        return str(exc)
     if err is None:
         rate_limit("connection_request", profile_url=profile_url, record=True)
         logger.info("send_connection_request finished  url=%s", profile_url)
@@ -452,10 +464,13 @@ async def send_message(
         return err
 
     logger.info("send_message called  url=%s  cdp=%s", profile_url, cdp_url)
-    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-        await li.assert_logged_in()
-        search_name = _lookup_connection_name(profile_url)
-        success = await li.send_message(profile_url, message, search_name=search_name)
+    try:
+        async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+            await li.assert_logged_in()
+            search_name = _lookup_connection_name(profile_url)
+            success = await li.send_message(profile_url, message, search_name=search_name)
+    except RuntimeError as exc:
+        return str(exc)
     if success:
         rate_limit("dm", profile_url=profile_url, record=True)
         logger.info("send_message finished  url=%s", profile_url)
@@ -495,10 +510,13 @@ async def fetch_chat_history(
         "self": false = sent by prospect
     """
     logger.info("fetch_chat_history called  url=%s  cdp=%s", profile_url, cdp_url)
-    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-        await li.assert_logged_in()
-        search_name = _lookup_connection_name(profile_url)
-        items = await li.fetch_chat_history(profile_url, search_name=search_name)
+    try:
+        async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+            await li.assert_logged_in()
+            search_name = _lookup_connection_name(profile_url)
+            items = await li.fetch_chat_history(profile_url, search_name=search_name)
+    except RuntimeError as exc:
+        return str(exc)
     logger.info(
         "fetch_chat_history finished  url=%s  count=%d", profile_url, len(items)
     )
@@ -534,7 +552,7 @@ async def create_new_post(
         async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
             await li.assert_logged_in()
             success = await li.create_new_post(text)
-    except ValueError as exc:
+    except (ValueError, RuntimeError) as exc:
         return str(exc)
     if success:
         logger.info("create_new_post finished")
@@ -573,9 +591,12 @@ async def reply_to_post(
         "ok" on success, or an error description.
     """
     logger.info("reply_to_post called  url=%s  cdp=%s", post_url, cdp_url)
-    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-        await li.assert_logged_in()
-        success = await li.comment_on_post(post_url, comment)
+    try:
+        async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+            await li.assert_logged_in()
+            success = await li.comment_on_post(post_url, comment)
+    except RuntimeError as exc:
+        return str(exc)
     if success:
         logger.info("reply_to_post finished  url=%s", post_url)
         return "ok"
@@ -604,11 +625,14 @@ async def download_profile_pdf(
         return json.dumps({"ok": False, "error": err}, ensure_ascii=False, indent=2)
 
     logger.info("download_profile_pdf called  url=%s  cdp=%s", profile_url, cdp_url)
-    async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
-        await li.assert_logged_in()
-        path = await li.download_profile_pdf(
-            profile_url, save_dir=save_dir, filename=filename
-        )
+    try:
+        async with LinkedInBrowser(mode="attach", cdp_url=cdp_url) as li:
+            await li.assert_logged_in()
+            path = await li.download_profile_pdf(
+                profile_url, save_dir=save_dir, filename=filename
+            )
+    except RuntimeError as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2)
 
     rate_limit("profile_view", profile_url=profile_url, record=True)
     out = {
