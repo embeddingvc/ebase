@@ -61,6 +61,7 @@ as MCP tools so Claude — or any MCP host — can drive outreach workflows.
     save_outreach_report      Write .../storage/reports/<id>.md.
     get_cron_status           Cron scheduler health, sweep config, and recent activity (JSON).
     get_browser_status        Chrome CDP health and auto-start service status (JSON).
+    get_outreach_stats        Funnel, reply-rate, and sequence-step stats across all outreach data (JSON).
 
 ── Mock logic ────────────────────────────────────────────────────────────────
 
@@ -1799,6 +1800,29 @@ async def get_cron_status() -> str:
         return json.dumps(build_cron_status(), indent=2, ensure_ascii=False)
     except Exception as exc:
         logger.exception("get_cron_status failed")
+        return f"error: {exc}"
+
+
+@mcp.tool()
+async def get_outreach_stats(since: str | None = None) -> str:
+    """
+    Aggregate connections.json, conversations/*.json, and prospects/*.json
+    into a funnel report as JSON: pipeline stage counts, connection
+    acceptance rate, reply rate, outcomes by ended_reason, sequence-step
+    reply effectiveness, and conversion rate by end_goal.
+
+    Parameters
+    ----------
+    since : str | None
+        Optional "YYYY-MM-DD" cutoff. When set, only connections/conversations
+        touched on or after that date are counted.
+    """
+    try:
+        from outreach.stats import build_outreach_stats
+
+        return json.dumps(build_outreach_stats(since), indent=2, ensure_ascii=False)
+    except Exception as exc:
+        logger.exception("get_outreach_stats failed")
         return f"error: {exc}"
 
 
