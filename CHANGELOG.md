@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.6] - 2026-07-04
+
+### Added
+- `cron.system_status.check_services()` — probes cron + browser health, logging a warning for either that's unreachable
+- `bin/outreach-update-check` now also probes cron/browser health and prints `SERVICE_DOWN <service> <url>` lines; `outreach-upgrade`, `setup-outreach`, and `send-connection-request` skills surface these to the operator at skill start (non-blocking, no email)
+
+### Changed
+- MCP server's background startup thread renamed `_run_upgrade_check` → `_run_system_check`; now runs the version check and the service health probes together, tracked in a single `_system_status` dict
+
 ## [1.0.0.5] - 2026-07-04
 
 ### Fixed
