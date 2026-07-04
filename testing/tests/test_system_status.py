@@ -15,3 +15,10 @@ def test_probe_browser_unreachable() -> None:
 def test_format_browser_lines() -> None:
     lines = ss.format_browser_lines()
     assert any("Chrome CDP" in line for line in lines)
+
+
+def test_check_services_returns_both_probes() -> None:
+    result = ss.check_services()
+    assert "browser" in result and "cron_server" in result
+    assert "reachable" in result["browser"]
+    assert "reachable" in result["cron_server"]

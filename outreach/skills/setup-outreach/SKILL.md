@@ -45,17 +45,18 @@ If `mcp__linkedin__*` tools are not registered in the current session, **stop an
 operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
 `make claude-install`). Do **not** pick up a different browser tool as a fallback.
 
-## Update check (run first)
+## System check (run first)
 
-Before setup work, check for a newer ebase version:
+Before setup work, check service health and for a newer ebase version:
 
 ```bash
 bin/outreach-update-check 2>/dev/null || true
 ```
 
-If output is `UPGRADE_AVAILABLE <old> <new>`, follow the inline flow in skill
-**`outreach-upgrade`** (ask to upgrade). On
-`UPGRADED`, `JUST_UPGRADED`, `UP_TO_DATE`, or empty output, continue below.
+Follow the inline flow in skill **`outreach-upgrade`** for every line printed:
+`SERVICE_DOWN <service> <url>` (inform the user, non-blocking), then
+`UPGRADE_AVAILABLE` (ask to upgrade), `UPGRADED`/`JUST_UPGRADED` (log and
+continue), or `UP_TO_DATE`/empty (continue silently).
 Do not block on network failures.
 
 **Filesystem rule:** Never read or write `outreach/config/` via raw paths or shell. Use MCP **`get_conversation_planner_config`**, **`get_style_example_prompts`**, **`merge_conversation_planner_identity`**, and **`upsert_conversation_planner_config`** only.
@@ -318,7 +319,7 @@ Mark all checklist items done.
 | **`get_conversation_planner_config`** | Read merged config (persona + planner) |
 | **`get_style_example_prompts`** | Tone + style-example questionnaire (steps 3b–3c) |
 | **`upsert_conversation_planner_config`** | Campaign + tone + style examples (step 3); writes the full planner JSON minus persona/organization |
-| **`outreach-upgrade`** (skill) | Version check + optional git pull when `UPGRADE_AVAILABLE` (run at skill start) |
+| **`outreach-upgrade`** (skill) | System check: service health + version check, optional git pull when `UPGRADE_AVAILABLE` (run at skill start) |
 
 For a standalone LinkedIn-only identity refresh (no wizard), use **`sync-planner-persona-from-linkedin`** (`parse_profile`-first).
 
