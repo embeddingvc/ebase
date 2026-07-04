@@ -5,6 +5,7 @@ Combined Chrome + cron status for ``make status`` and tooling.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import sys
@@ -13,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from cron.status_report import build_cron_status, format_sweep_lines
+from cron.status_report import build_cron_status, format_sweep_lines, probe_cron_server
 
 _BROWSER_LAUNCHD_LABEL = "com.embeddingvc.ebase.browser"
 _BROWSER_SYSTEMD_UNIT = "ebase-browser.service"
@@ -86,6 +87,29 @@ def probe_browser() -> dict[str, Any]:
         "auto_start_on_reboot": managed,
         "restart_hint": restart_hint,
     }
+
+
+def check_services(*, logger: logging.Logger | None = None) -> dict[str, Any]:
+    """
+    Probe the cron server and browser CDP endpoint, logging a warning for
+    whichever is unreachable. Intended to run alongside the startup
+    "auto update check" — no email/paging, just a log line an operator
+    tailing server.log will see.
+    """
+    log = logger or logging.getLogger(__name__)
+    browser = probe_browser()
+    cron_server = probe_cron_server()
+    if not browser.get("running"):
+        log.warning(
+            "Health check: browser CDP unreachable — %s",
+            browser.get("health_error") or "no response",
+        )
+    if not cron_server.get("running"):
+        log.warning(
+            "Health check: cron server unreachable — %s",
+            cron_server.get("health_error") or "no response",
+        )
+    return {"browser": browser, "cron_server": cron_server}
 
 
 def format_browser_lines() -> list[str]:

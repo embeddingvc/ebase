@@ -36,17 +36,18 @@ If `mcp__linkedin__*` tools are not registered in the current session, **stop an
 operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
 `make claude-install`). Do **not** pick up a different browser tool as a fallback.
 
-## Update check (run first)
+## System check (run first)
 
-Before connecting, check for a newer ebase version:
+Before connecting, check service health and for a newer ebase version:
 
 ```bash
 bin/outreach-update-check 2>/dev/null || true
 ```
 
-If output is `UPGRADE_AVAILABLE <old> <new>`, follow the inline flow in skill
-**`outreach-upgrade`** (ask to upgrade). On
-`UPGRADED`, `JUST_UPGRADED`, `UP_TO_DATE`, or empty output, continue below.
+Follow the inline flow in skill **`outreach-upgrade`** for every line printed:
+`SERVICE_DOWN <service> <url>` (inform the user, non-blocking), then
+`UPGRADE_AVAILABLE` (ask to upgrade), `UPGRADED`/`JUST_UPGRADED` (log and
+continue), or `UP_TO_DATE`/empty (continue silently).
 Do not block on network failures.
 
 Scrape a LinkedIn profile, then immediately send a connection request — no confirmation step needed.

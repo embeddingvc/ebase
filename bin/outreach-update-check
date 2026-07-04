@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# outreach-update-check — periodic version check for outreach skills.
+# outreach-update-check — periodic system check for outreach skills:
+# version check + cron/browser service health.
 #
-# Output (one line, or nothing):
+# Output (zero or more lines):
+#   SERVICE_DOWN <service> <url>       (browser or cron; printed first, non-blocking)
 #   UPGRADE_AVAILABLE <local> <remote>
 #   UPGRADED <old> <remote>
 #   JUST_UPGRADED <old> <local>
@@ -11,6 +13,20 @@
 #   --force   bust cache and snooze
 #   --apply   run upgrade when an update is available
 set -euo pipefail
+
+CDP_PORT="${CDP_PORT:-9222}"
+WEB_HOST="${WEB_HOST:-127.0.0.1}"
+WEB_PORT="${WEB_PORT:-3847}"
+
+check_services() {
+  command -v curl >/dev/null 2>&1 || return 0
+  local browser_url="http://127.0.0.1:${CDP_PORT}/json/version"
+  local cron_url="http://${WEB_HOST}:${WEB_PORT}/health"
+  curl -sf --max-time 2 "$browser_url" >/dev/null 2>&1 || echo "SERVICE_DOWN browser $browser_url"
+  curl -sf --max-time 2 "$cron_url" >/dev/null 2>&1 || echo "SERVICE_DOWN cron $cron_url"
+}
+
+check_services
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"

@@ -15,7 +15,7 @@ Voice triggers: "upgrade outreach", "update linkedin outreach", "get latest vers
 
 ---
 
-## Inline upgrade flow (referenced by setup-outreach, send-connection-request)
+## Inline system check flow (referenced by setup-outreach, send-connection-request)
 
 Run at the **start** of those skills (before any outreach work):
 
@@ -23,16 +23,19 @@ Run at the **start** of those skills (before any outreach work):
 bin/outreach-update-check 2>/dev/null || true
 ```
 
-Parse the **one-line** output:
+This can print **zero or more** lines — a `SERVICE_DOWN` line per unreachable
+service, then at most one version line. Parse each:
 
 | Output | Action |
 |--------|--------|
+| `SERVICE_DOWN <service> <url>` | Tell the user: "{service} is unreachable ({url})." Suggest `bin/browser-service start` or `bin/cron-service start` accordingly. Do **not** ask a question — inform and continue. |
 | `UPGRADE_AVAILABLE <old> <new>` | Follow **Step 1** below (always ask the user) |
 | `UPGRADED <old> <new>` | Log success, continue with the invoking skill |
 | `JUST_UPGRADED <old> <new>` | Log success, continue with the invoking skill |
 | `UP_TO_DATE <ver>` or empty | Continue silently |
 
-Network or git failures produce no output — **do not block** the invoking skill.
+Network or git failures produce no version output — **do not block** the invoking skill.
+`SERVICE_DOWN` is informational only and never blocks either.
 
 ### Step 1: Ask the user
 
@@ -99,8 +102,9 @@ Resume the skill the user originally invoked (setup-outreach, send-connection-re
    ```bash
    bin/outreach-update-check --force 2>/dev/null || true
    ```
-2. If `UPGRADE_AVAILABLE <old> <new>`: follow Steps 1–2.
-3. If no output: tell the user they're on the latest version (read `VERSION` in the repo root).
+2. If any `SERVICE_DOWN <service> <url>` lines print, tell the user (informational, non-blocking).
+3. If `UPGRADE_AVAILABLE <old> <new>`: follow Steps 1–2.
+4. If no version line: tell the user they're on the latest version (read `VERSION` in the repo root).
 
 ---
 
