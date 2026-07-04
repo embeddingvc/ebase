@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.4] - 2026-07-04
+
+### Added
+- `get_outreach_stats` MCP tool — reports outreach activity counts (connections sent/accepted, messages sent, replies) over a given time window
+- `/stats` skill for querying outreach stats from Claude
+
 ## [1.0.0.3] - 2026-06-26
 
 ### Fixed
