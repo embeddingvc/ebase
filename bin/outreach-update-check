@@ -22,8 +22,8 @@ check_services() {
   command -v curl >/dev/null 2>&1 || return 0
   local browser_url="http://127.0.0.1:${CDP_PORT}/json/version"
   local cron_url="http://${WEB_HOST}:${WEB_PORT}/health"
-  curl -sf "$browser_url" >/dev/null 2>&1 || echo "SERVICE_DOWN browser $browser_url"
-  curl -sf "$cron_url" >/dev/null 2>&1 || echo "SERVICE_DOWN cron $cron_url"
+  curl -sf --max-time 2 "$browser_url" >/dev/null 2>&1 || echo "SERVICE_DOWN browser $browser_url"
+  curl -sf --max-time 2 "$cron_url" >/dev/null 2>&1 || echo "SERVICE_DOWN cron $cron_url"
 }
 
 check_services
