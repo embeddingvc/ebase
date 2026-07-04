@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.5] - 2026-07-04
+
+### Fixed
+- `bin/outreach-upgrade` no longer crashes on macOS's stock bash (3.2) with `local_allow[@]: unbound variable` — replaced the empty-array pattern (unsafe under `set -u` before bash 4.4) with a plain string
+
 ## [1.0.0.4] - 2026-07-04
 
 ### Added
