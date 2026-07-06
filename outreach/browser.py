@@ -531,6 +531,11 @@ def _pp_structure_activity_update(index: int, post: dict[str, Any]) -> dict[str,
 
 # ── Browser wrapper ───────────────────────────────────────────────────────────
 
+# ponytail: matched by substring against the real Chrome zero-open-tabs CDP
+# error; if Chrome's wording changes, this stops matching and _attach falls
+# back to re-raising instead of retrying — update the substring then.
+_ZERO_TAB_CDP_ERROR = "setDownloadBehavior"
+
 
 def _open_blank_tab(cdp_url: str) -> None:
     """Ask Chrome's CDP HTTP endpoint to open a tab (bypasses Playwright context creation).
@@ -663,11 +668,15 @@ class LinkedInBrowser:
         """
         try:
             self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
-        except Error:
-            # With zero open tabs, connect_over_cdp itself fails (it has no
-            # default context to attach to) instead of returning a browser
-            # with an empty contexts list. Ask Chrome's own CDP HTTP endpoint
-            # to open a tab first, then connect.
+        except Error as e:
+            # With zero open tabs, connect_over_cdp itself fails with this
+            # specific CDP error (it has no default context to attach to)
+            # instead of returning a browser with an empty contexts list.
+            # Anything else (wrong port, Chrome not running, auth failure)
+            # is a genuine connection failure — re-raise so it surfaces
+            # immediately instead of being delayed by a doomed retry.
+            if _ZERO_TAB_CDP_ERROR not in str(e):
+                raise
             await asyncio.to_thread(_open_blank_tab, self.cdp_url)
             self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
         self._is_attached = True
