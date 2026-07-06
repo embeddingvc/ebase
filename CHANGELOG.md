@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 - `LinkedInBrowser._attach` no longer fails to reconnect when the managed Chrome has zero open tabs — `connect_over_cdp` itself throws `Browser.setDownloadBehavior: Browser context management is not supported` in that state (rather than returning an empty `contexts` list), so the first connect attempt is now wrapped and falls back to opening a blank tab via the CDP HTTP endpoint before retrying
 - `bin/browser-service` now prefers Playwright's bundled Chromium ("Chrome for Testing") over system Chrome/Chromium when resolving the browser binary, since it supports the CDP multi-context calls system Chrome rejects
 
+### Upgrade note
+- Existing installs: after upgrading, run `bin/browser-service install` to relaunch the managed browser under Playwright's Chromium. This reuses the same `--user-data-dir` profile, but the switch to a new browser binary drops the existing LinkedIn session — **you'll need to log in to LinkedIn again** in the relaunched window (or run `/setup-outreach` to restore it) before scraping/messaging tools will work.
+
 ## [1.0.0.6] - 2026-07-04
 
 ### Added
