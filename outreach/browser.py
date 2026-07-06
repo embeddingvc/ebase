@@ -2126,7 +2126,9 @@ class LinkedInBrowser:
                 await self._page.keyboard.press("Enter")
                 await _human_pause(0.8, 1.4)
 
-                # Requirement: after searching, open the first visible person/thread result.
+                # After searching, prefer a result matching profile hints (same check
+                # as the non-search fallback below); only take the first visible
+                # result if nothing matches, and warn since that's a guess.
                 search_rows = self._page.locator(
                     "a[href*='/messaging/thread/'], "
                     ".msg-conversation-listitem a, "
@@ -2134,14 +2136,21 @@ class LinkedInBrowser:
                     "li.msg-conversation-listitem, "
                     "[data-view-name*='search'] a[href*='/messaging/']"
                 )
-                for i in range(min(await search_rows.count(), 30)):
-                    cand = search_rows.nth(i)
-                    try:
-                        if await cand.is_visible():
-                            row = cand
-                            break
-                    except Exception:
-                        continue
+                row = await _find_thread_row_in(search_rows)
+                if row is None:
+                    for i in range(min(await search_rows.count(), 30)):
+                        cand = search_rows.nth(i)
+                        try:
+                            if await cand.is_visible():
+                                row = cand
+                                logger.warning(
+                                    "No hint match in search results for profile=%s; "
+                                    "falling back to first visible result.",
+                                    profile_url,
+                                )
+                                break
+                        except Exception:
+                            continue
 
         # Fallback when search UI/results are unavailable: try matching visible threads.
         if row is None:
@@ -2162,11 +2171,266 @@ class LinkedInBrowser:
                     break
 
         if row is None:
-            logger.warning("No messaging thread matched profile=%s", profile_url)
+            # No existing thread (e.g. a connection accepted without ever
+            # exchanging a message never gets a row in search/inbox) — start
+            # one via the compose typeahead instead. The header/profile-url
+            # checks below still verify the resulting thread before send.
+            if not await self._start_new_conversation_via_compose(profile_url, query):
+                logger.warning("No messaging thread matched profile=%s", profile_url)
+                return False
+        else:
+            await _human_click(self._page, row)
+            await _human_pause(0.7, 1.2)
+
+        if query and not await self._thread_header_matches(query):
+            logger.warning(
+                "Opened thread header does not match expected name '%s' for "
+                "profile=%s; treating as no match.",
+                query,
+                profile_url,
+            )
             return False
 
-        await _human_click(self._page, row)
-        await _human_pause(0.7, 1.2)
+        if not await self._thread_profile_url_matches(profile_url):
+            return False
+
+        return True
+
+    async def _start_new_conversation_via_compose(
+        self, profile_url: str, query: str
+    ) -> bool:
+        """
+        Fallback for when inbox search finds no thread at all — e.g. a
+        connection accepted without a note never gets a conversation row
+        until someone messages them first. Uses the "Compose a new message"
+        button and its recipient typeahead instead.
+
+        Only selects a recipient; the caller's existing header/profile-url
+        checks still verify the resulting thread before anything is sent.
+        """
+        if not query:
+            logger.info("_start_new_conversation_via_compose: no query name to search for.")
+            return False
+
+        compose_btn = self._page.locator(
+            "button.msg-conversations-container__compose-btn, "
+            "button[aria-label*='Compose' i]"
+        ).first
+        if not await compose_btn.count():
+            logger.info("_start_new_conversation_via_compose: compose button not found.")
+            return False
+        await _human_click(self._page, compose_btn)
+        await _human_pause(0.4, 0.8)
+
+        recipient_input = self._page.locator(
+            ".msg-connections-typeahead__search-field, "
+            "input[placeholder*='Type a name' i]"
+        ).first
+        try:
+            await expect(recipient_input).to_be_visible(timeout=EL_TIMEOUT)
+        except Exception:
+            logger.info(
+                "_start_new_conversation_via_compose: recipient field never appeared."
+            )
+            return False
+
+        await _human_click(self._page, recipient_input)
+        for ch in query:
+            await self._page.keyboard.type(ch)
+            await asyncio.sleep(random.uniform(0.04, 0.14))
+        await _human_pause(0.6, 1.1)
+
+        options = self._page.locator("li.msg-connections-typeahead__search-result")
+        match: Locator | None = None
+        for i in range(min(await options.count(), 20)):
+            opt = options.nth(i)
+            try:
+                if not await opt.is_visible():
+                    continue
+                name_text = (
+                    (
+                        await opt.locator(
+                            ".msg-connections-typeahead__entity-description-list dt"
+                        ).inner_text()
+                    )
+                    or ""
+                ).strip().lower()
+            except Exception:
+                continue
+            name = name_text.split("•")[0].strip()
+            if query.lower() in name or name in query.lower():
+                match = opt
+                break
+
+        if match is None:
+            for i in range(min(await options.count(), 20)):
+                opt = options.nth(i)
+                try:
+                    if await opt.is_visible():
+                        match = opt
+                        logger.warning(
+                            "No name match in compose typeahead for profile=%s; "
+                            "falling back to first visible result.",
+                            profile_url,
+                        )
+                        break
+                except Exception:
+                    continue
+
+        if match is None:
+            logger.info(
+                "_start_new_conversation_via_compose: no candidates for profile=%s",
+                profile_url,
+            )
+            return False
+
+        await _human_click(self._page, match)
+        await _human_pause(0.5, 0.9)
+        return True
+
+    async def _thread_header_matches(self, query: str) -> bool:
+        """
+        Confirm the just-opened conversation's name matches ``query`` (the
+        search name/profile-derived name), as a final check against clicking
+        into the wrong thread. Returns True if the header can't be read at
+        all (selector drift), since that's not a wrong-thread signal.
+
+        A conversation just started via compose has no persisted thread id
+        yet (URL is ``.../messaging/thread/new/``) — its title bar just says
+        "New message", so the profile-card name is checked first and takes
+        priority over that generic, uninformative title.
+        """
+        header_candidates = [
+            self._page.locator(
+                ".msg-s-profile-card .profile-card-one-to-one__profile-link"
+            ).first,
+            self._page.locator(
+                ".msg-thread__link-to-profile .msg-entity-lockup__entity-title"
+            ).first,
+            self._page.locator(".msg-title-bar__title-bar-title h2").first,
+        ]
+        header = None
+        for cand in header_candidates:
+            try:
+                if await cand.count():
+                    header = cand
+                    break
+            except Exception:
+                continue
+        if header is None:
+            logger.info("_thread_header_matches: header selector found nothing; skipping.")
+            return True
+        try:
+            name = ((await header.inner_text()) or "").strip().lower()
+        except Exception as exc:
+            logger.info("_thread_header_matches: failed to read header (%s); skipping.", exc)
+            return True
+        if not name:
+            logger.info("_thread_header_matches: header text was empty; skipping.")
+            return True
+        q = query.lower()
+        return q in name or name in q
+
+    async def _thread_profile_url_matches(self, profile_url: str) -> bool:
+        """
+        Open the thread's profile link (a permanent ``/in/ACoAA…`` member ID,
+        not the vanity slug) exactly like a real user would — click it in
+        place — and read where LinkedIn's own client-side router lands,
+        then navigate back to the thread.
+
+        A direct fetch/navigation to that link doesn't show the vanity URL:
+        LinkedIn's server serves the ACoAA-member-ID URL as-is, and the
+        redirect to the vanity slug only happens via client-side routing
+        triggered by an in-app click. Name matching alone can't catch
+        same-name mismatches; the resolved profile URL is the ground truth.
+        Returns True if the link can't be read, or the redirect doesn't
+        resolve to a vanity URL in time, since that's not a wrong-thread
+        signal — just leaves us unable to verify.
+        """
+        expected = self._canonical_in_profile_url(profile_url).lower()
+
+        # A conversation just started via compose (URL .../messaging/thread/new/)
+        # renders its own profile card with a direct vanity-slug link already
+        # resolved — no click-and-observe-navigation needed for that case.
+        card_link = self._page.locator(
+            ".msg-s-profile-card .profile-card-one-to-one__profile-link"
+        ).first
+        if await card_link.count():
+            try:
+                href = (await card_link.get_attribute("href") or "").strip()
+            except Exception as exc:
+                logger.info(
+                    "_thread_profile_url_matches: failed to read profile-card link (%s); skipping.",
+                    exc,
+                )
+                href = ""
+            if href:
+                resolved = self._canonical_in_profile_url(href).lower()
+                if resolved != expected:
+                    logger.warning(
+                        "New-conversation profile card link (%s) resolved to %s, "
+                        "expected %s; treating as no match.",
+                        href,
+                        resolved,
+                        expected,
+                    )
+                    return False
+                return True
+
+        link = self._page.locator(".msg-thread__link-to-profile").first
+        try:
+            if not await link.count():
+                logger.info(
+                    "_thread_profile_url_matches: profile-link selector found nothing; skipping."
+                )
+                return True
+            href = (await link.get_attribute("href") or "").strip()
+        except Exception as exc:
+            logger.info("_thread_profile_url_matches: failed to read profile link (%s); skipping.", exc)
+            return True
+        if not href:
+            logger.info("_thread_profile_url_matches: profile-link href was empty; skipping.")
+            return True
+
+        resolved_raw = ""
+        try:
+            await _human_click(self._page, link)
+            await _human_pause(0.8, 1.5)
+            try:
+                await self._page.wait_for_url(
+                    lambda url: "/in/" in url.lower() and "acoaa" not in url.lower(),
+                    timeout=10_000,
+                )
+            except Exception:
+                pass
+            resolved_raw = self._page.url
+        except Exception as exc:
+            logger.info("_thread_profile_url_matches: clicking %s failed (%s); skipping.", href, exc)
+        finally:
+            try:
+                await self._page.go_back(timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+                await _human_pause(0.7, 1.2)
+            except Exception as exc:
+                logger.info("_thread_profile_url_matches: navigating back failed (%s).", exc)
+
+        if not resolved_raw or "acoaa" in resolved_raw.lower():
+            logger.info(
+                "_thread_profile_url_matches: %s never resolved to a vanity URL (got %s); skipping.",
+                href,
+                resolved_raw,
+            )
+            return True
+
+        resolved = self._canonical_in_profile_url(resolved_raw).lower()
+        if resolved != expected:
+            logger.warning(
+                "Opened thread's profile link (%s) resolved to %s, expected %s; "
+                "treating as no match.",
+                href,
+                resolved,
+                expected,
+            )
+            return False
         return True
 
     async def send_message(
