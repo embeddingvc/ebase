@@ -537,7 +537,10 @@ launch_chrome_cdp() {
 
   export OUTREACH_REPO_ROOT="${REPO_ROOT}"
   export CDP_PORT CHROME_PROFILE
-  export CHROME_BIN="${chrome}"
+  # Don't export CHROME_BIN here — resolve_chrome (bin/browser-service) picks
+  # Playwright's bundled Chromium first, falling back to this same system
+  # Chrome if that's unavailable. Forcing it here would skip that preference
+  # on every fresh install, not just reintroduce it on upgrades.
 
   info "Running bin/browser-service install…"
   if ! "${svc}" install; then
