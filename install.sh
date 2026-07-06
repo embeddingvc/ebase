@@ -633,6 +633,12 @@ persona_already_configured() {
   local example="${REPO_ROOT}/outreach/config/persona.json.example"
   [[ -f "${persona}" ]] || return 1
   [[ -f "${example}" ]] && cmp -s "${persona}" "${example}" && return 1
+  # ponytail: treat unparseable JSON (e.g. truncated by an interrupted prior
+  # install) as unconfigured so it gets re-synced instead of kept forever.
+  # Skips the check if python3 isn't on PATH yet.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "${persona}" >/dev/null 2>&1 || return 1
+  fi
   return 0
 }
 
