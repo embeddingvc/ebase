@@ -18,6 +18,25 @@ SEARCH_ROWS_SELECTOR = (
     "[data-view-name*='search'] a[href*='/messaging/']"
 )
 
+COMPOSE_BTN_SELECTOR = (
+    "button.msg-conversations-container__compose-btn, "
+    "button[aria-label*='Compose' i]"
+)
+RECIPIENT_INPUT_SELECTOR = (
+    ".msg-connections-typeahead__search-field, "
+    "input[placeholder*='Type a name' i]"
+)
+COMPOSE_OPTIONS_SELECTOR = "li.msg-connections-typeahead__search-result"
+
+
+def _make_compose_option(name_text: str, *, visible: bool = True) -> MagicMock:
+    opt = MagicMock()
+    opt.is_visible = AsyncMock(return_value=visible)
+    dt = MagicMock()
+    dt.inner_text = AsyncMock(return_value=name_text)
+    opt.locator = MagicMock(return_value=dt)
+    return opt
+
 
 def _make_row(*, href: str = "", text: str = "", visible: bool = True) -> MagicMock:
     row = MagicMock()
@@ -27,10 +46,9 @@ def _make_row(*, href: str = "", text: str = "", visible: bool = True) -> MagicM
     return row
 
 
-HEADER_SELECTOR = (
-    ".msg-thread__link-to-profile .msg-entity-lockup__entity-title, "
-    ".msg-title-bar__title-bar-title h2"
-)
+THREAD_LINK_HEADER_SELECTOR = ".msg-thread__link-to-profile .msg-entity-lockup__entity-title"
+TITLE_BAR_HEADER_SELECTOR = ".msg-title-bar__title-bar-title h2"
+PROFILE_CARD_LINK_SELECTOR = ".msg-s-profile-card .profile-card-one-to-one__profile-link"
 
 
 def _make_page(
@@ -38,6 +56,9 @@ def _make_page(
     *,
     header_name: str | None = None,
     profile_link_href: str | None = None,
+    compose_available: bool = False,
+    compose_options: list[MagicMock] | None = None,
+    profile_card_href: str | None = None,
 ) -> MagicMock:
     page = MagicMock()
     page.url = "https://www.linkedin.com/messaging/"
@@ -64,6 +85,23 @@ def _make_page(
     profile_link.get_attribute = AsyncMock(return_value=profile_link_href or "")
     page.profile_link = profile_link  # test-only handle, see _clicking_resolves_to()
 
+    compose_btn = MagicMock()
+    compose_btn.count = AsyncMock(return_value=1 if compose_available else 0)
+    page.compose_btn = compose_btn  # test-only handle, for click assertions
+
+    recipient_input = MagicMock()
+    page.recipient_input = recipient_input
+
+    options = compose_options or []
+    options_locator = MagicMock()
+    options_locator.count = AsyncMock(return_value=len(options))
+    options_locator.nth = MagicMock(side_effect=lambda i: options[i])
+
+    profile_card_link = MagicMock()
+    profile_card_link.count = AsyncMock(return_value=1 if profile_card_href is not None else 0)
+    profile_card_link.get_attribute = AsyncMock(return_value=profile_card_href or "")
+    profile_card_link.inner_text = AsyncMock(return_value=header_name or "")
+
     def locator_side_effect(sel: str):
         if sel == SEARCH_ROWS_SELECTOR:
             return rows_locator
@@ -71,11 +109,22 @@ def _make_page(
             m = MagicMock()
             m.first = search_box
             return m
-        if sel == HEADER_SELECTOR:
+        if sel == PROFILE_CARD_LINK_SELECTOR:
+            return MagicMock(first=profile_card_link)
+        if sel == THREAD_LINK_HEADER_SELECTOR:
             return MagicMock(first=header)
+        if sel == TITLE_BAR_HEADER_SELECTOR:
+            return MagicMock(first=MagicMock(count=AsyncMock(return_value=0)))
         if sel == ".msg-thread__link-to-profile":
             return MagicMock(first=profile_link)
+        if sel == COMPOSE_BTN_SELECTOR:
+            return MagicMock(first=compose_btn)
+        if sel == RECIPIENT_INPUT_SELECTOR:
+            return MagicMock(first=recipient_input)
+        if sel == COMPOSE_OPTIONS_SELECTOR:
+            return options_locator
         m = MagicMock()
+        m.count = AsyncMock(return_value=0)
         m.first = MagicMock()
         m.first.count = AsyncMock(return_value=0)
         return m
@@ -238,3 +287,88 @@ async def test_thread_profile_url_match_confirms_open():
         )
 
     assert ok
+
+
+@pytest.mark.asyncio
+async def test_no_thread_falls_back_to_compose_and_matches_recipient():
+    """A connection accepted without a note has no thread anywhere in the
+    inbox — must fall back to 'Compose a new message' and its typeahead.
+
+    The resulting draft (.../messaging/thread/new/) has no persisted thread
+    id, so its title bar just says "New message" — verification must use the
+    profile card's direct vanity-slug link instead (no click-resolve needed)."""
+    match = _make_compose_option("Jay Sato • 1st")
+    page = _make_page(
+        [],
+        header_name="Jay Sato",
+        profile_card_href="https://www.linkedin.com/in/jay-sato-263a85270/",
+        compose_available=True,
+        compose_options=[match],
+    )
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()) as click,
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+        patch(
+            "outreach.browser.expect",
+            new=MagicMock(return_value=MagicMock(to_be_visible=AsyncMock())),
+        ),
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert ok
+    click.assert_any_await(li._page, page.compose_btn)
+    click.assert_any_await(li._page, match)
+
+
+@pytest.mark.asyncio
+async def test_compose_fallback_wrong_candidate_caught_by_profile_check():
+    """Typeahead has two same-name candidates (a real LinkedIn scenario);
+    the name-only match can pick the wrong one, but the profile card's
+    resolved vanity URL must still catch it before send."""
+    wrong_match = _make_compose_option("Andrew Barreto • 2nd")
+    page = _make_page(
+        [],
+        header_name="Andrew Barreto",
+        profile_card_href="https://www.linkedin.com/in/a-different-andrew-barreto/",
+        compose_available=True,
+        compose_options=[wrong_match],
+    )
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+        patch(
+            "outreach.browser.expect",
+            new=MagicMock(return_value=MagicMock(to_be_visible=AsyncMock())),
+        ),
+        patch("outreach.browser.logger") as logger,
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/andrew-barreto-123abc/"
+        )
+
+    assert not ok
+    assert logger.warning.called
+
+
+@pytest.mark.asyncio
+async def test_no_thread_and_no_compose_button_returns_false():
+    page = _make_page([], compose_available=False)
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+        patch("outreach.browser.logger") as logger,
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert not ok
+    assert logger.warning.called
