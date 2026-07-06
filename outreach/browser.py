@@ -2126,7 +2126,9 @@ class LinkedInBrowser:
                 await self._page.keyboard.press("Enter")
                 await _human_pause(0.8, 1.4)
 
-                # Requirement: after searching, open the first visible person/thread result.
+                # After searching, prefer a result matching profile hints (same check
+                # as the non-search fallback below); only take the first visible
+                # result if nothing matches, and warn since that's a guess.
                 search_rows = self._page.locator(
                     "a[href*='/messaging/thread/'], "
                     ".msg-conversation-listitem a, "
@@ -2134,14 +2136,21 @@ class LinkedInBrowser:
                     "li.msg-conversation-listitem, "
                     "[data-view-name*='search'] a[href*='/messaging/']"
                 )
-                for i in range(min(await search_rows.count(), 30)):
-                    cand = search_rows.nth(i)
-                    try:
-                        if await cand.is_visible():
-                            row = cand
-                            break
-                    except Exception:
-                        continue
+                row = await _find_thread_row_in(search_rows)
+                if row is None:
+                    for i in range(min(await search_rows.count(), 30)):
+                        cand = search_rows.nth(i)
+                        try:
+                            if await cand.is_visible():
+                                row = cand
+                                logger.warning(
+                                    "No hint match in search results for profile=%s; "
+                                    "falling back to first visible result.",
+                                    profile_url,
+                                )
+                                break
+                        except Exception:
+                            continue
 
         # Fallback when search UI/results are unavailable: try matching visible threads.
         if row is None:
@@ -2167,7 +2176,39 @@ class LinkedInBrowser:
 
         await _human_click(self._page, row)
         await _human_pause(0.7, 1.2)
+
+        if query and not await self._thread_header_matches(query):
+            logger.warning(
+                "Opened thread header does not match expected name '%s' for "
+                "profile=%s; treating as no match.",
+                query,
+                profile_url,
+            )
+            return False
+
         return True
+
+    async def _thread_header_matches(self, query: str) -> bool:
+        """
+        Confirm the just-opened conversation's title-bar name matches ``query``
+        (the search name/profile-derived name), as a final check against
+        clicking into the wrong thread. Returns True if the header can't be
+        read at all (selector drift), since that's not a wrong-thread signal.
+        """
+        header = self._page.locator(
+            ".msg-thread__link-to-profile .msg-entity-lockup__entity-title, "
+            ".msg-title-bar__title-bar-title h2"
+        ).first
+        try:
+            if not await header.count():
+                return True
+            name = ((await header.inner_text()) or "").strip().lower()
+        except Exception:
+            return True
+        if not name:
+            return True
+        q = query.lower()
+        return q in name or name in q
 
     async def send_message(
         self,
