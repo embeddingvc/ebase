@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.8] - 2026-07-05
+
+### Fixed
+- `send_message`'s thread-search fallback now prefers a result matching profile hints (name/header) over blindly taking the first visible search row, only falling back to "first visible" (with a warning) when nothing matches
+- After opening a thread, the header name is checked against the expected recipient and the thread's profile link is clicked to confirm its resolved vanity URL matches the target profile — either mismatch now aborts the send instead of silently messaging the wrong person
+- Added `testing/tools/check_thread_match.py` and expanded `test_send_message_thread_match.py` covering header and profile-URL matching
+
 ## [1.0.0.7] - 2026-07-05
 
 ### Fixed
