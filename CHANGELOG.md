@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.9] - 2026-07-05
+
+### Fixed
+- `send_message` no longer fails to message a connection with no existing thread (e.g. accepted without a note, so it never shows up in inbox/search) — falls back to the "Compose a new message" typeahead, matching the recipient by name and adding them
+- Header/profile-URL verification now handles that new-conversation draft state (`.../messaging/thread/new/`) correctly: its title bar just reads "New message" (not the recipient's name), so verification now checks the conversation's profile card first — it carries the recipient's name and an already-resolved vanity-slug link, so no click-and-navigate is needed there either
+- Added `testing/tools/send_message.py`, a manual live tool for sending a real DM via this flow
+
 ## [1.0.0.8] - 2026-07-05
 
 ### Fixed
