@@ -166,7 +166,7 @@ if [[ -f "$BROWSER_SVC" ]]; then
   if OUTREACH_REPO_ROOT="$REPO_ROOT" "$BROWSER_SVC" install; then
     echo "[outreach-upgrade] Refreshed browser auto-start (bin/browser-service install)"
   else
-    echo "[outreach-upgrade] bin/browser-service install skipped (no launchd/systemd)" >&2
+    echo "[outreach-upgrade] bin/browser-service install failed (see warning above)" >&2
   fi
 fi
 
