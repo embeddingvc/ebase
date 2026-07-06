@@ -2186,6 +2186,14 @@ class LinkedInBrowser:
             )
             return False
 
+        if not await self._thread_profile_url_matches(profile_url):
+            logger.warning(
+                "Opened thread's profile link does not resolve to %s; "
+                "treating as no match.",
+                profile_url,
+            )
+            return False
+
         return True
 
     async def _thread_header_matches(self, query: str) -> bool:
@@ -2209,6 +2217,33 @@ class LinkedInBrowser:
             return True
         q = query.lower()
         return q in name or name in q
+
+    async def _thread_profile_url_matches(self, profile_url: str) -> bool:
+        """
+        Follow the opened thread's profile link (a permanent ``/in/ACoAA…``
+        member ID, not the vanity slug) and confirm it redirects to the same
+        profile as ``profile_url``. Name matching alone can't catch same-name
+        mismatches; the resolved profile URL is the ground truth. Returns True
+        if the link/redirect can't be read at all (selector drift or network
+        hiccup), since that's not a wrong-thread signal.
+        """
+        link = self._page.locator(".msg-thread__link-to-profile").first
+        try:
+            if not await link.count():
+                return True
+            href = (await link.get_attribute("href") or "").strip()
+        except Exception:
+            return True
+        if not href:
+            return True
+
+        expected = self._canonical_in_profile_url(profile_url).lower()
+        try:
+            resp = await self._ctx.request.get(href, timeout=NAV_TIMEOUT)
+            resolved = self._canonical_in_profile_url(resp.url).lower()
+        except Exception:
+            return True
+        return resolved == expected
 
     async def send_message(
         self,

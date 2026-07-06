@@ -33,7 +33,12 @@ HEADER_SELECTOR = (
 )
 
 
-def _make_page(rows: list[MagicMock], *, header_name: str | None = None) -> MagicMock:
+def _make_page(
+    rows: list[MagicMock],
+    *,
+    header_name: str | None = None,
+    profile_link_href: str | None = None,
+) -> MagicMock:
     page = MagicMock()
     page.url = "https://www.linkedin.com/messaging/"
     page.wait_for_selector = AsyncMock()
@@ -52,6 +57,10 @@ def _make_page(rows: list[MagicMock], *, header_name: str | None = None) -> Magi
     header.count = AsyncMock(return_value=1 if header_name is not None else 0)
     header.inner_text = AsyncMock(return_value=header_name or "")
 
+    profile_link = MagicMock()
+    profile_link.count = AsyncMock(return_value=1 if profile_link_href is not None else 0)
+    profile_link.get_attribute = AsyncMock(return_value=profile_link_href or "")
+
     def locator_side_effect(sel: str):
         if sel == SEARCH_ROWS_SELECTOR:
             return rows_locator
@@ -61,6 +70,8 @@ def _make_page(rows: list[MagicMock], *, header_name: str | None = None) -> Magi
             return m
         if sel == HEADER_SELECTOR:
             return MagicMock(first=header)
+        if sel == ".msg-thread__link-to-profile":
+            return MagicMock(first=profile_link)
         m = MagicMock()
         m.first = MagicMock()
         m.first.count = AsyncMock(return_value=0)
@@ -73,10 +84,11 @@ def _make_page(rows: list[MagicMock], *, header_name: str | None = None) -> Magi
     return page
 
 
-def _browser(page: MagicMock) -> LinkedInBrowser:
+def _browser(page: MagicMock, *, resolved_url: str | None = None) -> LinkedInBrowser:
     li = object.__new__(LinkedInBrowser)
     li._page = page
-    li._ctx = None
+    li._ctx = MagicMock()
+    li._ctx.request.get = AsyncMock(return_value=MagicMock(url=resolved_url or ""))
     return li
 
 
@@ -142,6 +154,54 @@ async def test_thread_header_mismatch_rejects_wrong_thread():
 async def test_thread_header_match_confirms_open():
     row = _make_row(text="Jay Sato, 1st")
     li = _browser(_make_page([row], header_name="Jay Sato"))
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert ok
+
+
+@pytest.mark.asyncio
+async def test_thread_profile_url_mismatch_rejects_even_with_matching_name():
+    """Same name, but the thread's profile link redirects somewhere else —
+    the resolved URL is the ground truth over the (possibly duplicate) name."""
+    row = _make_row(text="Jay Sato, 1st")
+    page = _make_page(
+        [row],
+        header_name="Jay Sato",
+        profile_link_href="https://www.linkedin.com/in/ACoAAdifferentperson",
+    )
+    li = _browser(page, resolved_url="https://www.linkedin.com/in/a-different-jay-sato/")
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+        patch("outreach.browser.logger") as logger,
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert not ok
+    assert logger.warning.called
+
+
+@pytest.mark.asyncio
+async def test_thread_profile_url_match_confirms_open():
+    row = _make_row(text="Jay Sato, 1st")
+    page = _make_page(
+        [row],
+        header_name="Jay Sato",
+        profile_link_href="https://www.linkedin.com/in/ACoAAjaysato",
+    )
+    li = _browser(
+        page, resolved_url="https://www.linkedin.com/in/jay-sato-263a85270/"
+    )
 
     with (
         patch("outreach.browser._human_click", new=AsyncMock()),
