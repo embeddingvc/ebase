@@ -42,6 +42,8 @@ def _make_page(
     page = MagicMock()
     page.url = "https://www.linkedin.com/messaging/"
     page.wait_for_selector = AsyncMock()
+    page.wait_for_url = AsyncMock()
+    page.go_back = AsyncMock()
     page.keyboard = MagicMock(type=AsyncMock(), press=AsyncMock())
 
     search_box = MagicMock()
@@ -60,6 +62,7 @@ def _make_page(
     profile_link = MagicMock()
     profile_link.count = AsyncMock(return_value=1 if profile_link_href is not None else 0)
     profile_link.get_attribute = AsyncMock(return_value=profile_link_href or "")
+    page.profile_link = profile_link  # test-only handle, see _clicking_resolves_to()
 
     def locator_side_effect(sel: str):
         if sel == SEARCH_ROWS_SELECTOR:
@@ -84,12 +87,22 @@ def _make_page(
     return page
 
 
-def _browser(page: MagicMock, *, resolved_url: str | None = None) -> LinkedInBrowser:
+def _browser(page: MagicMock) -> LinkedInBrowser:
     li = object.__new__(LinkedInBrowser)
     li._page = page
     li._ctx = MagicMock()
-    li._ctx.request.get = AsyncMock(return_value=MagicMock(url=resolved_url or ""))
     return li
+
+
+def _clicking_resolves_to(page: MagicMock, resolved_url: str):
+    """Simulate LinkedIn's client-side router: clicking the profile link
+    changes ``page.url`` to the vanity URL, like a real click would."""
+
+    async def side_effect(clicked_page, target):
+        if target is page.profile_link:
+            clicked_page.url = resolved_url
+
+    return side_effect
 
 
 @pytest.mark.asyncio
@@ -168,18 +181,26 @@ async def test_thread_header_match_confirms_open():
 
 @pytest.mark.asyncio
 async def test_thread_profile_url_mismatch_rejects_even_with_matching_name():
-    """Same name, but the thread's profile link redirects somewhere else —
-    the resolved URL is the ground truth over the (possibly duplicate) name."""
+    """Same name, but clicking the thread's profile link lands on a
+    different vanity URL — that's the ground truth over the (possibly
+    duplicate) displayed name."""
     row = _make_row(text="Jay Sato, 1st")
     page = _make_page(
         [row],
         header_name="Jay Sato",
         profile_link_href="https://www.linkedin.com/in/ACoAAdifferentperson",
     )
-    li = _browser(page, resolved_url="https://www.linkedin.com/in/a-different-jay-sato/")
+    li = _browser(page)
 
     with (
-        patch("outreach.browser._human_click", new=AsyncMock()),
+        patch(
+            "outreach.browser._human_click",
+            new=AsyncMock(
+                side_effect=_clicking_resolves_to(
+                    page, "https://www.linkedin.com/in/a-different-jay-sato/"
+                )
+            ),
+        ),
         patch("outreach.browser._human_pause", new=AsyncMock()),
         patch("outreach.browser.logger") as logger,
     ):
@@ -199,12 +220,17 @@ async def test_thread_profile_url_match_confirms_open():
         header_name="Jay Sato",
         profile_link_href="https://www.linkedin.com/in/ACoAAjaysato",
     )
-    li = _browser(
-        page, resolved_url="https://www.linkedin.com/in/jay-sato-263a85270/"
-    )
+    li = _browser(page)
 
     with (
-        patch("outreach.browser._human_click", new=AsyncMock()),
+        patch(
+            "outreach.browser._human_click",
+            new=AsyncMock(
+                side_effect=_clicking_resolves_to(
+                    page, "https://www.linkedin.com/in/jay-sato-263a85270/"
+                )
+            ),
+        ),
         patch("outreach.browser._human_pause", new=AsyncMock()),
     ):
         ok = await li._open_message_ui_from_messaging(

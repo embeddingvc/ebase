@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))  # repo root
 
 from outreach.browser import LinkedInBrowser
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
 
 async def main(profile_url: str, search_name: str | None, cdp_url: str) -> None:

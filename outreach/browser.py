@@ -2187,11 +2187,6 @@ class LinkedInBrowser:
             return False
 
         if not await self._thread_profile_url_matches(profile_url):
-            logger.warning(
-                "Opened thread's profile link does not resolve to %s; "
-                "treating as no match.",
-                profile_url,
-            )
             return False
 
         return True
@@ -2209,41 +2204,90 @@ class LinkedInBrowser:
         ).first
         try:
             if not await header.count():
+                logger.info("_thread_header_matches: header selector found nothing; skipping.")
                 return True
             name = ((await header.inner_text()) or "").strip().lower()
-        except Exception:
+        except Exception as exc:
+            logger.info("_thread_header_matches: failed to read header (%s); skipping.", exc)
             return True
         if not name:
+            logger.info("_thread_header_matches: header text was empty; skipping.")
             return True
         q = query.lower()
         return q in name or name in q
 
     async def _thread_profile_url_matches(self, profile_url: str) -> bool:
         """
-        Follow the opened thread's profile link (a permanent ``/in/ACoAA…``
-        member ID, not the vanity slug) and confirm it redirects to the same
-        profile as ``profile_url``. Name matching alone can't catch same-name
-        mismatches; the resolved profile URL is the ground truth. Returns True
-        if the link/redirect can't be read at all (selector drift or network
-        hiccup), since that's not a wrong-thread signal.
+        Open the thread's profile link (a permanent ``/in/ACoAA…`` member ID,
+        not the vanity slug) exactly like a real user would — click it in
+        place — and read where LinkedIn's own client-side router lands,
+        then navigate back to the thread.
+
+        A direct fetch/navigation to that link doesn't show the vanity URL:
+        LinkedIn's server serves the ACoAA-member-ID URL as-is, and the
+        redirect to the vanity slug only happens via client-side routing
+        triggered by an in-app click. Name matching alone can't catch
+        same-name mismatches; the resolved profile URL is the ground truth.
+        Returns True if the link can't be read, or the redirect doesn't
+        resolve to a vanity URL in time, since that's not a wrong-thread
+        signal — just leaves us unable to verify.
         """
         link = self._page.locator(".msg-thread__link-to-profile").first
         try:
             if not await link.count():
+                logger.info(
+                    "_thread_profile_url_matches: profile-link selector found nothing; skipping."
+                )
                 return True
             href = (await link.get_attribute("href") or "").strip()
-        except Exception:
+        except Exception as exc:
+            logger.info("_thread_profile_url_matches: failed to read profile link (%s); skipping.", exc)
             return True
         if not href:
+            logger.info("_thread_profile_url_matches: profile-link href was empty; skipping.")
             return True
 
         expected = self._canonical_in_profile_url(profile_url).lower()
+        resolved_raw = ""
         try:
-            resp = await self._ctx.request.get(href, timeout=NAV_TIMEOUT)
-            resolved = self._canonical_in_profile_url(resp.url).lower()
-        except Exception:
+            await _human_click(self._page, link)
+            await _human_pause(0.8, 1.5)
+            try:
+                await self._page.wait_for_url(
+                    lambda url: "/in/" in url.lower() and "acoaa" not in url.lower(),
+                    timeout=10_000,
+                )
+            except Exception:
+                pass
+            resolved_raw = self._page.url
+        except Exception as exc:
+            logger.info("_thread_profile_url_matches: clicking %s failed (%s); skipping.", href, exc)
+        finally:
+            try:
+                await self._page.go_back(timeout=NAV_TIMEOUT, wait_until="domcontentloaded")
+                await _human_pause(0.7, 1.2)
+            except Exception as exc:
+                logger.info("_thread_profile_url_matches: navigating back failed (%s).", exc)
+
+        if not resolved_raw or "acoaa" in resolved_raw.lower():
+            logger.info(
+                "_thread_profile_url_matches: %s never resolved to a vanity URL (got %s); skipping.",
+                href,
+                resolved_raw,
+            )
             return True
-        return resolved == expected
+
+        resolved = self._canonical_in_profile_url(resolved_raw).lower()
+        if resolved != expected:
+            logger.warning(
+                "Opened thread's profile link (%s) resolved to %s, expected %s; "
+                "treating as no match.",
+                href,
+                resolved,
+                expected,
+            )
+            return False
+        return True
 
     async def send_message(
         self,
