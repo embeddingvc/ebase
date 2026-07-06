@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import urllib.error
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from outreach.browser import LinkedInBrowser
+from outreach.browser import LinkedInBrowser, _open_blank_tab
 
 
 def _browser_with_pw(pw_chromium: MagicMock) -> LinkedInBrowser:
@@ -54,3 +55,27 @@ async def test_attach_opens_tab_via_cdp_when_no_contexts() -> None:
     assert li._ctx is ctx
     # The buggy path this replaces — new_context() is unsupported on real Chrome.
     empty_browser.new_context.assert_not_called()
+
+
+def test_open_blank_tab_retries_with_get_on_http_error() -> None:
+    put_response = MagicMock()
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=[urllib.error.HTTPError("url", 405, "Method Not Allowed", {}, None), put_response],
+    ) as urlopen:
+        _open_blank_tab("http://localhost:9222")
+
+    assert urlopen.call_count == 2
+
+
+def test_open_blank_tab_does_not_retry_on_timeout() -> None:
+    with patch(
+        "urllib.request.urlopen", side_effect=urllib.error.URLError("timed out")
+    ) as urlopen:
+        with pytest.raises(urllib.error.URLError):
+            _open_blank_tab("http://localhost:9222")
+
+    # A bare URLError (timeout, connection refused) might mean the PUT
+    # already succeeded server-side — retrying with GET risks opening a
+    # second tab, so it must not be attempted.
+    urlopen.assert_called_once()

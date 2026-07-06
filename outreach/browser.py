@@ -537,8 +537,13 @@ def _open_blank_tab(cdp_url: str) -> None:
     req = urllib.request.Request(f"{cdp_url}/json/new", method="PUT")
     try:
         urllib.request.urlopen(req, timeout=5).close()
-    except urllib.error.URLError:
-        # Older Chrome builds only accept GET on this endpoint.
+    except urllib.error.HTTPError:
+        # Older Chrome builds reject PUT on this endpoint (e.g. 404/405) but
+        # accept GET. A plain URLError (timeout, connection refused) means
+        # the request may already have gone through server-side, or Chrome
+        # isn't reachable at all — retrying here would risk opening a
+        # second tab, so only HTTPError (a real "this doesn't work" reply)
+        # triggers the GET fallback.
         urllib.request.urlopen(f"{cdp_url}/json/new", timeout=5).close()
 
 
