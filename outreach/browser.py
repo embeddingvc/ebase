@@ -69,6 +69,8 @@ import os
 import random
 import re
 import uuid
+import urllib.error
+import urllib.request
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -79,6 +81,7 @@ logger = logging.getLogger("linkedin.browser")
 from playwright.async_api import (
     Browser,
     BrowserContext,
+    Error,
     Locator,
     Page,
     Playwright,
@@ -529,6 +532,16 @@ def _pp_structure_activity_update(index: int, post: dict[str, Any]) -> dict[str,
 # ── Browser wrapper ───────────────────────────────────────────────────────────
 
 
+def _open_blank_tab(cdp_url: str) -> None:
+    """Ask Chrome's CDP HTTP endpoint to open a tab (bypasses Playwright context creation)."""
+    req = urllib.request.Request(f"{cdp_url}/json/new", method="PUT")
+    try:
+        urllib.request.urlopen(req, timeout=5).close()
+    except urllib.error.URLError:
+        # Older Chrome builds only accept GET on this endpoint.
+        urllib.request.urlopen(f"{cdp_url}/json/new", timeout=5).close()
+
+
 class LinkedInBrowser:
     """
     Async context manager wrapping a Playwright Chromium session.
@@ -638,15 +651,28 @@ class LinkedInBrowser:
 
         We never close a tab we didn't open, so the user's browsing is undisturbed.
         """
-        self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
+        try:
+            self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
+        except Error:
+            # With zero open tabs, connect_over_cdp itself fails (it has no
+            # default context to attach to) instead of returning a browser
+            # with an empty contexts list. Ask Chrome's own CDP HTTP endpoint
+            # to open a tab first, then connect.
+            await asyncio.to_thread(_open_blank_tab, self.cdp_url)
+            self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
         self._is_attached = True
 
+        if not self._browser.contexts:
+            # Real Chrome (unlike Playwright's bundled Chromium) rejects
+            # browser.new_context() over CDP — it has no open tabs to report
+            # a context for (e.g. the user closed every window). Ask Chrome's
+            # own CDP HTTP endpoint to open a tab instead, then reconnect so
+            # Playwright picks up the resulting default context.
+            await asyncio.to_thread(_open_blank_tab, self.cdp_url)
+            self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
+
         # Inherit the real user session (cookies, localStorage, etc.).
-        self._ctx = (
-            self._browser.contexts[0]
-            if self._browser.contexts
-            else await self._browser.new_context()
-        )
+        self._ctx = self._browser.contexts[0]
 
         page = self._pick_tab(self._ctx.pages)
         if page is not None:

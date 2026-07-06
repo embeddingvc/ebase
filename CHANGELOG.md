@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.7] - 2026-07-05
+
+### Fixed
+- `LinkedInBrowser._attach` no longer fails to reconnect when the managed Chrome has zero open tabs — `connect_over_cdp` itself throws `Browser.setDownloadBehavior: Browser context management is not supported` in that state (rather than returning an empty `contexts` list), so the first connect attempt is now wrapped and falls back to opening a blank tab via the CDP HTTP endpoint before retrying
+- `bin/browser-service` now prefers Playwright's bundled Chromium ("Chrome for Testing") over system Chrome/Chromium when resolving the browser binary, since it supports the CDP multi-context calls system Chrome rejects
+
 ## [1.0.0.6] - 2026-07-04
 
 ### Added
