@@ -628,6 +628,14 @@ prompt_linkedin_login() {
   fi
 }
 
+persona_already_configured() {
+  local persona="${REPO_ROOT}/outreach/config/persona.json"
+  local example="${REPO_ROOT}/outreach/config/persona.json.example"
+  [[ -f "${persona}" ]] || return 1
+  [[ -f "${example}" ]] && cmp -s "${persona}" "${example}" && return 1
+  return 0
+}
+
 run_sync_planner_persona_skill() {
   local prompt="Run the sync-planner-persona-from-linkedin skill for profile ${PERSONA_PROFILE_URL}"
   local rerun_cmd="cd \"${REPO_ROOT}\" && claude -p '${prompt}'"
@@ -636,6 +644,27 @@ run_sync_planner_persona_skill() {
     info "Skipping planner persona sync (--skip-persona-sync)."
     note "skip: planner persona sync (--skip-persona-sync)"
     return 0
+  fi
+
+  if persona_already_configured; then
+    if [[ -t 0 ]]; then
+      local reply=""
+      info "outreach/config/persona.json is already configured (reinstall detected)."
+      read -r -p "[install] Re-sync persona from LinkedIn and overwrite it? [y/N] " reply || reply=""
+      case "${reply}" in
+        y|Y|yes|YES) ;;
+        *)
+          info "Keeping existing outreach/config/persona.json."
+          note "ok: existing persona.json kept (reinstall)"
+          return 0
+          ;;
+      esac
+    else
+      info "Non-interactive reinstall — keeping existing outreach/config/persona.json."
+      info "To re-sync: ${rerun_cmd}"
+      note "ok: existing persona.json kept (non-interactive reinstall)"
+      return 0
+    fi
   fi
   if ! command -v claude >/dev/null 2>&1; then
     info "claude CLI not on PATH — skipping planner persona sync."

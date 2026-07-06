@@ -160,23 +160,13 @@ fi
 BROWSER_SVC="${REPO_ROOT}/bin/browser-service"
 if [[ -f "$BROWSER_SVC" ]]; then
   chmod +x "$BROWSER_SVC" 2>/dev/null || true
-  chrome_bin=""
-  mac_chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-  if [[ -x "$mac_chrome" ]]; then
-    chrome_bin="$mac_chrome"
-  elif command -v google-chrome >/dev/null 2>&1; then
-    chrome_bin="$(command -v google-chrome)"
-  elif command -v chromium >/dev/null 2>&1; then
-    chrome_bin="$(command -v chromium)"
-  elif command -v chromium-browser >/dev/null 2>&1; then
-    chrome_bin="$(command -v chromium-browser)"
-  fi
-  if [[ -n "$chrome_bin" ]]; then
-    if OUTREACH_REPO_ROOT="$REPO_ROOT" CHROME_BIN="$chrome_bin" "$BROWSER_SVC" install; then
-      echo "[outreach-upgrade] Refreshed browser auto-start (bin/browser-service install)"
-    else
-      echo "[outreach-upgrade] bin/browser-service install skipped (no launchd/systemd)" >&2
-    fi
+  # Let browser-service resolve_chrome pick the binary (Playwright's
+  # Chromium first, then system Chrome) instead of forcing system Chrome
+  # here — forcing it would undo that preference on every upgrade.
+  if OUTREACH_REPO_ROOT="$REPO_ROOT" "$BROWSER_SVC" install; then
+    echo "[outreach-upgrade] Refreshed browser auto-start (bin/browser-service install)"
+  else
+    echo "[outreach-upgrade] bin/browser-service install skipped (no launchd/systemd)" >&2
   fi
 fi
 
