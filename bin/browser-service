@@ -48,8 +48,49 @@ resolve_repo() {
   fi
 }
 
+PLAYWRIGHT_CHROMIUM_CACHE="${HOME}/.ebase/playwright-chromium-path"
+
+resolve_playwright_chromium() {
+  # Playwright's bundled Chromium ("Chrome for Testing") supports the CDP
+  # multi-context calls (Browser.setDownloadBehavior, Target.createBrowserContext)
+  # that a real Google Chrome / system Chromium install rejects — using it here
+  # avoids that class of CDP error entirely instead of working around it.
+  #
+  # Cached because this is called on every resolve_chrome (install/daemon/
+  # start, including launchd KeepAlive respawns) and `uv run` here pays a
+  # full interpreter + Playwright import per call. Cache is invalidated by
+  # simply checking the cached path is still executable (a Playwright
+  # upgrade moves it to a new versioned directory).
+  if [[ -f "${PLAYWRIGHT_CHROMIUM_CACHE}" ]]; then
+    local cached
+    cached="$(<"${PLAYWRIGHT_CHROMIUM_CACHE}")"
+    if [[ -n "${cached}" ]] && [[ -x "${cached}" ]]; then
+      printf '%s' "${cached}"
+      return 0
+    fi
+  fi
+  command -v uv >/dev/null 2>&1 || return 1
+  local resolved
+  resolved="$( ( cd "${REPO_ROOT}" && uv run --project "${REPO_ROOT}" python -c '
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    print(p.chromium.executable_path)
+' 2>/dev/null ) | tail -1 )"
+  if [[ -n "${resolved}" ]] && [[ -x "${resolved}" ]]; then
+    mkdir -p "$(dirname "${PLAYWRIGHT_CHROMIUM_CACHE}")"
+    printf '%s' "${resolved}" > "${PLAYWRIGHT_CHROMIUM_CACHE}"
+  fi
+  printf '%s' "${resolved}"
+}
+
 resolve_chrome() {
   if [[ -n "${CHROME_BIN}" ]] && [[ -x "${CHROME_BIN}" ]]; then
+    return 0
+  fi
+  local pw_chromium
+  pw_chromium="$(resolve_playwright_chromium || true)"
+  if [[ -n "${pw_chromium}" ]] && [[ -x "${pw_chromium}" ]]; then
+    CHROME_BIN="${pw_chromium}"
     return 0
   fi
   local mac_chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"

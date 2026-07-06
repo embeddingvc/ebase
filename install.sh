@@ -537,7 +537,10 @@ launch_chrome_cdp() {
 
   export OUTREACH_REPO_ROOT="${REPO_ROOT}"
   export CDP_PORT CHROME_PROFILE
-  export CHROME_BIN="${chrome}"
+  # Don't export CHROME_BIN here — resolve_chrome (bin/browser-service) picks
+  # Playwright's bundled Chromium first, falling back to this same system
+  # Chrome if that's unavailable. Forcing it here would skip that preference
+  # on every fresh install, not just reintroduce it on upgrades.
 
   info "Running bin/browser-service install…"
   if ! "${svc}" install; then
@@ -628,6 +631,20 @@ prompt_linkedin_login() {
   fi
 }
 
+persona_already_configured() {
+  local persona="${REPO_ROOT}/outreach/config/persona.json"
+  local example="${REPO_ROOT}/outreach/config/persona.json.example"
+  [[ -f "${persona}" ]] || return 1
+  [[ -f "${example}" ]] && cmp -s "${persona}" "${example}" && return 1
+  # ponytail: treat unparseable JSON (e.g. truncated by an interrupted prior
+  # install) as unconfigured so it gets re-synced instead of kept forever.
+  # Skips the check if python3 isn't on PATH yet.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "${persona}" >/dev/null 2>&1 || return 1
+  fi
+  return 0
+}
+
 run_sync_planner_persona_skill() {
   local prompt="Run the sync-planner-persona-from-linkedin skill for profile ${PERSONA_PROFILE_URL}"
   local rerun_cmd="cd \"${REPO_ROOT}\" && claude -p '${prompt}'"
@@ -636,6 +653,27 @@ run_sync_planner_persona_skill() {
     info "Skipping planner persona sync (--skip-persona-sync)."
     note "skip: planner persona sync (--skip-persona-sync)"
     return 0
+  fi
+
+  if persona_already_configured; then
+    if [[ -t 0 ]]; then
+      local reply=""
+      info "outreach/config/persona.json is already configured (reinstall detected)."
+      read -r -p "[install] Re-sync persona from LinkedIn and overwrite it? [y/N] " reply || reply=""
+      case "${reply}" in
+        y|Y|yes|YES) ;;
+        *)
+          info "Keeping existing outreach/config/persona.json."
+          note "ok: existing persona.json kept (reinstall)"
+          return 0
+          ;;
+      esac
+    else
+      info "Non-interactive reinstall — keeping existing outreach/config/persona.json."
+      info "To re-sync: ${rerun_cmd}"
+      note "ok: existing persona.json kept (non-interactive reinstall)"
+      return 0
+    fi
   fi
   if ! command -v claude >/dev/null 2>&1; then
     info "claude CLI not on PATH — skipping planner persona sync."

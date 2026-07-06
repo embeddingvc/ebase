@@ -69,6 +69,8 @@ import os
 import random
 import re
 import uuid
+import urllib.error
+import urllib.request
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -79,6 +81,7 @@ logger = logging.getLogger("linkedin.browser")
 from playwright.async_api import (
     Browser,
     BrowserContext,
+    Error,
     Locator,
     Page,
     Playwright,
@@ -528,6 +531,31 @@ def _pp_structure_activity_update(index: int, post: dict[str, Any]) -> dict[str,
 
 # ── Browser wrapper ───────────────────────────────────────────────────────────
 
+# ponytail: matched by substring against the real Chrome zero-open-tabs CDP
+# error; if Chrome's wording changes, this stops matching and _attach falls
+# back to re-raising instead of retrying — update the substring then.
+_ZERO_TAB_CDP_ERROR = "setDownloadBehavior"
+
+
+def _open_blank_tab(cdp_url: str) -> None:
+    """Ask Chrome's CDP HTTP endpoint to open a tab (bypasses Playwright context creation).
+
+    install.sh's open_linkedin_tab_in_cdp() does the same PUT-then-GET
+    workaround in bash for the pre-attach case (no Python env to call into
+    yet) — keep both in sync if Chrome's CDP behavior here changes.
+    """
+    req = urllib.request.Request(f"{cdp_url}/json/new", method="PUT")
+    try:
+        urllib.request.urlopen(req, timeout=5).close()
+    except urllib.error.HTTPError:
+        # Older Chrome builds reject PUT on this endpoint (e.g. 404/405) but
+        # accept GET. A plain URLError (timeout, connection refused) means
+        # the request may already have gone through server-side, or Chrome
+        # isn't reachable at all — retrying here would risk opening a
+        # second tab, so only HTTPError (a real "this doesn't work" reply)
+        # triggers the GET fallback.
+        urllib.request.urlopen(f"{cdp_url}/json/new", timeout=5).close()
+
 
 class LinkedInBrowser:
     """
@@ -624,6 +652,34 @@ class LinkedInBrowser:
         # Inject stealth overrides on every new page / frame.
         await self._ctx.add_init_script(_STEALTH_SCRIPT)
 
+    async def _connect_with_zero_tab_retry(self) -> Browser:
+        """
+        Connect over CDP, working around Chrome's zero-open-tabs quirks.
+
+        With zero open tabs, real Chrome's connect_over_cdp either throws
+        _ZERO_TAB_CDP_ERROR outright (it has no default context to attach
+        to), or — on some builds — succeeds but reports an empty contexts
+        list. Either way, asking Chrome's own CDP HTTP endpoint to open a
+        blank tab and reconnecting fixes it, so both cases retry the same
+        way.
+        """
+        for attempt in (1, 2):
+            try:
+                browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
+            except Error as e:
+                if attempt == 2 or _ZERO_TAB_CDP_ERROR not in str(e):
+                    raise
+                browser = None
+            if browser is not None and browser.contexts:
+                return browser
+            if attempt == 2:
+                raise RuntimeError(
+                    f"Chrome at {self.cdp_url} reported no browser context "
+                    "even after opening a tab via its CDP HTTP endpoint."
+                )
+            await asyncio.to_thread(_open_blank_tab, self.cdp_url)
+        raise AssertionError("unreachable")  # loop always returns or raises
+
     async def _attach(self) -> None:
         """
         Attach to an already-running Chrome via CDP and pick the best tab to use.
@@ -638,15 +694,11 @@ class LinkedInBrowser:
 
         We never close a tab we didn't open, so the user's browsing is undisturbed.
         """
-        self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
+        self._browser = await self._connect_with_zero_tab_retry()
         self._is_attached = True
 
         # Inherit the real user session (cookies, localStorage, etc.).
-        self._ctx = (
-            self._browser.contexts[0]
-            if self._browser.contexts
-            else await self._browser.new_context()
-        )
+        self._ctx = self._browser.contexts[0]
 
         page = self._pick_tab(self._ctx.pages)
         if page is not None:
