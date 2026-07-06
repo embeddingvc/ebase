@@ -533,7 +533,12 @@ def _pp_structure_activity_update(index: int, post: dict[str, Any]) -> dict[str,
 
 
 def _open_blank_tab(cdp_url: str) -> None:
-    """Ask Chrome's CDP HTTP endpoint to open a tab (bypasses Playwright context creation)."""
+    """Ask Chrome's CDP HTTP endpoint to open a tab (bypasses Playwright context creation).
+
+    install.sh's open_linkedin_tab_in_cdp() does the same PUT-then-GET
+    workaround in bash for the pre-attach case (no Python env to call into
+    yet) — keep both in sync if Chrome's CDP behavior here changes.
+    """
     req = urllib.request.Request(f"{cdp_url}/json/new", method="PUT")
     try:
         urllib.request.urlopen(req, timeout=5).close()
