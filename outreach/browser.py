@@ -690,6 +690,16 @@ class LinkedInBrowser:
             await asyncio.to_thread(_open_blank_tab, self.cdp_url)
             self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
 
+        if not self._browser.contexts:
+            # Opening a tab via the CDP HTTP endpoint and reconnecting still
+            # didn't produce a context (e.g. the new tab hadn't registered
+            # yet, or something closed it in between) — fail clearly instead
+            # of crashing on contexts[0] below.
+            raise RuntimeError(
+                f"Chrome at {self.cdp_url} reported no browser context even "
+                "after opening a tab via its CDP HTTP endpoint."
+            )
+
         # Inherit the real user session (cookies, localStorage, etc.).
         self._ctx = self._browser.contexts[0]
 

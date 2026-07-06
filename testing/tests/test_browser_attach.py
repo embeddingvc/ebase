@@ -83,6 +83,20 @@ async def test_attach_recovers_when_connect_over_cdp_raises_zero_tab_error() -> 
 
 
 @pytest.mark.asyncio
+async def test_attach_raises_clear_error_when_still_no_contexts() -> None:
+    empty_browser = MagicMock(contexts=[])
+    pw_chromium = MagicMock()
+    pw_chromium.connect_over_cdp = AsyncMock(return_value=empty_browser)
+
+    li = _browser_with_pw(pw_chromium)
+    with patch("outreach.browser._open_blank_tab") as open_tab:
+        with pytest.raises(RuntimeError, match="no browser context"):
+            await li._attach()
+
+    open_tab.assert_called_once_with("http://localhost:9222")
+
+
+@pytest.mark.asyncio
 async def test_attach_reraises_unrelated_connect_errors() -> None:
     pw_chromium = MagicMock()
     pw_chromium.connect_over_cdp = AsyncMock(side_effect=Error("net::ERR_CONNECTION_REFUSED"))
