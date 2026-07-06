@@ -652,6 +652,34 @@ class LinkedInBrowser:
         # Inject stealth overrides on every new page / frame.
         await self._ctx.add_init_script(_STEALTH_SCRIPT)
 
+    async def _connect_with_zero_tab_retry(self) -> Browser:
+        """
+        Connect over CDP, working around Chrome's zero-open-tabs quirks.
+
+        With zero open tabs, real Chrome's connect_over_cdp either throws
+        _ZERO_TAB_CDP_ERROR outright (it has no default context to attach
+        to), or — on some builds — succeeds but reports an empty contexts
+        list. Either way, asking Chrome's own CDP HTTP endpoint to open a
+        blank tab and reconnecting fixes it, so both cases retry the same
+        way.
+        """
+        for attempt in (1, 2):
+            try:
+                browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
+            except Error as e:
+                if attempt == 2 or _ZERO_TAB_CDP_ERROR not in str(e):
+                    raise
+                browser = None
+            if browser is not None and browser.contexts:
+                return browser
+            if attempt == 2:
+                raise RuntimeError(
+                    f"Chrome at {self.cdp_url} reported no browser context "
+                    "even after opening a tab via its CDP HTTP endpoint."
+                )
+            await asyncio.to_thread(_open_blank_tab, self.cdp_url)
+        raise AssertionError("unreachable")  # loop always returns or raises
+
     async def _attach(self) -> None:
         """
         Attach to an already-running Chrome via CDP and pick the best tab to use.
@@ -666,39 +694,8 @@ class LinkedInBrowser:
 
         We never close a tab we didn't open, so the user's browsing is undisturbed.
         """
-        try:
-            self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
-        except Error as e:
-            # With zero open tabs, connect_over_cdp itself fails with this
-            # specific CDP error (it has no default context to attach to)
-            # instead of returning a browser with an empty contexts list.
-            # Anything else (wrong port, Chrome not running, auth failure)
-            # is a genuine connection failure — re-raise so it surfaces
-            # immediately instead of being delayed by a doomed retry.
-            if _ZERO_TAB_CDP_ERROR not in str(e):
-                raise
-            await asyncio.to_thread(_open_blank_tab, self.cdp_url)
-            self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
+        self._browser = await self._connect_with_zero_tab_retry()
         self._is_attached = True
-
-        if not self._browser.contexts:
-            # Real Chrome (unlike Playwright's bundled Chromium) rejects
-            # browser.new_context() over CDP — it has no open tabs to report
-            # a context for (e.g. the user closed every window). Ask Chrome's
-            # own CDP HTTP endpoint to open a tab instead, then reconnect so
-            # Playwright picks up the resulting default context.
-            await asyncio.to_thread(_open_blank_tab, self.cdp_url)
-            self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
-
-        if not self._browser.contexts:
-            # Opening a tab via the CDP HTTP endpoint and reconnecting still
-            # didn't produce a context (e.g. the new tab hadn't registered
-            # yet, or something closed it in between) — fail clearly instead
-            # of crashing on contexts[0] below.
-            raise RuntimeError(
-                f"Chrome at {self.cdp_url} reported no browser context even "
-                "after opening a tab via its CDP HTTP endpoint."
-            )
 
         # Inherit the real user session (cookies, localStorage, etc.).
         self._ctx = self._browser.contexts[0]
