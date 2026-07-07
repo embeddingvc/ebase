@@ -126,8 +126,6 @@ def format_browser_lines() -> list[str]:
         lines.append(
             f"    auto-start  {browser.get('service_backend')}  ({browser.get('service_unit_path')})"
         )
-    elif not browser.get("auto_start_on_reboot"):
-        lines.append("    auto-start  not registered (run bin/browser-service install)")
     return lines
 
 
