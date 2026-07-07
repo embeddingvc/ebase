@@ -13,7 +13,7 @@ def test_probe_browser_unreachable() -> None:
     browser = ss.probe_browser()
     assert "reachable" in browser
     assert "managed" in browser
-    assert "restart_hint" in browser
+    assert "starts_on_demand" in browser
 
 
 def test_format_browser_lines() -> None:
@@ -31,11 +31,16 @@ def test_check_services_returns_both_probes() -> None:
 def test_check_services_logs_warning_for_unreachable(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    # Chrome boots on demand now, so being down is expected and shouldn't warn —
+    # only the cron server's health is worth a startup warning here.
     with caplog.at_level(logging.WARNING):
         result = ss.check_services()
-    for name, key in (("browser", "browser"), ("cron_server", "cron server")):
-        if not result[name].get("running"):
-            assert any(
-                record.levelno == logging.WARNING and key in record.getMessage().lower()
-                for record in caplog.records
-            ), f"expected a warning logged for unreachable {name}"
+    assert not any(
+        record.levelno == logging.WARNING and "browser" in record.getMessage().lower()
+        for record in caplog.records
+    )
+    if not result["cron_server"].get("running"):
+        assert any(
+            record.levelno == logging.WARNING and "cron server" in record.getMessage().lower()
+            for record in caplog.records
+        ), "expected a warning logged for unreachable cron server"
