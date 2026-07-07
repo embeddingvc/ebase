@@ -7,6 +7,20 @@ description: Show outreach performance — connection funnel, reply rates, seque
 
 Render a funnel dashboard from the `get_outreach_stats` MCP tool. One tool call, no loops — all aggregation happens server-side.
 
+## System check (run first)
+
+Before pulling stats, check service health and for a newer ebase version:
+
+```bash
+bin/outreach-update-check 2>/dev/null || true
+```
+
+Follow the inline flow in skill **`outreach-upgrade`** for every line printed:
+`SERVICE_DOWN <service> <url>` (inform the user, non-blocking), then
+`UPGRADE_AVAILABLE` (ask to upgrade), `UPGRADED`/`JUST_UPGRADED` (log and
+continue), or `UP_TO_DATE`/empty (continue silently).
+Do not block on network failures.
+
 ## Inputs
 
 - `since` (optional) — `YYYY-MM-DD`. If the user gives a relative date ("last week", "since Monday"), resolve it to an absolute date before calling the tool.
