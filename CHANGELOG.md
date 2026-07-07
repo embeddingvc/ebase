@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.12] - 2026-07-07
+
+### Changed
+- `make status` no longer prints the Chrome CDP "auto-start not registered (run bin/browser-service install)" hint — Chrome boots on demand now, so an unregistered always-on service isn't a gap to flag. The `auto-start` line still shows when a launchd/systemd service *is* registered.
+
+## [1.0.0.11] - 2026-07-07
+
+### Added
+- `reply-to-post`, `stats`, and `sync-planner-persona-from-linkedin` skills now run the inline `bin/outreach-update-check` system check (service health + version check) at skill start, matching `setup-outreach` and `send-connection-request`. Skipped for `outreach-uninstall` (about to tear down) and `conversation-planner` (scheduler-driven, not user-invoked).
+
 ## [1.0.0.10] - 2026-07-07
 
 ### Changed
