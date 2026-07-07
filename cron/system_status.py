@@ -71,9 +71,6 @@ def probe_browser() -> dict[str, Any]:
     except (json.JSONDecodeError, TimeoutError, OSError) as exc:
         health_error = str(exc)
 
-    restart_hint = "bin/browser-service install"
-    if not managed:
-        restart_hint = "bin/browser-service install  (or ./install.sh)"
     return {
         "url": url,
         "reachable": reachable,
@@ -85,7 +82,7 @@ def probe_browser() -> dict[str, Any]:
         "service_backend": backend,
         "service_unit_path": str(unit_path) if unit_path else None,
         "auto_start_on_reboot": managed,
-        "restart_hint": restart_hint,
+        "starts_on_demand": True,
     }
 
 
@@ -95,15 +92,14 @@ def check_services(*, logger: logging.Logger | None = None) -> dict[str, Any]:
     whichever is unreachable. Intended to run alongside the startup
     "auto update check" — no email/paging, just a log line an operator
     tailing server.log will see.
+
+    Chrome now boots on demand (see outreach/browser.py:_ensure_browser_running),
+    so it being down at rest is the expected steady state, not a health issue —
+    only the cron server warrants a startup warning here.
     """
     log = logger or logging.getLogger(__name__)
     browser = probe_browser()
     cron_server = probe_cron_server()
-    if not browser.get("running"):
-        log.warning(
-            "Health check: browser CDP unreachable — %s",
-            browser.get("health_error") or "no response",
-        )
     if not cron_server.get("running"):
         log.warning(
             "Health check: cron server unreachable — %s",
@@ -124,10 +120,8 @@ def format_browser_lines() -> list[str]:
         lines.append(f"    profile    {browser.get('profile')}")
     else:
         err = browser.get("health_error")
-        hint = browser.get("restart_hint", "bin/browser-service install")
         extra = f" — {err}" if err else ""
-        lines.append(f"  Chrome CDP  not running{extra}")
-        lines.append(f"    restart: {hint}")
+        lines.append(f"  Chrome CDP  not running{extra}  (starts on demand)")
     if browser.get("managed"):
         lines.append(
             f"    auto-start  {browser.get('service_backend')}  ({browser.get('service_unit_path')})"

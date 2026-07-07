@@ -537,6 +537,44 @@ def _pp_structure_activity_update(index: int, post: dict[str, Any]) -> dict[str,
 _ZERO_TAB_CDP_ERROR = "setDownloadBehavior"
 
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_BROWSER_SERVICE = _REPO_ROOT / "bin" / "browser-service"
+
+
+def _cdp_reachable(cdp_url: str, timeout: float = 2.0) -> bool:
+    try:
+        urllib.request.urlopen(f"{cdp_url}/json/version", timeout=timeout).close()
+        return True
+    except Exception:
+        return False
+
+
+async def _ensure_browser_running(cdp_url: str) -> None:
+    """
+    Boot Chrome on demand via bin/browser-service if the CDP endpoint isn't
+    reachable — so nothing needs to keep it running between tool calls.
+    browser-service already waits for CDP to come up before returning.
+    """
+    if await asyncio.to_thread(_cdp_reachable, cdp_url):
+        return
+    if not _BROWSER_SERVICE.is_file():
+        return
+    logger.info("Chrome not reachable at %s — starting it on demand", cdp_url)
+    env = dict(os.environ)
+    port = urlparse(cdp_url).port
+    if port:
+        env["CDP_PORT"] = str(port)
+    proc = await asyncio.create_subprocess_exec(
+        str(_BROWSER_SERVICE),
+        "start",
+        cwd=str(_REPO_ROOT),
+        env=env,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+
+
 def _open_blank_tab(cdp_url: str) -> None:
     """Ask Chrome's CDP HTTP endpoint to open a tab (bypasses Playwright context creation).
 
@@ -694,6 +732,7 @@ class LinkedInBrowser:
 
         We never close a tab we didn't open, so the user's browsing is undisturbed.
         """
+        await _ensure_browser_running(self.cdp_url)
         self._browser = await self._connect_with_zero_tab_retry()
         self._is_attached = True
 

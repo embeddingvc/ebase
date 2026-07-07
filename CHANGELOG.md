@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.10] - 2026-07-07
+
+### Changed
+- Chrome now boots on demand: LinkedIn tool calls ping the CDP endpoint before attaching and launch it via `bin/browser-service start` if it's not up, waiting for CDP to come up. Session cookies persist on disk in the Chrome profile, so launchd/systemd no longer need to keep Chrome alive between calls.
+- `cron.system_status` no longer logs a startup warning when Chrome's CDP endpoint is unreachable — that's now the expected steady state — and status output/JSON drop the stale "reinstall the always-on service" restart hint in favor of noting it starts on demand.
+
 ## [1.0.0.9] - 2026-07-05
 
 ### Fixed
