@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.13] - 2026-07-09
+
+### Fixed
+- `outreach-upgrade` no longer risks silently losing a user's `persona.json`/`conversation_planner.json` edits during an upgrade. Their content is backed up before `git stash`/`git pull` and restored to the live path afterward regardless of how git's stash/rename resolution goes — previously, if upstream renamed a tracked config to `.example`, the user's stashed edits could end up stuck in the stash (or merged into the `.example` file) with nothing at the live path, silently falling back to default config. The script also auto-runs `git stash pop` after the pull instead of just printing a reminder.
+
 ## [1.0.0.12] - 2026-07-07
 
 ### Changed

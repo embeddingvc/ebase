@@ -108,6 +108,21 @@ if [[ -x "$CONFIG_BIN" ]]; then
 fi
 [[ "${EBASE_INSTALL_LOCAL:-${LINKEDIN_OUTREACH_INSTALL_LOCAL:-0}}" == "1" ]] && INSTALL_LOCAL="true"
 
+# Local, gitignored user config — upstream has renamed these tracked
+# files before (persona.json/conversation_planner.json -> *.example) and a
+# stash-only strategy can leave a user's live edits stuck in the stash with
+# nothing at the live path. Back them up and restore verbatim regardless of
+# how git's stash/rename resolution goes.
+CONFIG_FILES=(outreach/config/persona.json outreach/config/conversation_planner.json)
+CONFIG_BACKUP_DIR="$(mktemp -d)"
+trap 'rm -rf "$CONFIG_BACKUP_DIR"' EXIT
+for f in "${CONFIG_FILES[@]}"; do
+  if [[ -f "${REPO_ROOT}/${f}" ]]; then
+    mkdir -p "$(dirname "${CONFIG_BACKUP_DIR}/${f}")"
+    cp "${REPO_ROOT}/${f}" "${CONFIG_BACKUP_DIR}/${f}"
+  fi
+done
+
 STASH_OUTPUT=""
 cd "$REPO_ROOT"
 if [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
@@ -118,6 +133,21 @@ if ! git pull --ff-only origin "$REMOTE_BRANCH"; then
   echo "ERROR: git pull --ff-only failed — resolve manually in ${REPO_ROOT}" >&2
   exit 1
 fi
+
+if [[ "$STASH_OUTPUT" == *"Saved working directory"* ]]; then
+  if git stash pop 2>&1; then
+    STASH_OUTPUT=""
+  else
+    echo "[outreach-upgrade] WARNING: 'git stash pop' hit a conflict — resolve manually in ${REPO_ROOT} (stash kept)." >&2
+  fi
+fi
+
+for f in "${CONFIG_FILES[@]}"; do
+  if [[ -f "${CONFIG_BACKUP_DIR}/${f}" ]]; then
+    mkdir -p "$(dirname "${REPO_ROOT}/${f}")"
+    cp "${CONFIG_BACKUP_DIR}/${f}" "${REPO_ROOT}/${f}"
+  fi
+done
 
 if command -v uv >/dev/null 2>&1; then
   uv sync
@@ -174,9 +204,5 @@ NEW_VERSION="$(read_local_version "$REPO_ROOT")"
 mkdir -p "$STATE_DIR"
 echo "$OLD_VERSION" >"$MARKER_FILE"
 rm -f "$CACHE_FILE" "$SNOOZE_FILE"
-
-if [[ "$STASH_OUTPUT" == *"Saved working directory"* ]]; then
-  echo "[outreach-upgrade] Note: local changes were stashed. Run 'git stash pop' in ${REPO_ROOT} to restore."
-fi
 
 echo "UPGRADED $OLD_VERSION $NEW_VERSION"
