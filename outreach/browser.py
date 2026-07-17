@@ -64,6 +64,7 @@ connection requests, and message sending.
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import logging
 import os
 import random
@@ -164,6 +165,10 @@ _CONNECT_DISCOVERY_ATTEMPTS = 2
 # Paths
 STORAGE_DIR = Path(__file__).parent / "storage"
 STORAGE_DIR.mkdir(exist_ok=True)
+
+# Cross-process exclusive lock: only one attach-mode session may drive the
+# shared Chrome tab at a time (see LinkedInBrowser._acquire_tab_lock).
+_TAB_LOCK_PATH = STORAGE_DIR / "browser.lock"
 
 # ── Stealth helpers ───────────────────────────────────────────────────────────
 
@@ -649,6 +654,7 @@ class LinkedInBrowser:
         self._page: Page | None = None
         self._is_attached: bool = False  # True when we connected via CDP
         self._owned_page: bool = False  # True when we opened the tab (attach mode)
+        self._lock_fh: Any = None  # open fd holding the cross-process tab lock
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -656,11 +662,46 @@ class LinkedInBrowser:
         self._pw = await async_playwright().start()
 
         if self.mode == "attach":
-            await self._attach()
+            await self._acquire_tab_lock()
+            try:
+                await self._attach()
+            except BaseException:
+                await self._release_tab_lock()
+                raise
         else:
             await self._launch()
 
         return self
+
+    async def _acquire_tab_lock(self) -> None:
+        """
+        Block until this process holds exclusive use of the shared Chrome tab.
+
+        Attach mode connects to whatever tab _pick_tab() finds — with no
+        reservation, two concurrent sessions (an interactive skill run, a cron
+        sweep, browse_forever) can pick the identical physical tab and race
+        each other's navigation/typing, delivering one session's note to
+        whatever profile the other session's tab happens to be on (issue #22).
+        A flock-based lock serializes all attach-mode sessions across every
+        process on the machine; the OS releases it automatically if a holder
+        crashes, so there's no stale-lock cleanup to do.
+        """
+        if self._lock_fh is not None:
+            return
+        fh = open(_TAB_LOCK_PATH, "a+")
+        try:
+            await asyncio.to_thread(fcntl.flock, fh.fileno(), fcntl.LOCK_EX)
+        except BaseException:
+            fh.close()
+            raise
+        self._lock_fh = fh
+
+    async def _release_tab_lock(self) -> None:
+        if self._lock_fh is None:
+            return
+        fcntl.flock(self._lock_fh.fileno(), fcntl.LOCK_UN)
+        self._lock_fh.close()
+        self._lock_fh = None
 
     async def _launch(self) -> None:
         """Spawn a fresh Chromium process (launch mode)."""
@@ -799,6 +840,22 @@ class LinkedInBrowser:
             and "linkedin.com" in ((self._page.url if self._page else "") or "").lower()
         )
 
+    def _tab_left_for_other_profile(self, profile_url: str) -> bool:
+        """
+        True only when the current tab is confidently on a DIFFERENT profile's
+        page than intended.
+
+        Deliberately looser than _is_current_tab_target_profile: the invite
+        flow can legitimately hop through non-/in/ routes (e.g.
+        /preload/custom-invite/) for the *correct* profile, so "not exactly on
+        the expected URL" is not itself suspicious. Only an unambiguous
+        /in/<other-slug> mid-flow — the literal shared-tab-race symptom from
+        issue #22 — should abort the send.
+        """
+        current = self._normalized_profile_path(self._page.url if self._page else "")
+        target = self._normalized_profile_path(profile_url)
+        return current.startswith("/in/") and target.startswith("/in/") and current != target
+
     async def _ensure_profile_tab(self, profile_url: str) -> None:
         """
         Navigate to profile only if current tab is not already that profile.
@@ -817,6 +874,7 @@ class LinkedInBrowser:
             logger.info("Detaching from Chrome (browser stays open).")
             if self._pw:
                 await self._pw.stop()
+            await self._release_tab_lock()
             return
 
         # Launch mode — full teardown.
@@ -1908,6 +1966,16 @@ class LinkedInBrowser:
             )
             if await add_note_btn.count():
                 await _human_click(self._page, add_note_btn)
+                if self._tab_left_for_other_profile(profile_url):
+                    logger.warning(
+                        "send_connection_request: tab left %s before the note "
+                        "could be typed — aborting instead of misdirecting it",
+                        profile_url,
+                    )
+                    return (
+                        "Connection request aborted: the browser tab navigated "
+                        "away from the target profile before the note could be sent."
+                    )
                 await _human_type(self._page, "textarea[name='message']", note)
                 await _human_pause()
 
@@ -1979,6 +2047,16 @@ class LinkedInBrowser:
                     "The Send button was not found in the invite dialog."
                 )
 
+            if self._tab_left_for_other_profile(profile_url):
+                logger.warning(
+                    "send_connection_request: tab left %s before Send could be "
+                    "clicked — aborting instead of misdirecting the invite",
+                    profile_url,
+                )
+                return (
+                    "Connection request aborted: the browser tab navigated "
+                    "away from the target profile before it could be sent."
+                )
             await expect(send_btn.first).to_be_visible(timeout=EL_TIMEOUT)
             await _human_click(self._page, send_btn.first)
 
@@ -3024,12 +3102,18 @@ class LinkedInBrowser:
                 break_min = random.uniform(2, 6)
                 break_secs = break_min * 60
                 logger.info("Idle break %.1f min before next round…", break_min)
-                # Sleep in short chunks so Ctrl-C is responsive.
-                elapsed = 0.0
-                while elapsed < break_secs and _running:
-                    chunk = min(5.0, break_secs - elapsed)
-                    await asyncio.sleep(chunk)
-                    elapsed += chunk
+                # Release the shared-tab lock during the break so a foreground
+                # send isn't stuck waiting minutes behind idle browsing.
+                await self._release_tab_lock()
+                try:
+                    # Sleep in short chunks so Ctrl-C is responsive.
+                    elapsed = 0.0
+                    while elapsed < break_secs and _running:
+                        chunk = min(5.0, break_secs - elapsed)
+                        await asyncio.sleep(chunk)
+                        elapsed += chunk
+                finally:
+                    await self._acquire_tab_lock()
 
         logger.info("Session ended.")
 
