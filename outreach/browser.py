@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import json
 import logging
 import os
 import random
@@ -169,6 +170,11 @@ STORAGE_DIR.mkdir(exist_ok=True)
 # Cross-process exclusive lock: only one attach-mode session may drive the
 # shared Chrome tab at a time (see LinkedInBrowser._acquire_tab_lock).
 _TAB_LOCK_PATH = STORAGE_DIR / "browser.lock"
+
+# Forensic capture for every send_connection_request run — see
+# _dump_connection_request_debug. Volume is low (a handful of sends/day), so
+# no retention/cleanup is needed.
+CONNECTION_REQUEST_DEBUG_DIR = Path(__file__).parent / "logs" / "connection_requests"
 
 # ── Stealth helpers ───────────────────────────────────────────────────────────
 
@@ -315,14 +321,23 @@ async def _human_scroll(
         await asyncio.sleep(random.uniform(0.08, 0.22))
 
 
-async def _human_type(page: Page, selector: str, text: str) -> None:
+async def _human_type(page: Page, target: str | Locator, text: str) -> None:
     """
     Click a field and type text one character at a time at a human-like WPM.
+
+    ``target`` is either a page-global selector (existing call sites) or a
+    Locator already scoped to a specific container. Pass a scoped Locator
+    whenever the field's selector alone could also match something elsewhere
+    on the page — e.g. LinkedIn reuses ``textarea[name='message']`` for both
+    the invite-note field and message-compose boxes, so typing into it via a
+    bare page-level selector risks landing in whichever matching field is
+    visible, not necessarily the one just opened.
 
     Average typing speed ≈ 200 CPM (≈ 40 WPM) with natural variance.
     Occasional brief pauses simulate the human hesitating mid-word.
     """
-    await page.click(selector)
+    field = page.locator(target) if isinstance(target, str) else target
+    await field.click()
     await _human_pause(0.2, 0.5)
 
     for char in text:
@@ -332,6 +347,109 @@ async def _human_type(page: Page, selector: str, text: str) -> None:
         if random.random() < 0.1:  # 10 % chance of a short thinking pause
             delay += random.uniform(0.5, 1.2)
         await asyncio.sleep(delay)
+
+
+async def _resolve_accessible_name(locator: Locator) -> str:
+    """
+    Resolve an element's accessible name (aria-label, or the text of whatever
+    aria-labelledby points to) via the DOM directly.
+
+    Needed because a plain ``text_content()`` on a modal container often
+    returns only generic chrome ("Cancel" / "Send" / boilerplate) while the
+    actual identifying header text lives in a separately-referenced element —
+    and because ``el.getRootNode()`` resolves that reference correctly even
+    when the element sits inside a shadow root, where a page-level
+    ``document.getElementById`` lookup would miss it.
+    """
+    try:
+        return (
+            await locator.evaluate(
+                """el => {
+                    const label = el.getAttribute('aria-label');
+                    if (label) return label;
+                    const labelledby = el.getAttribute('aria-labelledby');
+                    if (labelledby) {
+                        const root = el.getRootNode();
+                        const text = labelledby
+                            .split(/\\s+/)
+                            .map(id => (root.getElementById ? root.getElementById(id) : null))
+                            .filter(Boolean)
+                            .map(node => node.textContent.trim())
+                            .join(' ');
+                        if (text) return text;
+                    }
+                    const heading = el.querySelector('h1, h2, h3, [role="heading"]');
+                    return heading ? heading.textContent.trim() : '';
+                }"""
+            )
+            or ""
+        )
+    except Exception as exc:
+        return f"<accessible-name failed: {exc!r}>"
+
+
+async def _describe_locator(locator: Locator) -> str:
+    """Best-effort accessible-name/href/outer-HTML snippet, for diagnostic logging."""
+    try:
+        accessible_name = await _resolve_accessible_name(locator)
+        name = (await locator.text_content() or "").strip()
+        href = await locator.get_attribute("href") or ""
+        html = await locator.evaluate("el => el.outerHTML") or ""
+        return (
+            f"accessible_name={accessible_name!r} text={name!r} href={href!r} "
+            f"html={html[:200]!r}"
+        )
+    except Exception as exc:
+        return f"<describe failed: {exc!r}>"
+
+
+async def _dump_connection_request_debug(
+    page: Page,
+    run_prefix: str,
+    tag: str,
+    meta: dict,
+    dir_path: Path = CONNECTION_REQUEST_DEBUG_DIR,
+    extra_html: dict[str, Locator] | None = None,
+) -> None:
+    """
+    Persist the full page HTML plus surrounding metadata (intended profile_url,
+    the browser's actual current URL, and whatever locator descriptions are
+    passed in) for one step of a connection-request run.
+
+    Written so a misdirected send (right profile_url passed in, wrong LinkedIn
+    profile/dialog acted on) is diagnosable after the fact from the saved HTML
+    rather than needing to be reproduced live.
+
+    ``page.content()`` only serializes the light DOM: LinkedIn's invite-note
+    modal renders inside a shadow root / iframe that never shows up in it, so
+    ``extra_html`` locators (e.g. the modal itself) are captured directly via
+    their own ``outerHTML`` and written as separate, untruncated files.
+    """
+    dir_path.mkdir(parents=True, exist_ok=True)
+    try:
+        html = await page.content()
+    except Exception as exc:
+        html = f"<!-- capture failed: {exc!r} -->"
+    (dir_path / f"{run_prefix}_{tag}.html").write_text(html, encoding="utf-8")
+
+    for name, locator in (extra_html or {}).items():
+        try:
+            snippet = await locator.evaluate("el => el.outerHTML") or ""
+        except Exception as exc:
+            snippet = f"<!-- capture failed: {exc!r} -->"
+        (dir_path / f"{run_prefix}_{tag}_{name}.html").write_text(
+            snippet, encoding="utf-8"
+        )
+
+    payload = {
+        "tag": tag,
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "page_url": page.url,
+        **meta,
+    }
+    (dir_path / f"{run_prefix}_{tag}.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 async def _human_click(page: Page, locator) -> None:
@@ -1907,6 +2025,13 @@ class LinkedInBrowser:
                 f"Connection note too long: {len(note)} chars (LinkedIn limit: 300)"
             )
 
+        run_ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+        slug = re.sub(
+            r"[^a-zA-Z0-9]+", "-", urlparse(profile_url).path.strip("/")
+        )[:60] or "profile"
+        run_prefix = f"{run_ts}_{slug}"
+        debug_meta = {"profile_url": profile_url, "note": note}
+
         connect_btn: Locator | None = None
         last_err = _CONNECT_NOT_FOUND_MSG
 
@@ -1932,17 +2057,38 @@ class LinkedInBrowser:
                 break
 
         if connect_btn is None:
+            await _dump_connection_request_debug(
+                self._page,
+                run_prefix,
+                "connect_not_found",
+                {**debug_meta, "error": last_err},
+            )
             return last_err
 
         try:
             await expect(connect_btn).to_be_visible(timeout=EL_TIMEOUT)
         except Exception:
             logger.warning("Connect control not visible on %s", profile_url)
+            await _dump_connection_request_debug(
+                self._page, run_prefix, "connect_not_visible", debug_meta
+            )
             return (
                 "Connection request could not be sent. "
                 "The Connect control was not visible on the profile."
             )
 
+        connect_btn_desc = await _describe_locator(connect_btn)
+        logger.info(
+            "send_connection_request: clicking connect control for %s -> %s",
+            profile_url,
+            connect_btn_desc,
+        )
+        await _dump_connection_request_debug(
+            self._page,
+            run_prefix,
+            "before_connect_click",
+            {**debug_meta, "connect_control": connect_btn_desc},
+        )
         await _human_click(self._page, connect_btn)
 
         # Click may open an overlay or navigate to the /preload/custom-invite/ route; wait for UI to settle.
@@ -1972,11 +2118,41 @@ class LinkedInBrowser:
                         "could be typed — aborting instead of misdirecting it",
                         profile_url,
                     )
+                    await _dump_connection_request_debug(
+                        self._page, run_prefix, "aborted_before_note_type", debug_meta
+                    )
                     return (
                         "Connection request aborted: the browser tab navigated "
                         "away from the target profile before the note could be sent."
                     )
-                await _human_type(self._page, "textarea[name='message']", note)
+                dialog_heading = self._page.locator(
+                    "[role='dialog']:visible, [aria-modal='true']:visible, "
+                    ".artdeco-modal:visible"
+                ).first
+                dialog_desc = await _describe_locator(dialog_heading)
+                dialog_name = await _resolve_accessible_name(dialog_heading)
+                logger.info(
+                    "send_connection_request: invite dialog for %s -> name=%r desc=%s",
+                    profile_url,
+                    dialog_name,
+                    dialog_desc,
+                )
+                await _dump_connection_request_debug(
+                    self._page,
+                    run_prefix,
+                    "before_note_type",
+                    {
+                        **debug_meta,
+                        "invite_dialog": dialog_desc,
+                        "invite_dialog_name": dialog_name,
+                    },
+                    extra_html={"dialog": dialog_heading},
+                )
+                # Scoped to the confirmed dialog rather than a page-global
+                # selector, since LinkedIn reuses textarea[name='message']
+                # for message-compose boxes too.
+                note_field = dialog_heading.locator("textarea[name='message']")
+                await _human_type(self._page, note_field, note)
                 await _human_pause()
 
         # Submit — LinkedIn often shows two CTAs: primary "Add a note" / "Send"
@@ -2053,6 +2229,9 @@ class LinkedInBrowser:
                     "clicked — aborting instead of misdirecting the invite",
                     profile_url,
                 )
+                await _dump_connection_request_debug(
+                    self._page, run_prefix, "aborted_before_send_click", debug_meta
+                )
                 return (
                     "Connection request aborted: the browser tab navigated "
                     "away from the target profile before it could be sent."
@@ -2061,6 +2240,12 @@ class LinkedInBrowser:
             await _human_click(self._page, send_btn.first)
 
         verify_err = await self._verify_connection_request_sent(profile_url)
+        await _dump_connection_request_debug(
+            self._page,
+            run_prefix,
+            "after_send",
+            {**debug_meta, "verify_error": verify_err},
+        )
         if verify_err:
             return verify_err
 
