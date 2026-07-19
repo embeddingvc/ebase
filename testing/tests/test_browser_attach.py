@@ -1,13 +1,16 @@
-"""Unit tests for LinkedInBrowser._attach's no-open-tabs fallback."""
+"""Unit tests for LinkedInBrowser._attach's no-open-tabs fallback, plus the
+cross-process tab lock and same-profile guard added for issue #22."""
 
 from __future__ import annotations
 
+import asyncio
 import urllib.error
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from playwright.async_api import Error
 
+import outreach.browser as browser_mod
 from outreach.browser import LinkedInBrowser, _open_blank_tab
 
 
@@ -131,3 +134,57 @@ def test_open_blank_tab_does_not_retry_on_timeout() -> None:
     # already succeeded server-side — retrying with GET risks opening a
     # second tab, so it must not be attempted.
     urlopen.assert_called_once()
+
+
+# ── Cross-process tab lock (issue #22: shared-tab race) ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_tab_lock_serializes_concurrent_sessions(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(browser_mod, "_TAB_LOCK_PATH", tmp_path / "browser.lock")
+
+    li1 = object.__new__(LinkedInBrowser)
+    li1._lock_fh = None
+    li2 = object.__new__(LinkedInBrowser)
+    li2._lock_fh = None
+
+    await li1._acquire_tab_lock()
+    try:
+        task2 = asyncio.create_task(li2._acquire_tab_lock())
+        await asyncio.sleep(0.2)
+        assert not task2.done(), "second session must block while the first holds the lock"
+    finally:
+        await li1._release_tab_lock()
+
+    await asyncio.wait_for(task2, timeout=2)
+    assert li2._lock_fh is not None
+    await li2._release_tab_lock()
+
+
+def _browser_with_page_url(url: str) -> LinkedInBrowser:
+    li = object.__new__(LinkedInBrowser)
+    li._page = MagicMock(url=url)
+    return li
+
+
+def test_tab_left_for_other_profile_false_for_same_profile() -> None:
+    li = _browser_with_page_url("https://www.linkedin.com/in/daksh_p_37808729a/")
+    assert not li._tab_left_for_other_profile(
+        "https://www.linkedin.com/in/daksh_p_37808729a/"
+    )
+
+
+def test_tab_left_for_other_profile_true_for_different_profile() -> None:
+    li = _browser_with_page_url("https://www.linkedin.com/in/sohan-patra/")
+    assert li._tab_left_for_other_profile(
+        "https://www.linkedin.com/in/daksh_p_37808729a/"
+    )
+
+
+def test_tab_left_for_other_profile_tolerates_non_in_routes() -> None:
+    # The invite flow can legitimately hop through routes like
+    # /preload/custom-invite/ for the *correct* profile — must not false-positive.
+    li = _browser_with_page_url("https://www.linkedin.com/preload/custom-invite/?id=1")
+    assert not li._tab_left_for_other_profile(
+        "https://www.linkedin.com/in/daksh_p_37808729a/"
+    )

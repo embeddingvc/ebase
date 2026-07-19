@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.14] - 2026-07-16
+
+### Fixed
+- `send_connection_request` could deliver its note to the wrong LinkedIn profile (#22). Root cause: attach-mode sessions pick an existing Chrome tab with no reservation, so two concurrent sessions (an interactive skill run, a cron sweep, `browse_forever`) could pick the identical physical tab and race each other's navigation/typing. `LinkedInBrowser` now holds a cross-process exclusive lock (`outreach/storage/browser.lock`) for the duration of every attach-mode session, serializing all tab access machine-wide; `browse_forever` releases it during its idle breaks so it doesn't starve foreground sends. `send_connection_request` also now aborts (instead of silently continuing) if the tab has unambiguously navigated to a different profile's page right before the note is typed or the invite is sent.
+- `send_connection_request`'s note field is now typed via a Locator scoped to the confirmed invite dialog rather than a page-global `textarea[name='message']` selector — LinkedIn reuses that selector for chat-compose boxes too, so a bare page-level click risked landing in the wrong one.
+
+### Added
+- `send_connection_request` now writes a forensic HTML/JSON dump of each run (connect control, invite dialog, and outcome) to `outreach/logs/connection_requests/`, so a future misdirected send is diagnosable from the saved page state instead of needing to be reproduced live.
+
 ## [1.0.0.13] - 2026-07-09
 
 ### Fixed
