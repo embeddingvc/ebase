@@ -162,6 +162,10 @@ _INVITE_VERIFY_FAILED_MSG = (
 _PROFILE_ACTION_ROW_TIMEOUT_S = 15.0
 _MORE_MENU_CONNECT_TIMEOUT_S = 18.0
 _CONNECT_DISCOVERY_ATTEMPTS = 2
+# LinkedIn's messaging search/typeahead index can lag a few seconds behind a
+# freshly accepted connection, so the very first send/fetch attempt can find
+# no thread and no compose candidate even though the connection is real.
+_MESSAGE_UI_RETRY_ATTEMPTS = 3
 
 # Paths
 STORAGE_DIR = Path(__file__).parent / "storage"
@@ -2375,10 +2379,16 @@ class LinkedInBrowser:
           1. Go to inbox.
           2. Try direct match in visible conversation rows by profile-path hints.
           3. If no hit, use inbox search and pick the best matching thread.
+
+        A connection accepted moments ago may not appear yet in LinkedIn's
+        messaging search/typeahead index, so step 3 (no thread found at all)
+        is retried with a delay and a fresh inbox reload before giving up.
+        Once a thread candidate is opened, header/profile-url verification
+        runs once — a mismatch there means the wrong thread, not staleness,
+        so it is not retried.
         """
         hints, fallback_query = self._profile_match_hints(profile_url)
         query = self._sanitize_search_name(search_name) or fallback_query
-        await self._open_messaging_home()
 
         async def _find_thread_row_in(multi: Locator) -> Locator | None:
             n = await multi.count()
@@ -2398,91 +2408,111 @@ class LinkedInBrowser:
                     continue
             return None
 
-        row: Locator | None = None
-        # Prefer explicit inbox search flow: type name -> Enter -> click first visible result.
-        if query:
-            search_boxes = [
-                self._page.locator("input[placeholder*='Search messages' i]").first,
-                self._page.locator("input[aria-label*='Search messages' i]").first,
-                self._page.locator("input[placeholder*='Search' i]").first,
-                self._page.get_by_role("searchbox").first,
-                self._page.locator("input.msg-search-typeahead__input").first,
-            ]
-            search_box = None
-            for cand in search_boxes:
-                try:
-                    if await cand.count() and await cand.is_visible():
-                        search_box = cand
-                        break
-                except Exception:
-                    continue
-
-            if search_box is not None:
-                await _human_click(self._page, search_box)
-                await search_box.fill("")
-                await _human_pause(0.1, 0.2)
-                for ch in query:
-                    await self._page.keyboard.type(ch)
-                    await asyncio.sleep(random.uniform(0.04, 0.14))
-                await _human_pause(0.1, 0.2)
-                await self._page.keyboard.press("Enter")
-                await _human_pause(0.8, 1.4)
-
-                # After searching, prefer a result matching profile hints (same check
-                # as the non-search fallback below); only take the first visible
-                # result if nothing matches, and warn since that's a guess.
-                search_rows = self._page.locator(
-                    "a[href*='/messaging/thread/'], "
-                    ".msg-conversation-listitem a, "
-                    ".msg-conversation-listitem div.msg-conversation-listitem__link, "
-                    "li.msg-conversation-listitem, "
-                    "[data-view-name*='search'] a[href*='/messaging/']"
+        for attempt in range(_MESSAGE_UI_RETRY_ATTEMPTS):
+            if attempt == 0:
+                await self._open_messaging_home()
+            else:
+                logger.info(
+                    "_open_message_ui_from_messaging: retrying for %s "
+                    "(connection may be too new for LinkedIn's index)",
+                    profile_url,
                 )
-                row = await _find_thread_row_in(search_rows)
-                if row is None:
-                    for i in range(min(await search_rows.count(), 30)):
-                        cand = search_rows.nth(i)
-                        try:
-                            if await cand.is_visible():
-                                row = cand
-                                logger.warning(
-                                    "No hint match in search results for profile=%s; "
-                                    "falling back to first visible result.",
-                                    profile_url,
-                                )
-                                break
-                        except Exception:
-                            continue
+                await _human_pause(3.0, 5.0)
+                await self._page.goto(
+                    f"{BASE_URL}/messaging/",
+                    timeout=NAV_TIMEOUT,
+                    wait_until="domcontentloaded",
+                )
+                await _human_pause(1.0, 1.8)
 
-        # Fallback when search UI/results are unavailable: try matching visible threads.
-        if row is None:
-            row_candidates = [
-                self._page.locator("a.msg-conversation-listitem__link"),
-                self._page.locator("div.msg-conversation-listitem__link"),
-                self._page.locator(
-                    "li.msg-conversation-listitem div.msg-conversation-listitem__link"
-                ),
-                self._page.locator("li.msg-conversation-listitem"),
-                self._page.locator("a[href*='/messaging/thread/']"),
-                self._page.locator(".msg-conversation-listitem a"),
-            ]
-            for cand in row_candidates:
-                found = await _find_thread_row_in(cand)
-                if found is not None:
-                    row = found
-                    break
+            row: Locator | None = None
+            # Prefer explicit inbox search flow: type name -> Enter -> click first visible result.
+            if query:
+                search_boxes = [
+                    self._page.locator("input[placeholder*='Search messages' i]").first,
+                    self._page.locator("input[aria-label*='Search messages' i]").first,
+                    self._page.locator("input[placeholder*='Search' i]").first,
+                    self._page.get_by_role("searchbox").first,
+                    self._page.locator("input.msg-search-typeahead__input").first,
+                ]
+                search_box = None
+                for cand in search_boxes:
+                    try:
+                        if await cand.count() and await cand.is_visible():
+                            search_box = cand
+                            break
+                    except Exception:
+                        continue
 
-        if row is None:
+                if search_box is not None:
+                    await _human_click(self._page, search_box)
+                    await search_box.fill("")
+                    await _human_pause(0.1, 0.2)
+                    for ch in query:
+                        await self._page.keyboard.type(ch)
+                        await asyncio.sleep(random.uniform(0.04, 0.14))
+                    await _human_pause(0.1, 0.2)
+                    await self._page.keyboard.press("Enter")
+                    await _human_pause(0.8, 1.4)
+
+                    # After searching, prefer a result matching profile hints (same check
+                    # as the non-search fallback below); only take the first visible
+                    # result if nothing matches, and warn since that's a guess.
+                    search_rows = self._page.locator(
+                        "a[href*='/messaging/thread/'], "
+                        ".msg-conversation-listitem a, "
+                        ".msg-conversation-listitem div.msg-conversation-listitem__link, "
+                        "li.msg-conversation-listitem, "
+                        "[data-view-name*='search'] a[href*='/messaging/']"
+                    )
+                    row = await _find_thread_row_in(search_rows)
+                    if row is None:
+                        for i in range(min(await search_rows.count(), 30)):
+                            cand = search_rows.nth(i)
+                            try:
+                                if await cand.is_visible():
+                                    row = cand
+                                    logger.warning(
+                                        "No hint match in search results for profile=%s; "
+                                        "falling back to first visible result.",
+                                        profile_url,
+                                    )
+                                    break
+                            except Exception:
+                                continue
+
+            # Fallback when search UI/results are unavailable: try matching visible threads.
+            if row is None:
+                row_candidates = [
+                    self._page.locator("a.msg-conversation-listitem__link"),
+                    self._page.locator("div.msg-conversation-listitem__link"),
+                    self._page.locator(
+                        "li.msg-conversation-listitem div.msg-conversation-listitem__link"
+                    ),
+                    self._page.locator("li.msg-conversation-listitem"),
+                    self._page.locator("a[href*='/messaging/thread/']"),
+                    self._page.locator(".msg-conversation-listitem a"),
+                ]
+                for cand in row_candidates:
+                    found = await _find_thread_row_in(cand)
+                    if found is not None:
+                        row = found
+                        break
+
+            if row is not None:
+                await _human_click(self._page, row)
+                await _human_pause(0.7, 1.2)
+                break
+
             # No existing thread (e.g. a connection accepted without ever
             # exchanging a message never gets a row in search/inbox) — start
             # one via the compose typeahead instead. The header/profile-url
             # checks below still verify the resulting thread before send.
-            if not await self._start_new_conversation_via_compose(profile_url, query):
-                logger.warning("No messaging thread matched profile=%s", profile_url)
-                return False
+            if await self._start_new_conversation_via_compose(profile_url, query):
+                break
         else:
-            await _human_click(self._page, row)
-            await _human_pause(0.7, 1.2)
+            logger.warning("No messaging thread matched profile=%s", profile_url)
+            return False
 
         if query and not await self._thread_header_matches(query):
             logger.warning(

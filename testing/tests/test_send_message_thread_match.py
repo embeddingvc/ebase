@@ -62,6 +62,7 @@ def _make_page(
 ) -> MagicMock:
     page = MagicMock()
     page.url = "https://www.linkedin.com/messaging/"
+    page.goto = AsyncMock()
     page.wait_for_selector = AsyncMock()
     page.wait_for_url = AsyncMock()
     page.go_back = AsyncMock()
@@ -372,3 +373,57 @@ async def test_no_thread_and_no_compose_button_returns_false():
 
     assert not ok
     assert logger.warning.called
+
+
+@pytest.mark.asyncio
+async def test_retries_when_freshly_accepted_connection_not_yet_indexed():
+    """Regression test for issue #24: a connection accepted moments ago can
+    be briefly missing from LinkedIn's messaging search/typeahead. The first
+    attempt finds no thread and no compose candidate; a retry (after a
+    reload) finds the thread and must succeed."""
+    attempt = {"n": 0}
+
+    def locator_side_effect(sel: str):
+        if sel == SEARCH_ROWS_SELECTOR:
+            rows = [] if attempt["n"] == 0 else [_make_row(text="Jay Sato, 1st")]
+            loc = MagicMock()
+            loc.count = AsyncMock(return_value=len(rows))
+            loc.nth = MagicMock(side_effect=lambda i: rows[i])
+            return loc
+        if sel == "input[placeholder*='Search messages' i]":
+            search_box = MagicMock()
+            search_box.count = AsyncMock(return_value=1)
+            search_box.is_visible = AsyncMock(return_value=True)
+            search_box.fill = AsyncMock()
+            return MagicMock(first=search_box)
+        m = MagicMock()
+        m.count = AsyncMock(return_value=0)
+        m.first = MagicMock(count=AsyncMock(return_value=0))
+        return m
+
+    async def goto_side_effect(*_args, **_kwargs):
+        attempt["n"] += 1
+
+    page = MagicMock()
+    page.url = "https://www.linkedin.com/messaging/"
+    page.goto = AsyncMock(side_effect=goto_side_effect)
+    page.wait_for_selector = AsyncMock()
+    page.keyboard = MagicMock(type=AsyncMock(), press=AsyncMock())
+    page.locator = MagicMock(side_effect=locator_side_effect)
+    page.get_by_role = MagicMock(
+        return_value=MagicMock(first=MagicMock(count=AsyncMock(return_value=0)))
+    )
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+        patch("outreach.browser.logger") as logger,
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert ok
+    assert page.goto.await_count == 1
+    assert any("retrying" in str(c).lower() for c in logger.info.call_args_list)
