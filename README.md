@@ -107,7 +107,7 @@ Say what you want in plain English — each ask runs as a Claude skill:
 >
 > **Overnight** — Routines sync accepts, plan follow-ups for each new connection, and drive conversations toward meetings — all while you sleep.
 >
-> **Next morning** — Two meetings are on your calendar. You never opened LinkedIn again.
+> **Next morning** — "Show ebase stats." Two meetings are on your calendar. You never opened LinkedIn again.
 
 ---
 

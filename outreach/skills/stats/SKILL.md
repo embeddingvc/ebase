@@ -1,9 +1,9 @@
 ---
 name: stats
-description: Show outreach performance — connection funnel, reply rates, sequence-step effectiveness, and conversion by goal. Use when the user asks "/stats", "show me outreach stats", "how is the campaign doing", or similar.
+description: Show outreach performance — connection funnel, reply rates, sequence-step effectiveness, and conversion by goal. Use when the user asks "/stats", "show me ebase stats", "how is the campaign doing", or similar.
 ---
 
-# Outreach Stats
+# ebase Stats
 
 Render a funnel dashboard from the `get_outreach_stats` MCP tool. One tool call, no loops — all aggregation happens server-side.
 
