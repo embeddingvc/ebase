@@ -2362,6 +2362,40 @@ class LinkedInBrowser:
             logger.warning("_open_messaging_home: messaging shell not fully ready yet.")
         await _human_pause(0.3, 0.7)
 
+    async def _close_open_message_bubbles(self) -> None:
+        """
+        Close every currently-open messaging overlay bubble (the floating
+        chat-head widget LinkedIn docks bottom-right of the page).
+
+        That widget is account-level state, not page-local: verified live
+        that it survives a hard ``page.goto()`` navigation and rehydrates a
+        few seconds after load instead of being torn down with the rest of
+        the DOM. Left open, a stale bubble for a *different* profile
+        physically overlaps the next profile's "Message" CTA and
+        intercepts the click on it — verified live that this hangs for the
+        full click timeout instead of failing fast. Closing everything
+        before opening a new bubble guarantees at most one bubble exists
+        by the time compose/send selectors run, so those don't need their
+        own per-bubble scoping either.
+        """
+        close_btn = self._page.get_by_role(
+            "button", name=re.compile(r"^Close your conversation", re.I)
+        ).first
+        # Closing one bubble reflows the rest; re-querying ".first" each
+        # iteration re-evaluates against current DOM state rather than
+        # trusting a snapshotted count/locator list.
+        for _ in range(10):  # ponytail: bubble count is always small in practice
+            if not await close_btn.count():
+                return
+            try:
+                await _human_click(self._page, close_btn)
+            except Exception as exc:
+                logger.info(
+                    "_close_open_message_bubbles: close click failed (%s); stopping.",
+                    exc,
+                )
+                return
+
     async def _open_message_ui_via_profile_cta(self, profile_url: str) -> bool:
         """
         Open a conversation the way a real user does: visit the prospect's
@@ -2390,6 +2424,7 @@ class LinkedInBrowser:
         non-connection by mistake.
         """
         await self._ensure_profile_tab(profile_url)
+        await self._close_open_message_bubbles()
 
         candidates = self._page.locator(
             "a[href*='/messaging/compose/'][href*='screenContext=NON_SELF_PROFILE_VIEW']"
@@ -2864,6 +2899,7 @@ class LinkedInBrowser:
         await _human_click(self._page, send_btn)
         await _human_pause(1.0, 2.0)
         logger.info("Message sent to %s", profile_url)
+        await self._close_open_message_bubbles()
         return True
 
     async def fetch_chat_history(

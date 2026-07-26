@@ -66,6 +66,7 @@ def _make_page(
     cta_available: bool = False,
     cta_clickable: bool = True,
     cta_opens_inmail: bool = False,
+    stale_bubbles: int = 0,
 ) -> MagicMock:
     page = MagicMock()
     page.url = "https://www.linkedin.com/messaging/"
@@ -153,10 +154,12 @@ def _make_page(
         m.first.count = AsyncMock(return_value=0)
         return m
 
+    close_btn = MagicMock()
+    close_btn.count = AsyncMock(side_effect=[1] * stale_bubbles + [0])
+    page.close_btn = close_btn  # test-only handle, for close-click assertions
+
     page.locator = MagicMock(side_effect=locator_side_effect)
-    page.get_by_role = MagicMock(
-        return_value=MagicMock(first=MagicMock(count=AsyncMock(return_value=0)))
-    )
+    page.get_by_role = MagicMock(return_value=MagicMock(first=close_btn))
     return page
 
 
@@ -501,3 +504,50 @@ async def test_no_thread_and_no_compose_button_returns_false():
 
     assert not ok
     assert logger.warning.called
+
+
+@pytest.mark.asyncio
+async def test_close_open_message_bubbles_closes_until_none_left():
+    """The messaging overlay is account-level state that survives page
+    navigation (verified live) — closing must keep clicking until the
+    "Close your conversation" control reports zero remaining, not just
+    once."""
+    page = _make_page([], stale_bubbles=3)
+    li = _browser(page)
+
+    with patch("outreach.browser._human_click", new=AsyncMock()) as click:
+        await li._close_open_message_bubbles()
+
+    assert click.await_count == 3
+    for call in click.await_args_list:
+        assert call.args == (li._page, page.close_btn)
+
+
+@pytest.mark.asyncio
+async def test_profile_cta_closes_stale_bubble_before_clicking_new_one():
+    """A bubble left open from a previous profile (e.g. Hector) physically
+    overlaps the next profile's Message CTA and intercepts the click on it
+    — verified live. It must be closed before the CTA is probed/clicked,
+    not after."""
+    page = _make_page(
+        [],
+        header_name="Jay Sato",
+        profile_card_href="https://www.linkedin.com/in/jay-sato-263a85270/",
+        cta_available=True,
+        stale_bubbles=1,
+    )
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()) as click,
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert ok
+    calls = click.await_args_list
+    close_call_index = calls.index(((li._page, page.close_btn), {}))
+    cta_call_index = calls.index(((li._page, page.cta_candidate), {}))
+    assert close_call_index < cta_call_index

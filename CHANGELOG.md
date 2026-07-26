@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.17] - 2026-07-26
+
+### Fixed
+- The profile-CTA path from #26 could hang for a full click timeout (or, via `_human_click`'s coordinate-based click, silently land on the wrong element) when a *different* conversation's overlay bubble was already open. LinkedIn's messaging overlay is account-level state, not page-local: verified live that it survives a hard `page.goto()` navigation and rehydrates a few seconds after load instead of being torn down with the DOM, so a bubble opened for one prospect could still be sitting open — and physically overlapping the next prospect's "Message" CTA — well after navigating to their profile. `send_message`/`fetch_chat_history` now close every open overlay bubble before probing the CTA, and `send_message` closes its own bubble again after a successful send, so at most one bubble is ever open when a click or compose selector runs.
+
 ## [1.0.0.16] - 2026-07-25
 
 ### Fixed
