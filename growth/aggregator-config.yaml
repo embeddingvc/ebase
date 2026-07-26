@@ -1,0 +1,24 @@
+repository: embeddingvc/ebase
+canonical_url: https://github.com/embeddingvc/ebase
+
+max_new_candidates_per_run: 10
+max_qualified_targets_per_week: 8
+max_submission_drafts_per_week: 5
+minimum_days_before_follow_up: 7
+require_human_approval_for_public_writes: true
+
+preferred_categories:
+  - Claude Code
+  - MCP
+  - AI agents
+  - recruiting technology
+  - LinkedIn outreach
+  - browser automation
+  - self-hosted automation
+
+blocked_claims:
+  - undetectable
+  - guaranteed safe
+  - officially approved by LinkedIn
+  - guaranteed replies
+  - guaranteed hires
