@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.16] - 2026-07-25
+
+### Fixed
+- `send_message`/`fetch_chat_history` now open a conversation by clicking the prospect's profile-page "Message" link first, instead of typing their name into `/messaging/`'s inbox search or compose typeahead (#26). LinkedIn resolves that link's `recipient` param (accepts the plain vanity slug already stored in `connections.json`) server-side by identity via a direct `messengerConversations` lookup — no keyword search involved — which removes both the connections-search indexing lag (#24/#25) and the same-name ambiguity (#13) as failure classes for the common case. The link is duplicated in the DOM (a hidden sticky-header copy, a hidden mobile variant); each visible candidate is trial-clicked and the first one that's actually clickable is used, matching what a real user's mouse would land on. Falls back to the existing `/messaging/` search flow when there's no Message CTA at all (e.g. a still-pending invite). The existing header/profile-card verification runs unchanged on top of either path.
+- The profile-CTA path explicitly rejects (falls back, does not report a match) if the CTA opens LinkedIn's paid **Premium InMail composer** instead of a free 1st-degree thread — that composer renders under the same "Message" label for non-connections, and `send_message`/`fetch_chat_history` require an existing 1st-degree connection, so this guards against ever silently spending a real InMail credit on a caller bug.
+
 ## [1.0.0.14] - 2026-07-16
 
 ### Fixed

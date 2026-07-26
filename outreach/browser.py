@@ -2362,6 +2362,66 @@ class LinkedInBrowser:
             logger.warning("_open_messaging_home: messaging shell not fully ready yet.")
         await _human_pause(0.3, 0.7)
 
+    async def _open_message_ui_via_profile_cta(self, profile_url: str) -> bool:
+        """
+        Open a conversation the way a real user does: visit the prospect's
+        profile and click their top-card "Message" link.
+
+        LinkedIn renders it as ``<a href="/messaging/compose/?...&recipient=
+        <urn-or-vanity-slug>&screenContext=NON_SELF_PROFILE_VIEW&interop=
+        msgOverlay">`` and resolves the recipient server-side by identity —
+        no name search involved, so it's immune to the connections-search
+        indexing lag and same-name ambiguity that affect ``/messaging/``'s
+        search box and compose typeahead (issue #26).
+
+        The link is duplicated in the DOM (a hidden sticky-header copy above
+        the nav, a hidden mobile variant) that a real click can't land on;
+        probe each visible candidate with a trial click and act on the first
+        one that's actually clickable.
+
+        Returns False (caller falls back to the ``/messaging/`` search flow)
+        if there's no Message CTA at all — e.g. a pending invite that hasn't
+        been accepted yet — or if the CTA opened a **paid Premium InMail**
+        composer instead of a free 1st-degree thread. LinkedIn shows the same
+        "Message"-labeled link for both; InMail is only offered for
+        non-connections, so this should never fire for a real 1st-degree
+        prospect, but ``send_message``/``fetch_chat_history`` require one and
+        must never silently spend a real InMail credit if a caller passes a
+        non-connection by mistake.
+        """
+        await self._ensure_profile_tab(profile_url)
+
+        candidates = self._page.locator(
+            "a[href*='/messaging/compose/'][href*='screenContext=NON_SELF_PROFILE_VIEW']"
+        )
+        for i in range(await candidates.count()):
+            cand = candidates.nth(i)
+            try:
+                if not await cand.is_visible():
+                    continue
+                await cand.click(trial=True, timeout=3_000)
+            except Exception:
+                continue
+            await _human_click(self._page, cand)
+            await _human_pause(0.7, 1.2)
+
+            if await self._page.locator(".msg-inmail-credits-display").count():
+                logger.warning(
+                    "_open_message_ui_via_profile_cta: %s opened a paid "
+                    "Premium InMail composer, not a 1st-degree thread; "
+                    "refusing to treat as a match.",
+                    profile_url,
+                )
+                return False
+            return True
+
+        logger.info(
+            "_open_message_ui_via_profile_cta: no clickable Message CTA on %s "
+            "(not a 1st-degree connection yet?)",
+            profile_url,
+        )
+        return False
+
     async def _open_message_ui_from_messaging(
         self,
         profile_url: str,
@@ -2369,15 +2429,34 @@ class LinkedInBrowser:
         search_name: str | None = None,
     ) -> bool:
         """
-        Open a conversation from ``/messaging/`` (never from profile CTAs).
+        Open a conversation with ``profile_url``.
 
-        Strategy:
+        Primary path: the profile's own "Message" CTA (see
+        :meth:`_open_message_ui_via_profile_cta`) — identity-keyed, no name
+        search. Falls back to ``/messaging/`` inbox search below only when
+        the CTA isn't available.
+
+        Fallback strategy:
           1. Go to inbox.
           2. Try direct match in visible conversation rows by profile-path hints.
           3. If no hit, use inbox search and pick the best matching thread.
         """
         hints, fallback_query = self._profile_match_hints(profile_url)
         query = self._sanitize_search_name(search_name) or fallback_query
+
+        if await self._open_message_ui_via_profile_cta(profile_url):
+            if query and not await self._thread_header_matches(query):
+                logger.warning(
+                    "Profile-CTA thread header does not match expected name '%s' "
+                    "for profile=%s; treating as no match.",
+                    query,
+                    profile_url,
+                )
+                return False
+            if not await self._thread_profile_url_matches(profile_url):
+                return False
+            return True
+
         await self._open_messaging_home()
 
         async def _find_thread_row_in(multi: Locator) -> Locator | None:
