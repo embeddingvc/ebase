@@ -2362,6 +2362,101 @@ class LinkedInBrowser:
             logger.warning("_open_messaging_home: messaging shell not fully ready yet.")
         await _human_pause(0.3, 0.7)
 
+    async def _close_open_message_bubbles(self) -> None:
+        """
+        Close every currently-open messaging overlay bubble (the floating
+        chat-head widget LinkedIn docks bottom-right of the page).
+
+        That widget is account-level state, not page-local: verified live
+        that it survives a hard ``page.goto()`` navigation and rehydrates a
+        few seconds after load instead of being torn down with the rest of
+        the DOM. Left open, a stale bubble for a *different* profile
+        physically overlaps the next profile's "Message" CTA and
+        intercepts the click on it — verified live that this hangs for the
+        full click timeout instead of failing fast. Closing everything
+        before opening a new bubble guarantees at most one bubble exists
+        by the time compose/send selectors run, so those don't need their
+        own per-bubble scoping either.
+        """
+        close_btn = self._page.get_by_role(
+            "button", name=re.compile(r"^Close your conversation", re.I)
+        ).first
+        # Closing one bubble reflows the rest; re-querying ".first" each
+        # iteration re-evaluates against current DOM state rather than
+        # trusting a snapshotted count/locator list.
+        for _ in range(10):  # ponytail: bubble count is always small in practice
+            if not await close_btn.count():
+                return
+            try:
+                await _human_click(self._page, close_btn)
+            except Exception as exc:
+                logger.info(
+                    "_close_open_message_bubbles: close click failed (%s); stopping.",
+                    exc,
+                )
+                return
+
+    async def _open_message_ui_via_profile_cta(self, profile_url: str) -> bool:
+        """
+        Open a conversation the way a real user does: visit the prospect's
+        profile and click their top-card "Message" link.
+
+        LinkedIn renders it as ``<a href="/messaging/compose/?...&recipient=
+        <urn-or-vanity-slug>&screenContext=NON_SELF_PROFILE_VIEW&interop=
+        msgOverlay">`` and resolves the recipient server-side by identity —
+        no name search involved, so it's immune to the connections-search
+        indexing lag and same-name ambiguity that affect ``/messaging/``'s
+        search box and compose typeahead (issue #26).
+
+        The link is duplicated in the DOM (a hidden sticky-header copy above
+        the nav, a hidden mobile variant) that a real click can't land on;
+        probe each visible candidate with a trial click and act on the first
+        one that's actually clickable.
+
+        Returns False (caller falls back to the ``/messaging/`` search flow)
+        if there's no Message CTA at all — e.g. a pending invite that hasn't
+        been accepted yet — or if the CTA opened a **paid Premium InMail**
+        composer instead of a free 1st-degree thread. LinkedIn shows the same
+        "Message"-labeled link for both; InMail is only offered for
+        non-connections, so this should never fire for a real 1st-degree
+        prospect, but ``send_message``/``fetch_chat_history`` require one and
+        must never silently spend a real InMail credit if a caller passes a
+        non-connection by mistake.
+        """
+        await self._ensure_profile_tab(profile_url)
+        await self._close_open_message_bubbles()
+
+        candidates = self._page.locator(
+            "a[href*='/messaging/compose/'][href*='screenContext=NON_SELF_PROFILE_VIEW']"
+        )
+        for i in range(await candidates.count()):
+            cand = candidates.nth(i)
+            try:
+                if not await cand.is_visible():
+                    continue
+                await cand.click(trial=True, timeout=3_000)
+            except Exception:
+                continue
+            await _human_click(self._page, cand)
+            await _human_pause(0.7, 1.2)
+
+            if await self._page.locator(".msg-inmail-credits-display").count():
+                logger.warning(
+                    "_open_message_ui_via_profile_cta: %s opened a paid "
+                    "Premium InMail composer, not a 1st-degree thread; "
+                    "refusing to treat as a match.",
+                    profile_url,
+                )
+                return False
+            return True
+
+        logger.info(
+            "_open_message_ui_via_profile_cta: no clickable Message CTA on %s "
+            "(not a 1st-degree connection yet?)",
+            profile_url,
+        )
+        return False
+
     async def _open_message_ui_from_messaging(
         self,
         profile_url: str,
@@ -2369,15 +2464,34 @@ class LinkedInBrowser:
         search_name: str | None = None,
     ) -> bool:
         """
-        Open a conversation from ``/messaging/`` (never from profile CTAs).
+        Open a conversation with ``profile_url``.
 
-        Strategy:
+        Primary path: the profile's own "Message" CTA (see
+        :meth:`_open_message_ui_via_profile_cta`) — identity-keyed, no name
+        search. Falls back to ``/messaging/`` inbox search below only when
+        the CTA isn't available.
+
+        Fallback strategy:
           1. Go to inbox.
           2. Try direct match in visible conversation rows by profile-path hints.
           3. If no hit, use inbox search and pick the best matching thread.
         """
         hints, fallback_query = self._profile_match_hints(profile_url)
         query = self._sanitize_search_name(search_name) or fallback_query
+
+        if await self._open_message_ui_via_profile_cta(profile_url):
+            if query and not await self._thread_header_matches(query):
+                logger.warning(
+                    "Profile-CTA thread header does not match expected name '%s' "
+                    "for profile=%s; treating as no match.",
+                    query,
+                    profile_url,
+                )
+                return False
+            if not await self._thread_profile_url_matches(profile_url):
+                return False
+            return True
+
         await self._open_messaging_home()
 
         async def _find_thread_row_in(multi: Locator) -> Locator | None:
@@ -2654,9 +2768,16 @@ class LinkedInBrowser:
         # A conversation just started via compose (URL .../messaging/thread/new/)
         # renders its own profile card with a direct vanity-slug link already
         # resolved — no click-and-observe-navigation needed for that case.
+        # The profile-CTA overlay (#26) renders the *same* profile-card shape
+        # for an existing thread, but verified live that its link never
+        # self-resolves off the raw ACoAA member-ID URL — fall through to
+        # the click-and-observe path below for that case instead of trusting
+        # an ACoAA href as a mismatch.
         card_link = self._page.locator(
             ".msg-s-profile-card .profile-card-one-to-one__profile-link"
         ).first
+        link = None
+        href = ""
         if await card_link.count():
             try:
                 href = (await card_link.get_attribute("href") or "").strip()
@@ -2666,7 +2787,7 @@ class LinkedInBrowser:
                     exc,
                 )
                 href = ""
-            if href:
+            if href and "acoaa" not in href.lower():
                 resolved = self._canonical_in_profile_url(href).lower()
                 if resolved != expected:
                     logger.warning(
@@ -2678,21 +2799,24 @@ class LinkedInBrowser:
                     )
                     return False
                 return True
+            if href:
+                link = card_link
 
-        link = self._page.locator(".msg-thread__link-to-profile").first
-        try:
-            if not await link.count():
-                logger.info(
-                    "_thread_profile_url_matches: profile-link selector found nothing; skipping."
-                )
+        if link is None:
+            link = self._page.locator(".msg-thread__link-to-profile").first
+            try:
+                if not await link.count():
+                    logger.info(
+                        "_thread_profile_url_matches: profile-link selector found nothing; skipping."
+                    )
+                    return True
+                href = (await link.get_attribute("href") or "").strip()
+            except Exception as exc:
+                logger.info("_thread_profile_url_matches: failed to read profile link (%s); skipping.", exc)
                 return True
-            href = (await link.get_attribute("href") or "").strip()
-        except Exception as exc:
-            logger.info("_thread_profile_url_matches: failed to read profile link (%s); skipping.", exc)
-            return True
-        if not href:
-            logger.info("_thread_profile_url_matches: profile-link href was empty; skipping.")
-            return True
+            if not href:
+                logger.info("_thread_profile_url_matches: profile-link href was empty; skipping.")
+                return True
 
         resolved_raw = ""
         try:
@@ -2785,6 +2909,7 @@ class LinkedInBrowser:
         await _human_click(self._page, send_btn)
         await _human_pause(1.0, 2.0)
         logger.info("Message sent to %s", profile_url)
+        await self._close_open_message_bubbles()
         return True
 
     async def fetch_chat_history(
@@ -2805,6 +2930,9 @@ class LinkedInBrowser:
         if not await self._open_message_ui_from_messaging(
             profile_url, search_name=search_name
         ):
+            # A rejected CTA click (e.g. header/profile-url mismatch) can
+            # still have opened the wrong bubble before the check failed.
+            await self._close_open_message_bubbles()
             return []
 
         try:
@@ -2820,11 +2948,18 @@ class LinkedInBrowser:
 
         await _human_pause(0.3, 0.6)
 
-        items: list[dict[str, Any]] = await self._page.evaluate(
+        # The message list renders inside a shadow-DOM-hosted overlay bubble
+        # (verified live) when opened via the profile-CTA path (#26). Raw
+        # `document.querySelectorAll` inside a plain page.evaluate() can't
+        # see into it and silently returns nothing; Locator.evaluate_all
+        # uses Playwright's own selector engine, which pierces open shadow
+        # roots, to find the starting elements before handing them to JS.
+        items: list[dict[str, Any]] = await self._page.locator(
+            "li.msg-s-message-list__event"
+        ).evaluate_all(
             """
-            () => {
+            (events) => {
               const out = [];
-              const events = document.querySelectorAll('li.msg-s-message-list__event');
 
               const senderIsSelf = (item, li) => {
                 const il = item.classList;
@@ -2915,9 +3050,11 @@ class LinkedInBrowser:
             """
         )
         if not isinstance(items, list):
+            await self._close_open_message_bubbles()
             return []
 
         logger.info("fetch_chat_history: %d messages for %s", len(items), profile_url)
+        await self._close_open_message_bubbles()
         return items
 
     # ── Feed posts ────────────────────────────────────────────────────────────

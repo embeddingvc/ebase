@@ -1,10 +1,11 @@
-"""Unit tests for the issue #13 fix: search results must be hint-matched,
-not just the first visible row, before send_message/fetch_chat_history act
-on a thread."""
+"""Unit tests for send_message/fetch_chat_history's thread-open flow: the
+identity-keyed profile Message CTA (#26) as the primary path, and the
+/messaging/ search flow (#13) as its fallback — plus the header/profile-URL
+verification both paths share before acting on a thread."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -27,6 +28,9 @@ RECIPIENT_INPUT_SELECTOR = (
     "input[placeholder*='Type a name' i]"
 )
 COMPOSE_OPTIONS_SELECTOR = "li.msg-connections-typeahead__search-result"
+CTA_CANDIDATES_SELECTOR = (
+    "a[href*='/messaging/compose/'][href*='screenContext=NON_SELF_PROFILE_VIEW']"
+)
 
 
 def _make_compose_option(name_text: str, *, visible: bool = True) -> MagicMock:
@@ -59,13 +63,28 @@ def _make_page(
     compose_available: bool = False,
     compose_options: list[MagicMock] | None = None,
     profile_card_href: str | None = None,
+    cta_available: bool = False,
+    cta_clickable: bool = True,
+    cta_opens_inmail: bool = False,
+    stale_bubbles: int = 0,
 ) -> MagicMock:
     page = MagicMock()
     page.url = "https://www.linkedin.com/messaging/"
+    page.goto = AsyncMock()
+    page.bring_to_front = AsyncMock()
     page.wait_for_selector = AsyncMock()
     page.wait_for_url = AsyncMock()
     page.go_back = AsyncMock()
     page.keyboard = MagicMock(type=AsyncMock(), press=AsyncMock())
+
+    cta_candidate = MagicMock()
+    cta_candidate.is_visible = AsyncMock(return_value=cta_clickable)
+    cta_candidate.click = AsyncMock()  # the trial=True actionability probe
+    page.cta_candidate = cta_candidate  # test-only handle, for click assertions
+
+    cta_locator = MagicMock()
+    cta_locator.count = AsyncMock(return_value=1 if cta_available else 0)
+    cta_locator.nth = MagicMock(return_value=cta_candidate)
 
     search_box = MagicMock()
     search_box.count = AsyncMock(return_value=1)
@@ -101,8 +120,15 @@ def _make_page(
     profile_card_link.count = AsyncMock(return_value=1 if profile_card_href is not None else 0)
     profile_card_link.get_attribute = AsyncMock(return_value=profile_card_href or "")
     profile_card_link.inner_text = AsyncMock(return_value=header_name or "")
+    page.profile_card_link = profile_card_link  # test-only handle, see _clicking_resolves_to()
 
     def locator_side_effect(sel: str):
+        if sel == CTA_CANDIDATES_SELECTOR:
+            return cta_locator
+        if sel == ".msg-inmail-credits-display":
+            m = MagicMock()
+            m.count = AsyncMock(return_value=1 if cta_opens_inmail else 0)
+            return m
         if sel == SEARCH_ROWS_SELECTOR:
             return rows_locator
         if sel == "input[placeholder*='Search messages' i]":
@@ -129,10 +155,12 @@ def _make_page(
         m.first.count = AsyncMock(return_value=0)
         return m
 
+    close_btn = MagicMock()
+    close_btn.count = AsyncMock(side_effect=[1] * stale_bubbles + [0])
+    page.close_btn = close_btn  # test-only handle, for close-click assertions
+
     page.locator = MagicMock(side_effect=locator_side_effect)
-    page.get_by_role = MagicMock(
-        return_value=MagicMock(first=MagicMock(count=AsyncMock(return_value=0)))
-    )
+    page.get_by_role = MagicMock(return_value=MagicMock(first=close_btn))
     return page
 
 
@@ -148,10 +176,115 @@ def _clicking_resolves_to(page: MagicMock, resolved_url: str):
     changes ``page.url`` to the vanity URL, like a real click would."""
 
     async def side_effect(clicked_page, target):
-        if target is page.profile_link:
+        if target is page.profile_link or target is page.profile_card_link:
             clicked_page.url = resolved_url
 
     return side_effect
+
+
+@pytest.mark.asyncio
+async def test_profile_cta_used_when_available_and_verified():
+    """Primary path: a clickable profile Message CTA is used directly, with
+    no inbox search at all, and verified via the profile-card fast path."""
+    page = _make_page(
+        [],
+        header_name="Jay Sato",
+        profile_card_href="https://www.linkedin.com/in/jay-sato-263a85270/",
+        cta_available=True,
+    )
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()) as click,
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert ok
+    page.goto.assert_awaited_with(
+        "https://www.linkedin.com/in/jay-sato-263a85270/",
+        timeout=ANY,
+        wait_until="domcontentloaded",
+    )
+    page.cta_candidate.click.assert_awaited_once()  # the trial=True probe
+    click.assert_awaited_with(li._page, page.cta_candidate)  # the real click
+
+
+@pytest.mark.asyncio
+async def test_profile_cta_mismatched_identity_rejected():
+    """CTA click succeeded but the opened thread's header doesn't match —
+    same rejection the /messaging/ search path already applies."""
+    page = _make_page([], header_name="Andrew Barreto", cta_available=True)
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+        patch("outreach.browser.logger") as logger,
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert not ok
+    assert logger.warning.called
+
+
+@pytest.mark.asyncio
+async def test_profile_cta_inmail_composer_rejected_not_treated_as_match():
+    """The CTA is labeled "Message" for non-connections too, but opens a
+    paid Premium InMail composer instead of a free 1st-degree thread — must
+    never be reported as a match (a caller bug could spend a real InMail
+    credit messaging someone who hasn't even accepted the connection)."""
+    row = _make_row(text="Robert Williams, pending")
+    page = _make_page(
+        [row],
+        header_name="Robert Williams",
+        cta_available=True,
+        cta_opens_inmail=True,
+    )
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()) as click,
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+        patch("outreach.browser.logger") as logger,
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/robert-williams-188207406/"
+        )
+
+    # Falls through to the /messaging/ search flow instead of stopping on
+    # the rejected InMail composer.
+    assert ok
+    assert logger.warning.called
+    click.assert_awaited_with(li._page, row)
+
+
+@pytest.mark.asyncio
+async def test_profile_cta_not_clickable_falls_back_to_search():
+    """A duplicate/hidden CTA element (e.g. the sticky-header copy) that
+    fails the trial click must fall through to the /messaging/ search flow,
+    not be reported as no-match."""
+    row = _make_row(text="Jay Sato, 1st")
+    page = _make_page(
+        [row], header_name="Jay Sato", cta_available=True, cta_clickable=False
+    )
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()) as click,
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert ok
+    page.cta_candidate.click.assert_not_awaited()
+    click.assert_awaited_with(li._page, row)
 
 
 @pytest.mark.asyncio
@@ -372,3 +505,115 @@ async def test_no_thread_and_no_compose_button_returns_false():
 
     assert not ok
     assert logger.warning.called
+
+
+@pytest.mark.asyncio
+async def test_profile_card_link_unresolved_falls_through_to_click_and_observe():
+    """A profile-CTA-opened *existing* thread renders the same profile-card
+    shape as a brand-new compose thread, but verified live that its link
+    never self-resolves off the raw ACoAA member-ID URL on its own. The
+    fast path must not treat that as a mismatch — it should fall through
+    to the click-and-observe path and confirm via the post-click URL."""
+    page = _make_page(
+        [],
+        header_name="Jay Sato",
+        profile_card_href="https://www.linkedin.com/in/ACoAAjaysato",
+        cta_available=True,
+    )
+    li = _browser(page)
+
+    with (
+        patch(
+            "outreach.browser._human_click",
+            new=AsyncMock(
+                side_effect=_clicking_resolves_to(
+                    page, "https://www.linkedin.com/in/jay-sato-263a85270/"
+                )
+            ),
+        ),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert ok
+
+
+@pytest.mark.asyncio
+async def test_profile_card_link_unresolved_and_mismatched_rejected():
+    """Same unresolved-ACoAA-link scenario, but the click-and-observe
+    resolution lands on a different person — must still be rejected."""
+    page = _make_page(
+        [],
+        header_name="Jay Sato",
+        profile_card_href="https://www.linkedin.com/in/ACoAAdifferentperson",
+        cta_available=True,
+    )
+    li = _browser(page)
+
+    with (
+        patch(
+            "outreach.browser._human_click",
+            new=AsyncMock(
+                side_effect=_clicking_resolves_to(
+                    page, "https://www.linkedin.com/in/a-different-jay-sato/"
+                )
+            ),
+        ),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+        patch("outreach.browser.logger") as logger,
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert not ok
+    assert logger.warning.called
+
+
+@pytest.mark.asyncio
+async def test_close_open_message_bubbles_closes_until_none_left():
+    """The messaging overlay is account-level state that survives page
+    navigation (verified live) — closing must keep clicking until the
+    "Close your conversation" control reports zero remaining, not just
+    once."""
+    page = _make_page([], stale_bubbles=3)
+    li = _browser(page)
+
+    with patch("outreach.browser._human_click", new=AsyncMock()) as click:
+        await li._close_open_message_bubbles()
+
+    assert click.await_count == 3
+    for call in click.await_args_list:
+        assert call.args == (li._page, page.close_btn)
+
+
+@pytest.mark.asyncio
+async def test_profile_cta_closes_stale_bubble_before_clicking_new_one():
+    """A bubble left open from a previous profile (e.g. Hector) physically
+    overlaps the next profile's Message CTA and intercepts the click on it
+    — verified live. It must be closed before the CTA is probed/clicked,
+    not after."""
+    page = _make_page(
+        [],
+        header_name="Jay Sato",
+        profile_card_href="https://www.linkedin.com/in/jay-sato-263a85270/",
+        cta_available=True,
+        stale_bubbles=1,
+    )
+    li = _browser(page)
+
+    with (
+        patch("outreach.browser._human_click", new=AsyncMock()) as click,
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert ok
+    calls = click.await_args_list
+    close_call_index = calls.index(((li._page, page.close_btn), {}))
+    cta_call_index = calls.index(((li._page, page.cta_candidate), {}))
+    assert close_call_index < cta_call_index

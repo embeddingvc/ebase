@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.18] - 2026-07-26
+
+### Fixed
+- `fetch_chat_history` now also closes its overlay bubble on every exit path (both the successful read and the early failure/rejection cases), matching `send_message`'s cleanup — previously only `send_message` closed its bubble after use.
+- `_thread_profile_url_matches`'s "new conversation" fast path assumed a `.msg-s-profile-card` link is always pre-resolved to a vanity URL. Verified live that the profile-CTA path (#26) renders that same shape for an *existing* thread too, but its link never self-resolves off the raw ACoAA member-ID URL on its own — the fast path was wrongly rejecting correct matches as a result (surfaced far more often once bubbles are always freshly (re)opened, see the fix above). It now falls through to the existing click-and-observe verification instead of trusting an unresolved ACoAA href.
+- `fetch_chat_history`'s message extraction used raw `document.querySelectorAll` inside `page.evaluate()`, which can't see into the shadow-DOM-hosted overlay bubble the profile-CTA path (#26) opens — it silently returned `[]` even when messages were present and visible on screen. Switched to `Locator.evaluate_all`, whose element lookup uses Playwright's own selector engine and pierces open shadow roots.
+
+## [1.0.0.17] - 2026-07-26
+
+### Fixed
+- The profile-CTA path from #26 could hang for a full click timeout (or, via `_human_click`'s coordinate-based click, silently land on the wrong element) when a *different* conversation's overlay bubble was already open. LinkedIn's messaging overlay is account-level state, not page-local: verified live that it survives a hard `page.goto()` navigation and rehydrates a few seconds after load instead of being torn down with the DOM, so a bubble opened for one prospect could still be sitting open — and physically overlapping the next prospect's "Message" CTA — well after navigating to their profile. `send_message`/`fetch_chat_history` now close every open overlay bubble before probing the CTA, and `send_message` closes its own bubble again after a successful send, so at most one bubble is ever open when a click or compose selector runs.
+
+## [1.0.0.16] - 2026-07-25
+
+### Fixed
+- `send_message`/`fetch_chat_history` now open a conversation by clicking the prospect's profile-page "Message" link first, instead of typing their name into `/messaging/`'s inbox search or compose typeahead (#26). LinkedIn resolves that link's `recipient` param (accepts the plain vanity slug already stored in `connections.json`) server-side by identity via a direct `messengerConversations` lookup — no keyword search involved — which removes both the connections-search indexing lag (#24/#25) and the same-name ambiguity (#13) as failure classes for the common case. The link is duplicated in the DOM (a hidden sticky-header copy, a hidden mobile variant); each visible candidate is trial-clicked and the first one that's actually clickable is used, matching what a real user's mouse would land on. Falls back to the existing `/messaging/` search flow when there's no Message CTA at all (e.g. a still-pending invite). The existing header/profile-card verification runs unchanged on top of either path.
+- The profile-CTA path explicitly rejects (falls back, does not report a match) if the CTA opens LinkedIn's paid **Premium InMail composer** instead of a free 1st-degree thread — that composer renders under the same "Message" label for non-connections, and `send_message`/`fetch_chat_history` require an existing 1st-degree connection, so this guards against ever silently spending a real InMail credit on a caller bug.
+
 ## [1.0.0.14] - 2026-07-16
 
 ### Fixed
