@@ -120,6 +120,7 @@ def _make_page(
     profile_card_link.count = AsyncMock(return_value=1 if profile_card_href is not None else 0)
     profile_card_link.get_attribute = AsyncMock(return_value=profile_card_href or "")
     profile_card_link.inner_text = AsyncMock(return_value=header_name or "")
+    page.profile_card_link = profile_card_link  # test-only handle, see _clicking_resolves_to()
 
     def locator_side_effect(sel: str):
         if sel == CTA_CANDIDATES_SELECTOR:
@@ -175,7 +176,7 @@ def _clicking_resolves_to(page: MagicMock, resolved_url: str):
     changes ``page.url`` to the vanity URL, like a real click would."""
 
     async def side_effect(clicked_page, target):
-        if target is page.profile_link:
+        if target is page.profile_link or target is page.profile_card_link:
             clicked_page.url = resolved_url
 
     return side_effect
@@ -495,6 +496,71 @@ async def test_no_thread_and_no_compose_button_returns_false():
 
     with (
         patch("outreach.browser._human_click", new=AsyncMock()),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+        patch("outreach.browser.logger") as logger,
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert not ok
+    assert logger.warning.called
+
+
+@pytest.mark.asyncio
+async def test_profile_card_link_unresolved_falls_through_to_click_and_observe():
+    """A profile-CTA-opened *existing* thread renders the same profile-card
+    shape as a brand-new compose thread, but verified live that its link
+    never self-resolves off the raw ACoAA member-ID URL on its own. The
+    fast path must not treat that as a mismatch — it should fall through
+    to the click-and-observe path and confirm via the post-click URL."""
+    page = _make_page(
+        [],
+        header_name="Jay Sato",
+        profile_card_href="https://www.linkedin.com/in/ACoAAjaysato",
+        cta_available=True,
+    )
+    li = _browser(page)
+
+    with (
+        patch(
+            "outreach.browser._human_click",
+            new=AsyncMock(
+                side_effect=_clicking_resolves_to(
+                    page, "https://www.linkedin.com/in/jay-sato-263a85270/"
+                )
+            ),
+        ),
+        patch("outreach.browser._human_pause", new=AsyncMock()),
+    ):
+        ok = await li._open_message_ui_from_messaging(
+            "https://www.linkedin.com/in/jay-sato-263a85270/"
+        )
+
+    assert ok
+
+
+@pytest.mark.asyncio
+async def test_profile_card_link_unresolved_and_mismatched_rejected():
+    """Same unresolved-ACoAA-link scenario, but the click-and-observe
+    resolution lands on a different person — must still be rejected."""
+    page = _make_page(
+        [],
+        header_name="Jay Sato",
+        profile_card_href="https://www.linkedin.com/in/ACoAAdifferentperson",
+        cta_available=True,
+    )
+    li = _browser(page)
+
+    with (
+        patch(
+            "outreach.browser._human_click",
+            new=AsyncMock(
+                side_effect=_clicking_resolves_to(
+                    page, "https://www.linkedin.com/in/a-different-jay-sato/"
+                )
+            ),
+        ),
         patch("outreach.browser._human_pause", new=AsyncMock()),
         patch("outreach.browser.logger") as logger,
     ):

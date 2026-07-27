@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.18] - 2026-07-26
+
+### Fixed
+- `fetch_chat_history` now also closes its overlay bubble on every exit path (both the successful read and the early failure/rejection cases), matching `send_message`'s cleanup — previously only `send_message` closed its bubble after use.
+- `_thread_profile_url_matches`'s "new conversation" fast path assumed a `.msg-s-profile-card` link is always pre-resolved to a vanity URL. Verified live that the profile-CTA path (#26) renders that same shape for an *existing* thread too, but its link never self-resolves off the raw ACoAA member-ID URL on its own — the fast path was wrongly rejecting correct matches as a result (surfaced far more often once bubbles are always freshly (re)opened, see the fix above). It now falls through to the existing click-and-observe verification instead of trusting an unresolved ACoAA href.
+- `fetch_chat_history`'s message extraction used raw `document.querySelectorAll` inside `page.evaluate()`, which can't see into the shadow-DOM-hosted overlay bubble the profile-CTA path (#26) opens — it silently returned `[]` even when messages were present and visible on screen. Switched to `Locator.evaluate_all`, whose element lookup uses Playwright's own selector engine and pierces open shadow roots.
+
 ## [1.0.0.17] - 2026-07-26
 
 ### Fixed

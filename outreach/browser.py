@@ -2768,9 +2768,16 @@ class LinkedInBrowser:
         # A conversation just started via compose (URL .../messaging/thread/new/)
         # renders its own profile card with a direct vanity-slug link already
         # resolved — no click-and-observe-navigation needed for that case.
+        # The profile-CTA overlay (#26) renders the *same* profile-card shape
+        # for an existing thread, but verified live that its link never
+        # self-resolves off the raw ACoAA member-ID URL — fall through to
+        # the click-and-observe path below for that case instead of trusting
+        # an ACoAA href as a mismatch.
         card_link = self._page.locator(
             ".msg-s-profile-card .profile-card-one-to-one__profile-link"
         ).first
+        link = None
+        href = ""
         if await card_link.count():
             try:
                 href = (await card_link.get_attribute("href") or "").strip()
@@ -2780,7 +2787,7 @@ class LinkedInBrowser:
                     exc,
                 )
                 href = ""
-            if href:
+            if href and "acoaa" not in href.lower():
                 resolved = self._canonical_in_profile_url(href).lower()
                 if resolved != expected:
                     logger.warning(
@@ -2792,21 +2799,24 @@ class LinkedInBrowser:
                     )
                     return False
                 return True
+            if href:
+                link = card_link
 
-        link = self._page.locator(".msg-thread__link-to-profile").first
-        try:
-            if not await link.count():
-                logger.info(
-                    "_thread_profile_url_matches: profile-link selector found nothing; skipping."
-                )
+        if link is None:
+            link = self._page.locator(".msg-thread__link-to-profile").first
+            try:
+                if not await link.count():
+                    logger.info(
+                        "_thread_profile_url_matches: profile-link selector found nothing; skipping."
+                    )
+                    return True
+                href = (await link.get_attribute("href") or "").strip()
+            except Exception as exc:
+                logger.info("_thread_profile_url_matches: failed to read profile link (%s); skipping.", exc)
                 return True
-            href = (await link.get_attribute("href") or "").strip()
-        except Exception as exc:
-            logger.info("_thread_profile_url_matches: failed to read profile link (%s); skipping.", exc)
-            return True
-        if not href:
-            logger.info("_thread_profile_url_matches: profile-link href was empty; skipping.")
-            return True
+            if not href:
+                logger.info("_thread_profile_url_matches: profile-link href was empty; skipping.")
+                return True
 
         resolved_raw = ""
         try:
@@ -2920,6 +2930,9 @@ class LinkedInBrowser:
         if not await self._open_message_ui_from_messaging(
             profile_url, search_name=search_name
         ):
+            # A rejected CTA click (e.g. header/profile-url mismatch) can
+            # still have opened the wrong bubble before the check failed.
+            await self._close_open_message_bubbles()
             return []
 
         try:
@@ -2935,11 +2948,18 @@ class LinkedInBrowser:
 
         await _human_pause(0.3, 0.6)
 
-        items: list[dict[str, Any]] = await self._page.evaluate(
+        # The message list renders inside a shadow-DOM-hosted overlay bubble
+        # (verified live) when opened via the profile-CTA path (#26). Raw
+        # `document.querySelectorAll` inside a plain page.evaluate() can't
+        # see into it and silently returns nothing; Locator.evaluate_all
+        # uses Playwright's own selector engine, which pierces open shadow
+        # roots, to find the starting elements before handing them to JS.
+        items: list[dict[str, Any]] = await self._page.locator(
+            "li.msg-s-message-list__event"
+        ).evaluate_all(
             """
-            () => {
+            (events) => {
               const out = [];
-              const events = document.querySelectorAll('li.msg-s-message-list__event');
 
               const senderIsSelf = (item, li) => {
                 const il = item.classList;
@@ -3030,9 +3050,11 @@ class LinkedInBrowser:
             """
         )
         if not isinstance(items, list):
+            await self._close_open_message_bubbles()
             return []
 
         logger.info("fetch_chat_history: %d messages for %s", len(items), profile_url)
+        await self._close_open_message_bubbles()
         return items
 
     # ── Feed posts ────────────────────────────────────────────────────────────
