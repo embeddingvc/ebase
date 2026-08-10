@@ -9,46 +9,14 @@ Outreach that won't get you flagged. ebase is a LinkedIn recruiting outreach sys
 
 ## Install
 
-Requires macOS, Python 3.10+, Google Chrome, and Claude Code. Run this yourself in a terminal — it's not meant to be pasted into an agent as a set of instructions to execute.
+Requires macOS, Python 3.10+, Google Chrome, and Claude Code.
 
 ```bash
 git clone https://github.com/embeddingvc/ebase.git ~/ebase && cd ~/ebase
 ./install.sh
 ```
 
-or, without cloning first:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/embeddingvc/ebase/main/install.sh | bash
-```
-
-`install.sh` is idempotent — re-run it any time as the repair path for a half-broken install. It bootstraps `uv`, runs `uv sync` + `playwright install chromium`, registers the LinkedIn MCP server (`claude mcp`), and syncs `outreach/skills/*` into `~/.claude/skills/`. It prints one `[install] [n/9] step…` line per phase; a `warn:`-prefixed line means something needs attention, and most already name their own fix (e.g. "uv sync failed... delete .venv and re-run").
-
-Once it finishes: open the ebase Chrome window (`make browser` launches it if needed — it's an isolated profile at `~/.linkedin-chrome-profile`, separate from your everyday Chrome), sign in to LinkedIn, and confirm you see your feed. Then open Claude Code in `~/ebase` and run `/setup-outreach` to scrape your profile and build your persona/campaign config.
-
-### Troubleshooting
-
-Check CDP is up:
-
-```bash
-curl -sf http://localhost:9222/json/version && echo CDP_UP || echo CDP_DOWN
-```
-
-If `CDP_DOWN`:
-
-- **Chrome isn't installed** — install it from google.com/chrome, re-run `./install.sh`.
-- **Chrome was already running without the debug flag** — the most common cause. Launching a new Chrome process with `--remote-debugging-port` does nothing if Chrome is already running; the OS just focuses the existing window. Fully quit Chrome (Cmd+Q, not just close the window), then run `make browser`.
-- **Port 9222 is held by something else** — `lsof -nP -iTCP:9222 -sTCP:LISTEN`. Free it, or retry on another port: `CDP_PORT=9223 make browser` (keep the port consistent — the MCP server needs to match).
-- **Still down** — `bin/browser-service status` for the raw service state.
-
-Verify the install landed:
-
-```bash
-claude mcp list 2>/dev/null | grep -q '^linkedin' && echo MCP_OK || echo MCP_MISSING
-ls ~/.claude/skills 2>/dev/null | grep -qx setup-outreach && echo SKILLS_OK || echo SKILLS_MISSING
-```
-
-If either is missing, re-run `./install.sh` (registration is idempotent).
+`install.sh` checks prerequisites, installs dependencies, and registers the LinkedIn MCP server and skills. It's idempotent — safe to re-run.
 
 ## Included Skills
 
