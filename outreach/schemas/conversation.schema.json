@@ -17,7 +17,7 @@
     "outreach_stage": {
       "type": "string",
       "enum": ["cold", "pending_connection", "engaged", "replied", "converted", "ended", "dead"],
-      "description": "Current stage of this conversation. The conversation-planner advances this field as the sequence progresses.",
+      "description": "Current stage of this conversation. The ebase-conversation-planner advances this field as the sequence progresses.",
       "default": "cold"
     },
 
@@ -61,7 +61,7 @@
         "mark_dead",
         null
       ],
-      "description": "Action that should be executed next. Set by conversation-planner; cleared to null by the automation layer after execution.",
+      "description": "Action that should be executed next. Set by ebase-conversation-planner; cleared to null by the automation layer after execution.",
       "default": null
     },
 
@@ -74,7 +74,7 @@
 
     "planned_message": {
       "type": ["string", "null"],
-      "description": "The exact message text output by conversation-planner. Passed verbatim to the automation layer for delivery. Cleared after successful send.",
+      "description": "The exact message text output by ebase-conversation-planner. Passed verbatim to the automation layer for delivery. Cleared after successful send.",
       "default": null
     },
 
@@ -135,7 +135,7 @@
 
     "report_path": {
       "type": ["string", "null"],
-      "description": "Relative path to the end-of-sequence report file, e.g. 'outreach/storage/reports/alex_chen_softeng.md'. Written by conversation-planner at sequence close.",
+      "description": "Relative path to the end-of-sequence report file, e.g. 'outreach/storage/reports/alex_chen_softeng.md'. Written by ebase-conversation-planner at sequence close.",
       "default": null
     },
 

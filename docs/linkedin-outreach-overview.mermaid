@@ -43,7 +43,7 @@ DISCOVER --> ROUTE{"Already\n1st-degree?"}
 ROUTE -- "No (2nd/3rd)" --> CONNECT
 ROUTE -- "Yes" --> ENGAGE
 
-CONNECT["② Send Connection Request\nsend-connection-request skill\nCompose note ≤ 300 chars\nMCP: send_connection_request\nPlaywright clicks Connect + Add Note\nPersist → stage=pending_connection"]
+CONNECT["② Send Connection Request\nebase-send-connection-request skill\nCompose note ≤ 300 chars\nMCP: send_connection_request\nPlaywright clicks Connect + Add Note\nPersist → stage=pending_connection"]
 
 CONNECT --> WAIT["③ Wait for Acceptance\nsync-pending-connections skill\nMCP: is_first_degree_connection\nPlaywright checks badge"]
 
@@ -52,7 +52,7 @@ ACC -- "No (> 48h)" --> DEAD["Mark Dead\nended_reason = no_response"]
 DEAD --> REPORT
 ACC -- "Yes" --> ENGAGE
 
-ENGAGE["④ Run Conversation Sequence\nconversation-planner skill\n4 phases per cycle"]
+ENGAGE["④ Run Conversation Sequence\nebase-conversation-planner skill\n4 phases per cycle"]
 
 subgraph SEQ ["5-Step Outreach Sequence"]
   direction LR
@@ -69,7 +69,7 @@ end
 
 ENGAGE --> SEQ
 
-subgraph CYCLE ["Each Cycle (conversation-planner)"]
+subgraph CYCLE ["Each Cycle (ebase-conversation-planner)"]
   direction TB
   CA["Phase A · Sync\nfetch_chat_history\nMerge new messages\nDeduplicate thread"]
   CB["Phase B · Plan\nLoad state via MCP\nState machine evaluates\nCompose next message\nLog PlannedMessage"]

@@ -1,5 +1,5 @@
 ---
-name: conversation-planner
+name: ebase-conversation-planner
 description: >
   Single-prospect LinkedIn DM sequencer. Given a prospect_id, sync the live
   thread via MCP fetch_chat_history, plan exactly one next step, deliver with
@@ -82,7 +82,7 @@ Server-managed files:
 
 The MCP **`get_conversation_planner_config`** response merges both so you always have one JSON with `persona` + `organization` + the rest.
 
-**Initializing or refreshing persona from LinkedIn:** Follow the dedicated Skill **`sync-planner-persona-from-linkedin`**: call MCP **`parse_profile`**, synthesize `persona` + `organization` copy from the v2 envelope (experience, education, skills, activity, about), then call **`merge_conversation_planner_identity`** to persist into **`persona.json`** only those fields. Do not rely on ad-hoc scraping for a full identity refresh when depth matters.
+**Initializing or refreshing persona from LinkedIn:** Follow the dedicated Skill **`ebase-sync-persona`**: call MCP **`parse_profile`**, synthesize `persona` + `organization` copy from the v2 envelope (experience, education, skills, activity, about), then call **`merge_conversation_planner_identity`** to persist into **`persona.json`** only those fields. Do not rely on ad-hoc scraping for a full identity refresh when depth matters.
 
 Use config fields when composing:
 - `persona.name`, `persona.role`, `persona.organization`, `persona.specialization`
@@ -120,10 +120,10 @@ allows it; rely on documented fields below and MCP-returned JSON.
 | `get_conversation` | Load one conversation by `prospect_id`. If missing, initialise a new object in memory that matches the conversation schema, then `upsert_conversation` when persisting. |
 | `upsert_conversation` | Persist the full conversation object: pass `prospect_id` and `conversation` = **stringified JSON** of the whole document. |
 | `upsert_prospect` | Persist the full prospect object the same way when `outreach_stage` (or other fields) must change. |
-| `save_connection` | Upsert one row in the connections list (used heavily by send-connection-request; planner may use after intros). |
+| `save_connection` | Upsert one row in the connections list (used heavily by ebase-send-connection-request; planner may use after intros). |
 | `append_action_log` | Append one JSON object line to the actions log (`entry` = stringified JSON). |
 | `append_planned_message_log` | Append one PlannedMessage object (`entry` = stringified JSON). |
-| `merge_conversation_planner_identity` | Shallow-merge `persona` and/or `organization` JSON blobs into `outreach/config/persona.json` after you distill copy (typically following Skill `sync-planner-persona-from-linkedin`). |
+| `merge_conversation_planner_identity` | Shallow-merge `persona` and/or `organization` JSON blobs into `outreach/config/persona.json` after you distill copy (typically following Skill `ebase-sync-persona`). |
 | `save_outreach_report` | Write markdown body for end-of-sequence reports (`prospect_id`, `content`). |
 | `schedule_meeting` | Book (mock) or reserve a call after email + time are known; persist `meeting_link` on the conversation. |
 
@@ -505,7 +505,7 @@ Optionally print the same JSON for the operator; file logging must go through th
 ### Fresh prospect — Step 1
 
 ```
-Run conversation-planner with prospect_id = "alex_chen_softeng"
+Run ebase-conversation-planner with prospect_id = "alex_chen_softeng"
 ```
 
 Expected: Step 1 message (connection note ≤ 300 chars), `next_action = "send_connection_request"`.
@@ -513,7 +513,7 @@ Expected: Step 1 message (connection note ≤ 300 chars), `next_action = "send_c
 ### Prospect replied — Step 2
 
 ```
-Run conversation-planner with prospect_id = "alex_chen_softeng"
+Run ebase-conversation-planner with prospect_id = "alex_chen_softeng"
 # Phase A: fetch_chat_history → merge their reply into messages
 # Phase B–D: plan Step 2, send_message with planned text, update last_action
 ```
@@ -523,7 +523,7 @@ Expected: Step 2 career deep-dive message, `next_action = "send_followup_message
 ### No reply after 2 days
 
 ```
-Run conversation-planner with prospect_id = "alex_chen_softeng"
+Run ebase-conversation-planner with prospect_id = "alex_chen_softeng"
 # (last_action_timestamp is > 48h ago, no new prospect messages)
 ```
 

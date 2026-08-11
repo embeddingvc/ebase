@@ -35,7 +35,7 @@ A mock-capable fork of this server (scripted responses, no browser) lives in
 
     get_connections           Return .../connections.json as JSON text.
     get_conversation_planner_config Return runtime planner config JSON.
-    get_style_example_prompts Return tone + style-example questionnaire for setup-outreach.
+    get_style_example_prompts Return tone + style-example questionnaire for ebase-setup.
     merge_conversation_planner_identity Merge persona / organization into .../config/persona.json (filesystem only; host LLM summarizes first).
     get_prospect              Return .../prospects/<id>.json as text.
     get_conversation          Return .../conversations/<id>.json as text.
@@ -120,7 +120,7 @@ def _run_system_check() -> None:
                     )
                     logger.warning(
                         "ebase v%s available (current: v%s). "
-                        "Run /outreach-upgrade or make upgrade.",
+                        "Run /ebase-upgrade or make upgrade.",
                         new,
                         old,
                     )
@@ -1844,7 +1844,7 @@ async def get_conversation_planner_config() -> str:
 @mcp.tool()
 async def get_style_example_prompts() -> str:
     """
-    Return the tone + style-example questionnaire used during setup-outreach.
+    Return the tone + style-example questionnaire used during ebase-setup.
 
     JSON shape:
     - ``tone_questions[]`` — short prompts that compile into ``message_rules.tone``

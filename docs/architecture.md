@@ -7,12 +7,12 @@ This repo wires Claude (via the MCP protocol) to a real LinkedIn session and a s
 - A **LinkedIn MCP server** (`tools/server.py`) that exposes LinkedIn actions as tools. Playwright attaches to a real Chrome session via CDP.
 - A **cron scheduler** (`cron/server.py`) that runs connection-sync and per-prospect conversation-planning sweeps.
 - A **message planner** (`outreach/planner.py`) that can generate copy in **API mode** (Anthropic) or **stub mode** (offline).
-- Claude **skills** under `outreach/skills/` that orchestrate end-to-end outreach using MCP tools (including **`setup-outreach`** for first-run profile configuration).
+- Claude **skills** under `outreach/skills/` that orchestrate end-to-end outreach using MCP tools (including **`ebase-setup`** for first-run profile configuration).
 
 ## What you can do
 
 - **First-run setup**
-  - Skill: **`setup-outreach`** — interactive wizard: **`scrape_profile`** → present draft persona → refine with operator → **`merge_conversation_planner_identity`**
+  - Skill: **`ebase-setup`** — interactive wizard: **`scrape_profile`** → present draft persona → refine with operator → **`merge_conversation_planner_identity`**
 
 - **Profile data**
   - `scrape_profile`: quick structured scrape (includes `recent_posts` and also captures `raw_text`)
@@ -87,7 +87,7 @@ flowchart TB
   ROUTE -->|No · 2nd / 3rd| CONNECT
   ROUTE -->|Yes| ENGAGE
 
-  CONNECT["② Send connection request<br/>• Skill: send-connection-request<br/>• Personal note ≤ 300 chars · MCP: send_connection_request<br/>• Playwright: Connect → Add note → Send<br/>• Persist · stage: pending_connection"]:::step
+  CONNECT["② Send connection request<br/>• Skill: ebase-send-connection-request<br/>• Personal note ≤ 300 chars · MCP: send_connection_request<br/>• Playwright: Connect → Add note → Send<br/>• Persist · stage: pending_connection"]:::step
 
   CONNECT --> WAIT
 
@@ -100,7 +100,7 @@ flowchart TB
   DEAD["Mark prospect dead<br/>ended_reason: no_response"]:::terminal
   DEAD --> REPORT
 
-  ENGAGE["④ Run conversation sequence<br/>• Skill: conversation-planner<br/>• One five-step path per prospect<br/>• Each turn runs the four phases below"]:::step
+  ENGAGE["④ Run conversation sequence<br/>• Skill: ebase-conversation-planner<br/>• One five-step path per prospect<br/>• Each turn runs the four phases below"]:::step
 
   subgraph SEQ["Five-step message path (advance on positive reply)"]
     direction TB

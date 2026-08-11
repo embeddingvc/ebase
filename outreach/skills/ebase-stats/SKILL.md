@@ -1,5 +1,5 @@
 ---
-name: stats
+name: ebase-stats
 description: Show outreach performance — connection funnel, reply rates, sequence-step effectiveness, and conversion by goal. Use when the user asks "/stats", "show me ebase stats", "how is the campaign doing", or similar.
 ---
 
@@ -15,7 +15,7 @@ Before pulling stats, check service health and for a newer ebase version:
 bin/outreach-update-check 2>/dev/null || true
 ```
 
-Follow the inline flow in skill **`outreach-upgrade`** for every line printed:
+Follow the inline flow in skill **`ebase-upgrade`** for every line printed:
 `SERVICE_DOWN <service> <url>` (inform the user, non-blocking), then
 `UPGRADE_AVAILABLE` (ask to upgrade), `UPGRADED`/`JUST_UPGRADED` (log and
 continue), or `UP_TO_DATE`/empty (continue silently).

@@ -8,17 +8,17 @@ Every LinkedIn browser action across these skills runs **only** through the Link
 
 ## Core skills (this repo)
 
-- `setup-outreach` — interactive first-run wizard (see below)
-- `conversation-planner` (single-prospect only; dispatched per row by the dashboard's per-prospect plan sweep)
-- `sync-planner-persona-from-linkedin`
-- `send-connection-request`
-- `reply-to-post`
+- `ebase-setup` — interactive first-run wizard (see below)
+- `ebase-conversation-planner` (single-prospect only; dispatched per row by the dashboard's per-prospect plan sweep)
+- `ebase-sync-persona`
+- `ebase-send-connection-request`
+- `ebase-reply-to-post`
 
 The former `sync-pending-connections` skill has been retired — the cron scheduler now runs that workload as a deterministic Python sweep (`cron/connection_sync_sweep.py`) with no LLM in the loop. See [`docs/designs/per-connection-routines-with-backoff-design.md`](./designs/per-connection-routines-with-backoff-design.md).
 
-## `setup-outreach` (first-run wizard)
+## `ebase-setup` (first-run wizard)
 
-Run **`/setup-outreach`** in Claude Code (or ask to “run setup-outreach”) after install. The skill walks through setup **one step at a time** and waits for your input before continuing.
+Run **`/ebase-setup`** in Claude Code (or ask to “run ebase-setup”) after install. The skill walks through setup **one step at a time** and waits for your input before continuing.
 
 **Profile setup loop** (the core of the wizard):
 
@@ -29,14 +29,14 @@ Run **`/setup-outreach`** in Claude Code (or ask to “run setup-outreach”) af
 
 Optional later steps: campaign/tone tweaks via **`upsert_conversation_planner_config`**, then a readiness summary.
 
-**Prerequisites:** Chrome with CDP (`make browser`), signed into LinkedIn in the installer Chrome profile, LinkedIn MCP registered. See [Quickstart](./quickstart.md) and [Conversation planner config](./conversation-planner.md).
+**Prerequisites:** Chrome with CDP (`make browser`), signed into LinkedIn in the installer Chrome profile, LinkedIn MCP registered. See [Quickstart](./quickstart.md) and [Conversation planner config](./ebase-conversation-planner.md).
 
-For a deep LinkedIn-only identity refresh (experience, education, skills) without the wizard, use **`sync-planner-persona-from-linkedin`** instead (`parse_profile`-first).
+For a deep LinkedIn-only identity refresh (experience, education, skills) without the wizard, use **`ebase-sync-persona`** instead (`parse_profile`-first).
 
 ## Install skills in Claude
 
 1. `Customize` → `Skills` → `+` → `Create skill` → `Upload a skill`
 2. Select the `SKILL.md` files under `outreach/skills/`
-3. Repeat for `setup-outreach`, `conversation-planner`, `sync-planner-persona-from-linkedin`, `send-connection-request`, and `reply-to-post`
+3. Repeat for `ebase-setup`, `ebase-conversation-planner`, `ebase-sync-persona`, `ebase-send-connection-request`, and `ebase-reply-to-post`
 
 The one-command installer in the main [README](../README.md) (default mode) also copies these skills into `~/.claude/skills/<name>/` for you.

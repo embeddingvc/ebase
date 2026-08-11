@@ -35,7 +35,7 @@ RUNS_LOG = "routine_runs.jsonl"
 # The legacy ``"loop"`` mode (one ``claude -p "Run {skill} skill"`` per row,
 # skill loops over connections inside the call) is preserved for ad-hoc
 # routines pointing at single-prospect / single-action skills like
-# ``send-connection-request``. The "all in one" skills it used to drive
+# ``ebase-send-connection-request``. The "all in one" skills it used to drive
 # (``sync-pending-connections``, ``conversation-planner`` batch mode) have
 # been removed; default installs now use ``"per_prospect"`` which dispatches
 # typed sweeps from ``cron.routine_scheduler``.

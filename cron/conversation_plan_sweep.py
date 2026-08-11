@@ -1,10 +1,10 @@
 """
-Per-prospect ``conversation-planner`` sweep.
+Per-prospect ``ebase-conversation-planner`` sweep.
 
 Walks ``connections.json`` rows that are actionable for outreach planning
 (``connection_status`` ``connected``), and for each row whose
 ``plan_backoff`` is due, dispatches a fresh ``claude -p`` invocation that
-runs the ``conversation-planner`` skill in single-prospect mode.
+runs the ``ebase-conversation-planner`` skill in single-prospect mode.
 
 Each prospect's run uses a tight context window (one prospect's id + skill
 prose) instead of the previous batch mode that walked every connection in a
@@ -51,7 +51,7 @@ TERMINAL_CONNECTION_STATUSES = frozenset({"ended"})
 SKIP_CONNECTION_STATUSES = frozenset({"pending", "ended"})
 
 PlanRunner = Callable[[str], Awaitable["PlanRunResult"]]
-"""Async callable that runs ``conversation-planner`` for one prospect_id."""
+"""Async callable that runs ``ebase-conversation-planner`` for one prospect_id."""
 
 
 @dataclass(frozen=True)
@@ -171,7 +171,7 @@ def _default_runner() -> PlanRunner:
         from cron.skill_runner import run_skill_prompt
 
         prompt = (
-            f'Run the conversation-planner skill for prospect_id="{prospect_id}". '
+            f'Run the ebase-conversation-planner skill for prospect_id="{prospect_id}". '
             "Operate in single-prospect mode (Phases A → D as documented). "
             "Do not enumerate any other prospects."
         )

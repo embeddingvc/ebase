@@ -1,10 +1,10 @@
 ---
-name: setup-outreach
+name: ebase-setup
 description: >-
   Interactive setup wizard: scrape the signed-in LinkedIn profile for a draft
   operator config, present it for review, iterate on corrections, then persist
   via merge_conversation_planner_identity. Also covers browser/CDP prep and
-  optional campaign tuning. Use for first-run onboarding, /setup-outreach, or
+  optional campaign tuning. Use for first-run onboarding, /ebase-setup, or
   configuring persona.json.
 ---
 
@@ -53,7 +53,7 @@ Before setup work, check service health and for a newer ebase version:
 bin/outreach-update-check 2>/dev/null || true
 ```
 
-Follow the inline flow in skill **`outreach-upgrade`** for every line printed:
+Follow the inline flow in skill **`ebase-upgrade`** for every line printed:
 `SERVICE_DOWN <service> <url>` (inform the user, non-blocking), then
 `UPGRADE_AVAILABLE` (ask to upgrade), `UPGRADED`/`JUST_UPGRADED` (log and
 continue), or `UP_TO_DATE`/empty (continue silently).
@@ -290,8 +290,8 @@ Stop and wait before step 4.
    - Voice: `message_rules.tone`, count of `message_rules.style_examples` (and
      a one-line preview of the first example's `reply`).
 2. Close with **"You're ready!"** and next steps:
-   - `connect to <linkedin-url>` (**`send-connection-request`**)
-   - **`conversation-planner`** for a prospect
+   - `connect to <linkedin-url>` (**`ebase-send-connection-request`**)
+   - **`ebase-conversation-planner`** for a prospect
 
 Mark all checklist items done.
 
@@ -319,8 +319,8 @@ Mark all checklist items done.
 | **`get_conversation_planner_config`** | Read merged config (persona + planner) |
 | **`get_style_example_prompts`** | Tone + style-example questionnaire (steps 3b–3c) |
 | **`upsert_conversation_planner_config`** | Campaign + tone + style examples (step 3); writes the full planner JSON minus persona/organization |
-| **`outreach-upgrade`** (skill) | System check: service health + version check, optional git pull when `UPGRADE_AVAILABLE` (run at skill start) |
+| **`ebase-upgrade`** (skill) | System check: service health + version check, optional git pull when `UPGRADE_AVAILABLE` (run at skill start) |
 
-For a standalone LinkedIn-only identity refresh (no wizard), use **`sync-planner-persona-from-linkedin`** (`parse_profile`-first).
+For a standalone LinkedIn-only identity refresh (no wizard), use **`ebase-sync-persona`** (`parse_profile`-first).
 
 Do **not** run outreach skills during setup unless the user asks after step 4.

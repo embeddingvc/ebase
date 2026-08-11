@@ -1,6 +1,6 @@
 # Runtime conversation planner config
 
-The `conversation-planner` skill supports live runtime configuration from two files (the MCP tool **`get_conversation_planner_config`** returns them merged as one JSON):
+The `ebase-conversation-planner` skill supports live runtime configuration from two files (the MCP tool **`get_conversation_planner_config`** returns them merged as one JSON):
 
 - `outreach/config/conversation_planner.json` — campaign, end goals, message rules, router (gitignored; copy from `outreach/config/conversation_planner.json.example`)
 - `outreach/config/persona.json` — operator `persona` and `organization` (gitignored; copy from `outreach/config/persona.json.example`)
@@ -22,7 +22,7 @@ You can change planner behavior (for example profile identity, end-state intent,
 
 ## First-time setup
 
-Run the **`setup-outreach`** skill in Claude Code (`/setup-outreach`). It **`scrape_profile`**s your signed-in LinkedIn profile, presents a draft **`persona`** + **`organization`**, walks you through corrections, then calls **`merge_conversation_planner_identity`** to write **`persona.json`**. See [Claude skills — setup-outreach](./skills.md#setup-outreach-first-run-wizard).
+Run the **`ebase-setup`** skill in Claude Code (`/ebase-setup`). It **`scrape_profile`**s your signed-in LinkedIn profile, presents a draft **`persona`** + **`organization`**, walks you through corrections, then calls **`merge_conversation_planner_identity`** to write **`persona.json`**. See [Claude skills — ebase-setup](./skills.md#ebase-setup-first-run-wizard).
 
 ## Update methods
 
@@ -33,7 +33,7 @@ You can update config in either way:
    - `get_conversation_planner_config` — merged view of both files
    - `upsert_conversation_planner_config` — replace **`conversation_planner.json` only** (payload must not include `persona` / `organization`)
    - `merge_conversation_planner_identity` — shallow-merge LLM-authored `persona` / `organization` into **`persona.json`**
-3. Re-run **`setup-outreach`** to refresh persona from LinkedIn with review, or use **`sync-planner-persona-from-linkedin`** for a **`parse_profile`**-first deep refresh (experience, education, skills) without the wizard.
+3. Re-run **`ebase-setup`** to refresh persona from LinkedIn with review, or use **`ebase-sync-persona`** for a **`parse_profile`**-first deep refresh (experience, education, skills) without the wizard.
 
 Reads/writes are runtime-safe. Config is read from disk fresh on each MCP call.
 

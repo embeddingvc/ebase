@@ -81,7 +81,7 @@ flowchart TD
 
     subgraph CONNREQ ["2  Send Connection Request"]
         direction TB
-        CONN_REQ_SKILL["send-connection-request skill"]
+        CONN_REQ_SKILL["ebase-send-connection-request skill"]
         CONN_REQ_SKILL --> COMPOSE_NOTE["Business Logic  Compose Note\n300 char limit\nReference posts or role\nUse first name\nNo banned phrases"]
         COMPOSE_NOTE --> MCP_SEND_CONN["MCP  send_connection_request\nurl  note"]
         MCP_SEND_CONN --> PW_CONN["Playwright\n1 Navigate profile\n2 Click Connect\n3 Add a note\n4 Type note\n5 Click Send\nRandom 500-1500ms delays"]

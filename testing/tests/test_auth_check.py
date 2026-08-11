@@ -75,7 +75,7 @@ async def test_is_logged_in_true_fallback_on_nav_error(browser):
 @pytest.mark.asyncio
 async def test_assert_logged_in_raises_when_not_logged_in(browser):
     browser._page.url = "https://www.linkedin.com/login"
-    with pytest.raises(RuntimeError, match="run /setup-outreach"):
+    with pytest.raises(RuntimeError, match="run /ebase-setup"):
         await browser.assert_logged_in()
 
 

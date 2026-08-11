@@ -167,7 +167,7 @@ def test_get_execution_history(
         json.dumps(
             {
                 "routine_id": "send_connect",
-                "skill": "send-connection-request",
+                "skill": "ebase-send-connection-request",
                 "status": "success",
                 "started_at": "2026-05-03T10:00:00+00:00",
                 "finished_at": "2026-05-03T10:00:16+00:00",
@@ -196,7 +196,7 @@ def test_get_execution_history(
                     {
                         "id": "send_connect",
                         "name": "Send Connection Request",
-                        "skill": "send-connection-request",
+                        "skill": "ebase-send-connection-request",
                         "interval_minutes": 30,
                         "active": False,
                     }
@@ -210,7 +210,7 @@ def test_get_execution_history(
     data = dd.get_execution_history(limit=10)
     assert data["total"] == 1
     assert data["entries"][0]["routine_name"] == "Send Connection Request"
-    assert data["entries"][0]["skill"] == "send-connection-request"
+    assert data["entries"][0]["skill"] == "ebase-send-connection-request"
     assert data["entries"][0]["duration_label"] == "16s"
     assert data["stats"]["pending"] == 0
 

@@ -8,7 +8,7 @@ Local regression harness: models the real operator pipeline order:
    (``cron.connection_sync_sweep.run_sync_sweep``) using a mock-backed probe. This
    replaces the former ``sync-pending-connections`` ``claude -p`` invocation,
    which has been retired in favour of the LLM-free dashboard sweep.
-3. **conversation-planner rounds** — ``claude -p`` runs **conversation-planner**
+3. **conversation-planner rounds** — ``claude -p`` runs **ebase-conversation-planner**
    in **single-prospect mode** (``prospect_id`` supplied). The skill no longer
    supports batch mode, so the harness drives one prospect per round explicitly.
    The harness still applies ``send_*`` from the parsed PlannedMessage and
@@ -57,7 +57,7 @@ FIXTURES = TESTING_ROOT / "tests" / "fixtures" / "conversation-planner"
 PROSPECT_FIXTURE = FIXTURES / "prospect_alex.json"
 
 # Installed skill ids (see outreach/skills/*/SKILL.md frontmatter ``name``).
-CONVERSATION_PLANNER_SKILL = "conversation-planner"
+CONVERSATION_PLANNER_SKILL = "ebase-conversation-planner"
 # ``sync-pending-connections`` skill has been retired; the deterministic sweep
 # in ``cron.connection_sync_sweep`` is what the scheduler uses now.
 
@@ -252,8 +252,8 @@ async def seed_regression_prospect(
 ) -> None:
     """Materialize a prospect row from the mock TEST_CASES fixture.
 
-    ``send-connection-request`` may write ``connections.json`` but often skips
-    ``prospects/<id>.json``. The conversation-planner skill (single-prospect
+    ``ebase-send-connection-request`` may write ``connections.json`` but often skips
+    ``prospects/<id>.json``. The ebase-conversation-planner skill (single-prospect
     mode) requires ``get_prospect`` to succeed, so the harness seeds that file
     from the same scripted prospect data ``scrape_profile`` would return for
     this case in mock mode — before the connect step, matching production
@@ -315,7 +315,7 @@ async def seed_regression_conversation_from_mock(
     """Persist ``conversations/<id>.json`` from the live mock DM thread.
 
     The ``claude -p`` connect and planner invocations do not reliably call
-    ``upsert_conversation``. This mirrors what ``send-connection-request`` and
+    ``upsert_conversation``. This mirrors what ``ebase-send-connection-request`` and
     the planner's Phase A sync would have written: messages from
     ``fetch_chat_history``, stage aligned with ``connections.json``, and
     campaign snapshots from the seeded prospect.
@@ -756,7 +756,7 @@ async def run_scenario_async(case_id: str) -> None:
 
     1. LinkedIn invite: ``send_connection_request`` + ``upsert_prospect`` + ``save_connection`` (pending).
     2. sync-pending-connections: ``get_connections`` → ``is_first_degree_connection`` → ``save_connection`` (connected when mock accepts).
-    3. Persist ``upsert_conversation`` from mock thread, then conversation-planner rounds (``claude -p`` + MCP deliveries).
+    3. Persist ``upsert_conversation`` from mock thread, then ebase-conversation-planner rounds (``claude -p`` + MCP deliveries).
     """
     import pytest
 
@@ -788,7 +788,7 @@ async def run_scenario_async(case_id: str) -> None:
     await seed_regression_mock_session(case_id, url)
 
     # Prospect scrape happens before connect in production; seed it here so
-    # ``send-connection-request`` / ``conversation-planner`` always find the row
+    # ``ebase-send-connection-request`` / ``ebase-conversation-planner`` always find the row
     # even when ``claude -p`` skips ``upsert_prospect``.
     await seed_regression_prospect(mod, case_id, url, prospect_id)
 
@@ -833,7 +833,7 @@ async def run_scenario_async(case_id: str) -> None:
         try:
             # Single-prospect mode is now the only mode the skill supports.
             invoke_claude_cli(
-                f'Run conversation-planner skill for prospect_id="{prospect_id}".'
+                f'Run {CONVERSATION_PLANNER_SKILL} skill for prospect_id="{prospect_id}".'
             )
         except Exception as exc:
             pytest.fail(f"[{spec['id']}] round={round_index} invoke_claude_cli: {exc}")

@@ -70,12 +70,12 @@ def test_get_routines_display_includes_skill_fields() -> None:
         {
             "id": "t1",
             "name": "Send",
-            "skill": "send-connection-request",
+            "skill": "ebase-send-connection-request",
             "interval_minutes": 30,
             "active": False,
         }
     )
-    assert row["skill"] == "send-connection-request"
+    assert row["skill"] == "ebase-send-connection-request"
     assert row["interval_minutes"] == 30
     assert row["status"] == "disabled"
 
@@ -93,21 +93,21 @@ def test_upsert_routines_roundtrip(
             {
                 "id": "t1",
                 "name": "Send",
-                "skill": "send-connection-request",
+                "skill": "ebase-send-connection-request",
                 "interval_minutes": 15,
                 "active": True,
             }
         ]
     )
     assert data["total"] == 1
-    assert data["routines"][0]["skill"] == "send-connection-request"
+    assert data["routines"][0]["skill"] == "ebase-send-connection-request"
 
 
 def _valid_row(**overrides: object) -> dict[str, object]:
     base = {
         "id": "t1",
         "name": "Send",
-        "skill": "send-connection-request",
+        "skill": "ebase-send-connection-request",
         "interval_minutes": 15,
         "active": True,
     }
@@ -206,7 +206,7 @@ def test_upsert_routines_persists_window(
             {
                 "id": "t1",
                 "name": "Send",
-                "skill": "send-connection-request",
+                "skill": "ebase-send-connection-request",
                 "interval_minutes": 15,
                 "active": True,
                 "active_window_start": "09:00",
@@ -236,7 +236,7 @@ def test_upsert_routines_rejects_bad_window(
                 {
                     "id": "t1",
                     "name": "Send",
-                    "skill": "send-connection-request",
+                    "skill": "ebase-send-connection-request",
                     "interval_minutes": 15,
                     "active": True,
                     "active_window_start": "09:00",

@@ -36,7 +36,7 @@ Paste this into Claude Code:
 set up https://raw.githubusercontent.com/embeddingvc/ebase/main/SKILL.md
 ```
 
-Claude fetches the installer, runs it, narrates each step, and recovers conversationally if something's off (Chrome not signed in, CDP port unreachable, etc.) instead of dying with a stack trace. It ends with `/setup-outreach` already run: profile parsed, persona drafted, pipeline initialized — nothing sent yet.
+Claude fetches the installer, runs it, narrates each step, and recovers conversationally if something's off (Chrome not signed in, CDP port unreachable, etc.) instead of dying with a stack trace. It ends with `/ebase-setup` already run: profile parsed, persona drafted, pipeline initialized — nothing sent yet.
 
 <details>
 <summary>Prefer a plain terminal? (no agent)</summary>
@@ -46,7 +46,7 @@ Claude fetches the installer, runs it, narrates each step, and recovers conversa
 curl -fsSL https://raw.githubusercontent.com/embeddingvc/ebase/main/install.sh | bash
 ```
 
-Then run **`/setup-outreach`** in Claude Code to configure your operator profile from LinkedIn.
+Then run **`/ebase-setup`** in Claude Code to configure your operator profile from LinkedIn.
 
 </details>
 
@@ -65,7 +65,7 @@ The script does **not** require **Make** (suitable for a fresh Mac before Xcode 
 - Launches **Google Chrome** on macOS at the default path with remote debugging (CDP) on port **9222** (same idea as **`make browser`**), opens **LinkedIn login**, and **pauses until you press Enter** after signing in. Playwright automation attaches to that live Chrome session. Skip the pause with **`./install.sh --skip-linkedin-login`**.
 - Starts the **cron scheduler** via **launchd** (macOS) or **systemd user unit** (Linux) for auto-start at login/reboot (health: **http://127.0.0.1:3847/health**, logs: `logs/cron.log`). Skip with **`./install.sh --no-cron`**.
 
-Once it finishes, run **`/setup-outreach`** in Claude Code to scrape your LinkedIn profile, review the draft persona, and save `outreach/config/persona.json`. The cron scheduler then runs the workflow unattended; check it with **`make status`**.
+Once it finishes, run **`/ebase-setup`** in Claude Code to scrape your LinkedIn profile, review the draft persona, and save `outreach/config/persona.json`. The cron scheduler then runs the workflow unattended; check it with **`make status`**.
 
 By default this clones or updates the repo at **`~/ebase`**. Override the directory with **`EBASE_DIR`**, the remote URL with **`EBASE_REPO`** (for forks), or **`git clone`** the repo and run **`./install.sh`** from the repository root so an existing clone is used instead.
 
@@ -99,11 +99,11 @@ No dashboard to learn. No per-seat fees. Each skill maps to something you alread
 
 | What you'd normally do | ebase skill | What happens |
 |---|---|---|
-| Research + connect with a candidate | `/send-connection-request` | Reads their profile, writes a personalized note in your voice, sends, logs to pipeline |
+| Research + connect with a candidate | `/ebase-send-connection-request` | Reads their profile, writes a personalized note in your voice, sends, logs to pipeline |
 | Check which requests got accepted | `/sync-pending-connection` | Verifies acceptance on LinkedIn, updates your connections list, queues follow-ups |
-| Write a multi-touch DM sequence | `/conversation-planner` | Plans the next message based on thread history, your persona, and their profile |
-| Set up your outreach voice | `/setup-outreach` | Scrapes your LinkedIn profile, builds your persona and tone config |
-| Engage on a prospect's post | `/reply-to-post` | Writes a comment in your voice, confirms with you, posts it |
+| Write a multi-touch DM sequence | `/ebase-conversation-planner` | Plans the next message based on thread history, your persona, and their profile |
+| Set up your outreach voice | `/ebase-setup` | Scrapes your LinkedIn profile, builds your persona and tone config |
+| Engage on a prospect's post | `/ebase-reply-to-post` | Writes a comment in your voice, confirms with you, posts it |
 
 Say what you want in plain English — each ask runs as a Claude skill:
 
@@ -149,9 +149,9 @@ Say what you want in plain English — each ask runs as a Claude skill:
 
 - **[Quickstart (live + mock)](docs/quickstart.md)** — `make browser` + `make cron`, live mode checklist, example prompts
 - **[Architecture & capabilities](docs/architecture.md)** — components, MCP tool inventory, workflow diagrams
-- **[Claude skills](docs/skills.md)** — `setup-outreach`, `conversation-planner`, `send-connection-request`, and more
+- **[Claude skills](docs/skills.md)** — `ebase-setup`, `ebase-conversation-planner`, `ebase-send-connection-request`, and more
 - **[Manual install & Claude Desktop MCP](docs/install.md)** — prerequisites, `make install`, `claude_desktop_config.json`
-- **[Conversation planner config](docs/conversation-planner.md)** — runtime persona + campaign config
+- **[Conversation planner config](docs/ebase-conversation-planner.md)** — runtime persona + campaign config
 - **[Operations](docs/operations.md)** — environment variables, data layout, Make targets
 - **[Design notes](docs/designs/)** — internal design docs
 - **[Testing & dev dashboard](testing/README.md)** — web dashboard UI, mock mode, regression suite

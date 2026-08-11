@@ -1,5 +1,5 @@
 ---
-name: reply-to-post
+name: ebase-reply-to-post
 description: Leave a comment (reply) on a LinkedIn post via the MCP reply_to_post tool. Use when the user asks to comment on, reply to, or engage with a LinkedIn post.
 ---
 
@@ -41,7 +41,7 @@ Before posting, check service health and for a newer ebase version:
 bin/outreach-update-check 2>/dev/null || true
 ```
 
-Follow the inline flow in skill **`outreach-upgrade`** for every line printed:
+Follow the inline flow in skill **`ebase-upgrade`** for every line printed:
 `SERVICE_DOWN <service> <url>` (inform the user, non-blocking), then
 `UPGRADE_AVAILABLE` (ask to upgrade), `UPGRADED`/`JUST_UPGRADED` (log and
 continue), or `UP_TO_DATE`/empty (continue silently).
