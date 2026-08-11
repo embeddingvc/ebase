@@ -30,12 +30,25 @@ If you spend time on LinkedIn outreach every day, ebase turns that into a conver
 
 ## Install
 
+Paste this into Claude Code:
+
+```
+set up https://raw.githubusercontent.com/embeddingvc/ebase/main/SKILL.md
+```
+
+Claude fetches the installer, runs it, narrates each step, and recovers conversationally if something's off (Chrome not signed in, CDP port unreachable, etc.) instead of dying with a stack trace. It ends with `/setup-outreach` already run: profile parsed, persona drafted, pipeline initialized — nothing sent yet.
+
+<details>
+<summary>Prefer a plain terminal? (no agent)</summary>
+
 <!-- REPO_URL: update when the repo moves -->
 ```bash
 curl -fsSL https://raw.githubusercontent.com/embeddingvc/ebase/main/install.sh | bash
 ```
 
 Then run **`/setup-outreach`** in Claude Code to configure your operator profile from LinkedIn.
+
+</details>
 
 **Requirements:** macOS · Python 3.10+ · Claude Code
 
