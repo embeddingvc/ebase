@@ -33,7 +33,7 @@ If you spend time on LinkedIn outreach every day, ebase turns that into a conver
 Paste this into Claude Code:
 
 ```
-set up https://ebase.dev/SKILL.md
+set up https://raw.githubusercontent.com/embeddingvc/ebase/main/SKILL.md
 ```
 
 Claude fetches the installer, runs it, narrates each step, and recovers conversationally if something's off (Chrome not signed in, CDP port unreachable, etc.) instead of dying with a stack trace. It ends with `/setup-outreach` already run: profile parsed, persona drafted, pipeline initialized — nothing sent yet.
