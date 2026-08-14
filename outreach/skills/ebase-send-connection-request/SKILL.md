@@ -1,5 +1,5 @@
 ---
-name: send-connection-request
+name: ebase-send-connection-request
 description: Send a LinkedIn connection request via the MCP send_connection_request tool (no note by default; optional personalised note only when the user supplies one or explicitly asks for a message), then persist pipeline state with save_connection, upsert_conversation, and append_action_log — never raw outreach/ paths. When a note is requested, ground it in the runtime planner campaign with per-prospect and per-invocation overrides. Use when the user asks to connect with, invite, or add a LinkedIn profile.
 ---
 
@@ -44,7 +44,7 @@ Before connecting, check service health and for a newer ebase version:
 bin/outreach-update-check 2>/dev/null || true
 ```
 
-Follow the inline flow in skill **`outreach-upgrade`** for every line printed:
+Follow the inline flow in skill **`ebase-upgrade`** for every line printed:
 `SERVICE_DOWN <service> <url>` (inform the user, non-blocking), then
 `UPGRADE_AVAILABLE` (ask to upgrade), `UPGRADED`/`JUST_UPGRADED` (log and
 continue), or `UP_TO_DATE`/empty (continue silently).
@@ -71,7 +71,7 @@ connection flows. Do not seed MCP upserts from fixture JSON unless the user is e
 
 - `profile_url` (required) — full LinkedIn profile URL, e.g. `https://www.linkedin.com/in/username/`
 - `note` (optional) — personalised connection note (LinkedIn limit: **300 chars**). Use **only** when the user supplied note text or explicitly asked for a message with the invite. Otherwise omit the parameter (or pass empty) to send without a note.
-- `outreach_topic` (optional, per-invocation) — the angle to persist for later follow-ups (`conversation-planner`). Parse from the user's ask when they qualify the connect (e.g. `for …`, `about …`). Does **not** by itself require a connection note. Examples:
+- `outreach_topic` (optional, per-invocation) — the angle to persist for later follow-ups (`ebase-conversation-planner`). Parse from the user's ask when they qualify the connect (e.g. `for …`, `about …`). Does **not** by itself require a connection note. Examples:
   - `connect to <url> for AI startup ideas` → `outreach_topic = "AI startup ideas"` (no note unless they also ask for one)
   - `connect to <url> about catching up and say we met at NeurIPS` → note **and** topic
   - `connect to <url>` (no qualifier) → no topic override; send without a note
@@ -84,7 +84,7 @@ When the user **did** request a note and you are composing it (not sending verba
 2. **`prospect.outreach_topic`** from the prospect JSON.
 3. **`campaign.topic`** from **`get_conversation_planner_config`** (the project-wide default for the active outreach setup).
 
-If you resolved at level 1 (and the prospect did not already have the same topic), call **`upsert_prospect`** with the merged `outreach_topic` so later `conversation-planner` runs stay anchored on the same angle — even when the connection request itself is sent without a note.
+If you resolved at level 1 (and the prospect did not already have the same topic), call **`upsert_prospect`** with the merged `outreach_topic` so later `ebase-conversation-planner` runs stay anchored on the same angle — even when the connection request itself is sent without a note.
 
 Skip topic resolution when the user supplied `note` verbatim — that text is shipped as-is.
 
@@ -210,7 +210,7 @@ Call **`save_connection`** with:
 | `profile_url` | same LinkedIn URL |
 | `name` | from scrape |
 | `title` | from scrape (headline) |
-| `prospect_id` | pipeline id if you already have one; if omitted, **`save_connection` fills it** from the LinkedIn URL slug (so the per-prospect conversation-planner dispatch can resolve the prospect later) |
+| `prospect_id` | pipeline id if you already have one; if omitted, **`save_connection` fills it** from the LinkedIn URL slug (so the per-prospect ebase-conversation-planner dispatch can resolve the prospect later) |
 | `note_sent` | note text, or `null` if sent without a note |
 | `connection_status` | `"pending"` |
 
@@ -239,7 +239,7 @@ Tool call → send_connection_request(
 To:       Alex Chen (https://www.linkedin.com/in/alexchen/)
 Title:    ML Engineer at Acme
 Sent at:  2026-04-03T14:10:00+00:00
-Topic:    "AI startup ideas" (saved for conversation-planner)
+Topic:    "AI startup ideas" (saved for ebase-conversation-planner)
 Note:     (none)
 ─────────────────────────────────────────────────────────────
 ```

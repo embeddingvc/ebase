@@ -65,7 +65,7 @@ Run `make help` to see all targets. Common ones:
 - `make stop-cron`: stop the cron scheduler server
 - `make status`: check if Chrome and cron are running (includes sweep job summary)
 - `make test`: run the test suite (delegates to `make -C testing test`)
-- `make test_conversation`: run conversation-planner tests (needs `ANTHROPIC_API_KEY`)
+- `make test_conversation`: run ebase-conversation-planner tests (needs `ANTHROPIC_API_KEY`)
 - `make sync-version`: copy `VERSION` into `pyproject.toml`
 - `make check-version`: CI gate — assert `VERSION` and `pyproject.toml` match
 - `make check-repo-url`: verify `install.sh`, `README.md`, and `CONTRIBUTING.md` use the same repo org/name

@@ -1,5 +1,5 @@
 ---
-name: sync-planner-persona-from-linkedin
+name: ebase-sync-persona
 description: Refresh planner identity in outreach/config/persona.json from LinkedIn by calling MCP parse_profile (structured crawl), synthesizing persona and organization prose in your reasoning, then merge_conversation_planner_identity (never heuristic server-side summarization). Use when the operator sets up persona, syncs from their profile, or wants specialization/description grounded in experience, education, skills, and activity.
 ---
 
@@ -46,7 +46,7 @@ Before syncing, check service health and for a newer ebase version:
 bin/outreach-update-check 2>/dev/null || true
 ```
 
-Follow the inline flow in skill **`outreach-upgrade`** for every line printed:
+Follow the inline flow in skill **`ebase-upgrade`** for every line printed:
 `SERVICE_DOWN <service> <url>` (inform the user, non-blocking), then
 `UPGRADE_AVAILABLE` (ask to upgrade), `UPGRADED`/`JUST_UPGRADED` (log and
 continue), or `UP_TO_DATE`/empty (continue silently).
@@ -54,7 +54,7 @@ Do not block on network failures.
 
 ## When to use
 
-- First-time persona setup before running **conversation-planner**
+- First-time persona setup before running **ebase-conversation-planner**
 - Operator asks to “sync my planner from LinkedIn”, “refresh identity from profile”, “pull skills/experience into specialization”
 
 ---

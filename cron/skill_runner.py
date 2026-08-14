@@ -21,9 +21,9 @@ REPO_ROOT = CRON_DIR.parent
 #     cron.conversation_plan_sweep, not via run_named_skill.
 ALLOWED_SKILLS = frozenset(
     {
-        "send-connection-request",
-        "sync-planner-persona-from-linkedin",
-        "reply-to-post",
+        "ebase-send-connection-request",
+        "ebase-sync-persona",
+        "ebase-reply-to-post",
     }
 )
 
@@ -123,5 +123,5 @@ def run_send_connection(profile_url: str) -> SkillRunResult:
             error="profile_url required",
         )
     return run_skill_prompt(
-        f"Connect to {url} using the send-connection-request skill."
+        f"Connect to {url} using the ebase-send-connection-request skill."
     )

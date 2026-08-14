@@ -4,7 +4,7 @@ Local FastAPI app for monitoring connections, inspecting routine state, and trig
 
 ## Quick start
 
-After [install](../../README.md#install-one-command), run **`/setup-outreach`** in Claude Code once to configure your operator profile ([details](../../docs/skills.md#setup-outreach-first-run-wizard)).
+After [install](../../README.md#install-one-command), run **`/ebase-setup`** in Claude Code once to configure your operator profile ([details](../../docs/skills.md#ebase-setup-first-run-wizard)).
 
 ```text
 http://127.0.0.1:3848/
@@ -43,7 +43,7 @@ Lists prospects from **`connections.json` only** (master registry). For each row
 - Identity: `name`, `title`, `profile_url`, `connection_status` from the connection record
 - Stage / last action: from `conversations/{prospect_id}.json` when present
 
-**Add connection** calls `POST /api/dashboard/connections` → runs the `send-connection-request` skill via Claude CLI.
+**Add connection** calls `POST /api/dashboard/connections` → runs the `ebase-send-connection-request` skill via Claude CLI.
 
 ### Routines & execution
 
@@ -54,11 +54,11 @@ Lists prospects from **`connections.json` only** (master registry). For each row
 Default install ships with the **per-prospect scheduler** (`scheduler_kind: "per_prospect"`) — two typed sweeps replace the old loop routines:
 
 - **Connection sync sweep** — deterministic Python (no LLM); reads `connections.json`, probes `is_first_degree_connection` for pending rows whose `sync_backoff.next_check_at` is past, promotes accepted invites.
-- **Conversation plan sweep** — dispatches `claude -p` per actionable prospect (single-prospect mode of `conversation-planner`), with `plan_backoff` per row.
+- **Conversation plan sweep** — dispatches `claude -p` per actionable prospect (single-prospect mode of `ebase-conversation-planner`), with `plan_backoff` per row.
 
 Both honour daily caps in `tools/rate_limits.py` and exponential-backoff schedules configured under `per_prospect.{connection_sync,conversation_plan}.backoff` in `dashboard_routines.json`. See `docs/designs/per-connection-routines-with-backoff-design.md`.
 
-Legacy `scheduler_kind: "loop"` is still supported for custom routines pointing at single-action skills (e.g. `reply-to-post`, `send-connection-request`).
+Legacy `scheduler_kind: "loop"` is still supported for custom routines pointing at single-action skills (e.g. `ebase-reply-to-post`, `ebase-send-connection-request`).
 
 #### Daily active window
 
@@ -160,8 +160,8 @@ Tune the schedules under `per_prospect.{connection_sync,conversation_plan}` in
 scheduler picks up file edits on the next tick.
 
 `DEFAULT_ROUTINES` (legacy loop list) is now empty — the per-prospect sweep
-covers the old defaults. Add custom loop routines (for `reply-to-post`,
-`send-connection-request`, etc.) via the Configure modal if you want them.
+covers the old defaults. Add custom loop routines (for `ebase-reply-to-post`,
+`ebase-send-connection-request`, etc.) via the Configure modal if you want them.
 
 ### Notes
 

@@ -1,5 +1,5 @@
 ---
-name: outreach-uninstall
+name: ebase-uninstall
 description: >-
   Remove ebase from Claude Code: stop cron scheduler, unregister
   MCP, clean permissions, optionally delete synced skills and local outreach
@@ -75,7 +75,7 @@ After the script finishes, confirm:
 
 1. `claude mcp list` — no `linkedin` server (if `claude` is on PATH).
 2. Skills gone from `~/.claude/skills/` (if user chose skill removal):
-   - `setup-outreach`, `send-connection-request`, `conversation-planner`, etc.
+   - `ebase-setup`, `ebase-send-connection-request`, `ebase-conversation-planner`, etc.
 
 Summarize the script's ✓ / ○ lines for the user.
 

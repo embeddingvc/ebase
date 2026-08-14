@@ -6,7 +6,7 @@ records:
 
 - ``sync_backoff``: when to next probe ``is_first_degree_connection`` for a row
   whose ``connection_status`` is still ``pending``.
-- ``plan_backoff``: when to next dispatch a per-prospect ``conversation-planner``
+- ``plan_backoff``: when to next dispatch a per-prospect ``ebase-conversation-planner``
   Claude call for an actionable row.
 
 Both records share the same shape and the same multiplicative-with-cap policy

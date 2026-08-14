@@ -364,6 +364,20 @@ sync_claude_skills_to_home() {
   fi
 
   mkdir -p "${USER_CLAUDE_SKILLS}"
+
+  # Renamed under the ebase- prefix (see #32) — remove the old-named copies so
+  # upgrading users don't end up with both in the skill picker.
+  local old_name removed_old=0
+  for old_name in setup-outreach outreach-upgrade outreach-uninstall stats \
+    send-connection-request reply-to-post conversation-planner \
+    sync-planner-persona-from-linkedin; do
+    if [[ -d "${USER_CLAUDE_SKILLS}/${old_name}" ]]; then
+      rm -rf "${USER_CLAUDE_SKILLS}/${old_name}"
+      removed_old=$((removed_old + 1))
+    fi
+  done
+  [[ "${removed_old}" -gt 0 ]] && info "Removed ${removed_old} old pre-rename skill dir(s) from ${USER_CLAUDE_SKILLS}/"
+
   local synced=0
   local d n
   shopt -s nullglob
@@ -757,7 +771,7 @@ setup_planner_tone_and_examples() {
   fi
   if [[ ! -t 0 ]]; then
     info "Non-interactive install — skipping tone / style examples prompts."
-    info "Run later via Claude Code: /setup-outreach (Step 3 — Tone & style examples)."
+    info "Run later via Claude Code: /ebase-setup (Step 3 — Tone & style examples)."
     note "skip: planner tone / examples (non-interactive stdin)"
     step_done "Planner tone / examples (skipped)"
     return 0
@@ -771,7 +785,7 @@ setup_planner_tone_and_examples() {
   fi
   if [[ ! -f "${prompts_path}" ]]; then
     warn "Questionnaire missing: ${prompts_path}"
-    warn "Re-run from a complete checkout or configure via /setup-outreach."
+    warn "Re-run from a complete checkout or configure via /ebase-setup."
     note "warn: style_example_prompts.json missing"
     step_done "Planner tone / examples (skipped)"
     return 0
@@ -801,7 +815,7 @@ setup_planner_tone_and_examples() {
       ;;
     *)
       warn "Could not update tone settings in ${cfg_path}."
-      warn "Edit it manually or run: /setup-outreach in Claude Code."
+      warn "Edit it manually or run: /ebase-setup in Claude Code."
       note "warn: planner tone / examples update failed"
       step_done "Planner tone / examples (failed)"
       ;;
@@ -1099,9 +1113,9 @@ print_final_summary() {
   if ! command -v claude >/dev/null 2>&1; then
     printf '  • Install Claude Code, then re-run: cd "%s" && ./install.sh\n' "${REPO_ROOT}"
   else
-    printf '  • In Claude Code (this repo): /setup-outreach — persona, tone, and style examples\n'
-    printf '  • Upgrade later: make upgrade   or   /outreach-upgrade in Claude Code\n'
-    printf '  • Uninstall: ./uninstall.sh   or   /outreach-uninstall in Claude Code\n'
+    printf '  • In Claude Code (this repo): /ebase-setup — persona, tone, and style examples\n'
+    printf '  • Upgrade later: make upgrade   or   /ebase-upgrade in Claude Code\n'
+    printf '  • Uninstall: ./uninstall.sh   or   /ebase-uninstall in Claude Code\n'
     printf '  • Outreach: connect to <linkedin-url>\n'
   fi
   if [[ "${SKIP_WEB}" != "1" ]]; then

@@ -1029,7 +1029,7 @@ class LinkedInBrowser:
         """Raise RuntimeError with recovery instructions if not logged in."""
         if not await self.is_logged_in():
             raise RuntimeError(
-                "error: not logged in to LinkedIn — run /setup-outreach to restore your browser session"
+                "error: not logged in to LinkedIn — run /ebase-setup to restore your browser session"
             )
 
     async def _read_connection_degree_on_page(self) -> int | None:

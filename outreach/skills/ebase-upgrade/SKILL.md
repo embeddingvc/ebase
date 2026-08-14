@@ -1,5 +1,5 @@
 ---
-name: outreach-upgrade
+name: ebase-upgrade
 description: >-
   Upgrade ebase to the latest version from git. Detects the repo
   checkout, runs git pull + uv sync + skill/MCP refresh, and shows what changed.
@@ -15,7 +15,7 @@ Voice triggers: "upgrade outreach", "update linkedin outreach", "get latest vers
 
 ---
 
-## Inline system check flow (referenced by setup-outreach, send-connection-request)
+## Inline system check flow (referenced by ebase-setup, ebase-send-connection-request)
 
 Run at the **start** of those skills (before any outreach work):
 
@@ -92,11 +92,11 @@ On failure, warn the user and continue with the invoking skill (do not abort out
 
 ### Step 3: Continue
 
-Resume the skill the user originally invoked (setup-outreach, send-connection-request, etc.).
+Resume the skill the user originally invoked (ebase-setup, ebase-send-connection-request, etc.).
 
 ---
 
-## Standalone usage (`/outreach-upgrade`)
+## Standalone usage (`/ebase-upgrade`)
 
 1. Force a fresh check:
    ```bash

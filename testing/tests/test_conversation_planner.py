@@ -37,7 +37,7 @@ TESTING_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_DIR = os.path.dirname(TESTING_ROOT)  # core repo root
 FIXTURES_DIR = os.path.join(TESTING_ROOT, "tests", "fixtures", "conversation-planner")
 SKILL_PATH = os.path.join(
-    BASE_DIR, "outreach", "skills", "conversation-planner", "SKILL.md"
+    BASE_DIR, "outreach", "skills", "ebase-conversation-planner", "SKILL.md"
 )
 LOGS_DIR = os.path.join(BASE_DIR, "outreach", "logs")
 PLANNER_CONFIG_PATH = os.path.join(
@@ -632,7 +632,7 @@ def main():
     for required_phrase in (
         "get_conversation_planner_config",
         "merge_conversation_planner_identity",
-        "sync-planner-persona-from-linkedin",
+        "ebase-sync-persona",
         "campaign.goal",
         "campaign.topic",
         "conversation_end_goals",

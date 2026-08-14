@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "prospect.schema.json",
   "title": "ProspectProfile",
-  "description": "Canonical schema for a LinkedIn outreach prospect. Populated by profile-navigator and referenced by conversation-planner.",
+  "description": "Canonical schema for a LinkedIn outreach prospect. Populated by profile-navigator and referenced by ebase-conversation-planner.",
   "type": "object",
   "required": ["id", "linkedin_url", "name", "outreach_stage"],
   "additionalProperties": false,

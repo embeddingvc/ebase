@@ -19,7 +19,7 @@ flowchart TB
   ROUTE -->|No · 2nd / 3rd| CONNECT
   ROUTE -->|Yes| ENGAGE
 
-  CONNECT["② Send connection request<br/>• Skill: send-connection-request<br/>• Personal note ≤ 300 chars · MCP: send_connection_request<br/>• Playwright: Connect → Add note → Send<br/>• Persist · stage: pending_connection"]:::step
+  CONNECT["② Send connection request<br/>• Skill: ebase-send-connection-request<br/>• Personal note ≤ 300 chars · MCP: send_connection_request<br/>• Playwright: Connect → Add note → Send<br/>• Persist · stage: pending_connection"]:::step
 
   CONNECT --> WAIT
 
@@ -32,7 +32,7 @@ flowchart TB
   DEAD["Mark prospect dead<br/>ended_reason: no_response"]:::terminal
   DEAD --> REPORT
 
-  ENGAGE["④ Run conversation sequence<br/>• Skill: conversation-planner<br/>• One five-step path per prospect<br/>• Each turn runs the four phases below"]:::step
+  ENGAGE["④ Run conversation sequence<br/>• Skill: ebase-conversation-planner<br/>• One five-step path per prospect<br/>• Each turn runs the four phases below"]:::step
 
   subgraph SEQ["Five-step message path (advance on positive reply)"]
     direction TB

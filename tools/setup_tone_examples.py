@@ -95,7 +95,7 @@ def run_questionnaire(
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print("[install] Tone & style examples (optional)")
     print()
-    print("  The conversation-planner can read message_rules.tone,")
+    print("  The ebase-conversation-planner can read message_rules.tone,")
     print("  message_rules.tone_guidelines, and message_rules.style_examples")
     print("  to mirror how you actually write on LinkedIn.")
     print()
@@ -111,7 +111,7 @@ def run_questionnaire(
         proceed = ""
     if proceed.lower() not in {"y", "yes"}:
         print(
-            "[install] Skipped — run later via Claude Code: /setup-outreach (Step 3)."
+            "[install] Skipped — run later via Claude Code: /ebase-setup (Step 3)."
         )
         return 3
 

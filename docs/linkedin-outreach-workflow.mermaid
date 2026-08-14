@@ -34,7 +34,7 @@ flowchart TD
     %% ═══════════════════════════════════════════════
     subgraph CONN_REQUEST ["② Send Connection Request"]
         direction TB
-        CONN_REQ_SKILL["<b>send-connection-request skill</b><br/>Claude reads SKILL.md"]
+        CONN_REQ_SKILL["<b>ebase-send-connection-request skill</b><br/>Claude reads SKILL.md"]
         CONN_REQ_SKILL --> COMPOSE_NOTE["<b>Business Logic: Compose Note</b><br/>• ≤ 300 chars (LinkedIn limit)<br/>• Reference prospect's posts/role<br/>• Use first name<br/>• No banned phrases<br/>• 'Would a real person send this?'"]
         COMPOSE_NOTE --> MCP_SEND_CONN["<b>MCP: send_connection_request(url, note)</b>"]
         MCP_SEND_CONN --> PW_CONN["<b>Playwright</b><br/>1. Navigate to profile<br/>2. Click 'Connect' button<br/>3. Click 'Add a note'<br/>4. Type note text<br/>5. Click 'Send'<br/><i>Random 500-1500ms delays</i>"]
