@@ -129,7 +129,10 @@ if [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
   STASH_OUTPUT="$(git stash push -m "outreach-upgrade-$(date +%s)" 2>&1 || true)"
 fi
 
-if ! git pull --ff-only origin "$REMOTE_BRANCH"; then
+GIT_REMOTE="origin"
+git remote get-url upstream >/dev/null 2>&1 && GIT_REMOTE="upstream"
+
+if ! git pull --ff-only "$GIT_REMOTE" "$REMOTE_BRANCH"; then
   echo "ERROR: git pull --ff-only failed — resolve manually in ${REPO_ROOT}" >&2
   exit 1
 fi
