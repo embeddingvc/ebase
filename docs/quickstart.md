@@ -48,7 +48,7 @@ Before sending outreach, configure who the planner speaks as:
 
 1. In Claude Code, run **`/ebase-setup`** (or ask to “run ebase-setup”).
 2. The skill checks your browser session, **`scrape_profile`**s your signed-in LinkedIn profile, and drafts `persona` + `organization`.
-3. Review the draft, request edits, then approve — the skill persists via **`merge_conversation_planner_identity`** to `outreach/config/persona.json`.
+3. Review the draft, request edits, then approve — the skill writes it directly to `outreach/config/persona.json` and validates with `tools/validate_outreach_config.py`.
 4. Optionally tune campaign goal/topic in the same wizard.
 
 See [Claude skills — ebase-setup](./skills.md#ebase-setup-first-run-wizard) and [Conversation planner config](./ebase-conversation-planner.md).

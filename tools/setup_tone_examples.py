@@ -6,8 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import tempfile
 from pathlib import Path
+
+from outreach_config import atomic_write_json, validate_conversation_planner_config
 
 
 def _load_prompts(path: Path) -> dict:
@@ -24,18 +25,6 @@ def _load_config(path: Path) -> dict:
     if not isinstance(cfg, dict):
         raise ValueError(f"{path} must be a JSON object")
     return cfg
-
-
-def _atomic_write_json(path: Path, data: dict) -> None:
-    fd, tmp = tempfile.mkstemp(prefix=".tone-", dir=str(path.parent))
-    try:
-        with open(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
-            fh.write("\n")
-        Path(tmp).replace(path)
-    except Exception:
-        Path(tmp).unlink(missing_ok=True)
-        raise
 
 
 def _prompt_line(
@@ -199,7 +188,12 @@ def run_questionnaire(
     elif "style_examples" not in rules:
         rules["style_examples"] = []
 
-    _atomic_write_json(config_path, cfg)
+    err = validate_conversation_planner_config(cfg)
+    if err:
+        print(f"[install] Refusing to write invalid config: {err}", file=sys.stderr)
+        return 1
+
+    atomic_write_json(config_path, cfg)
 
     print(f"[install] Updated {config_path}")
     print(f"[install]   tone:             {rules.get('tone', '')}")

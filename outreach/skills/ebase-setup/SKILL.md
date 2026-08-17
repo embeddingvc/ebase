@@ -2,10 +2,10 @@
 name: ebase-setup
 description: >-
   Interactive setup wizard: scrape the signed-in LinkedIn profile for a draft
-  operator config, present it for review, iterate on corrections, then persist
-  via merge_conversation_planner_identity. Also covers browser/CDP prep and
-  optional campaign tuning. Use for first-run onboarding, /ebase-setup, or
-  configuring persona.json.
+  operator config, present it for review, iterate on corrections, then write
+  it straight to persona.json and validate with tools/validate_outreach_config.py.
+  Also covers browser/CDP prep and optional campaign tuning. Use for
+  first-run onboarding, /ebase-setup, or configuring persona.json.
 ---
 
 # Setup Outreach (interactive wizard)
@@ -41,9 +41,12 @@ Allowed browser-side tools in this skill (LinkedIn MCP only):
 The `make browser` step is the only shell command involved in browser setup, and it launches
 the **operator's own Chrome** with CDP — it is not a substitute browser-automation tool.
 
-If `mcp__linkedin__*` tools are not registered in the current session, **stop and tell the
-operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
-`make claude-install`). Do **not** pick up a different browser tool as a fallback.
+If `mcp__linkedin__scrape_profile` / `parse_profile` are not registered in the current session
+(step 1, 2a, or the optional 2c refresh), **stop and tell the operator the LinkedIn MCP is not
+registered** (fix: run `./install.sh` or `make claude-install`, then start a **new** Claude Code
+session — MCP servers only load at session start). Do **not** pick up a different browser tool
+as a fallback. This does **not** block the rest of the wizard: steps 0, 2b–2d, 3, and 4 only
+touch local config files and work whether or not the LinkedIn MCP has loaded yet (see below).
 
 ## System check (run first)
 
@@ -59,9 +62,24 @@ Follow the inline flow in skill **`ebase-upgrade`** for every line printed:
 continue), or `UP_TO_DATE`/empty (continue silently).
 Do not block on network failures.
 
-**Filesystem rule:** Never read or write `outreach/config/` via raw paths or shell. Use MCP **`get_conversation_planner_config`**, **`get_style_example_prompts`**, **`merge_conversation_planner_identity`**, and **`upsert_conversation_planner_config`** only.
+**Filesystem rule:** Read and write `outreach/config/persona.json`, `outreach/config/conversation_planner.json`,
+and `outreach/config/style_example_prompts.json` **directly** with the Read / Write tools — no MCP round trip.
+When the local file is absent, fall back to reading the matching bundled file
+(`persona.json.example`, `conversation_planner.json.example`, or `style_example_prompts.json`
+itself, which is bundled and always present). After writing a config file, confirm it before
+telling the operator it saved:
 
-**Profile rule:** Step 2 always follows **scrape → present → refine → sync**. Do not call **`merge_conversation_planner_identity`** until the operator approves the final draft.
+```bash
+uv run python tools/validate_outreach_config.py --persona outreach/config/persona.json --planner outreach/config/conversation_planner.json
+```
+
+(Pass only the flag for whichever file you just wrote.) On `error: ...`, fix the draft and
+re-write — never leave an invalid file in place. This path has no LinkedIn MCP dependency, so it
+works in the very first Claude Code session right after install, before the newly-registered
+MCP server has loaded.
+
+**Profile rule:** Step 2 always follows **scrape → present → refine → sync**. Do not write
+`persona.json` until the operator approves the final draft.
 
 ---
 
@@ -85,7 +103,9 @@ Setup progress:
 
 Explain the flow: browser session → **scrape your profile → review & edit → save** → optional campaign → done.
 
-Call **`get_conversation_planner_config`**. If `persona.name` is still **"Nova Chen"**, treat identity as unset.
+Read **`outreach/config/persona.json`** (fall back to `persona.json.example`, then to
+`{"persona": {"name": "Nova Chen"}}` if neither exists). If `persona.name` is still
+**"Nova Chen"**, treat identity as unset.
 
 Use **`AskQuestion`** (or ask in chat):
 
@@ -117,6 +137,7 @@ Sign in at `https://www.linkedin.com` in **that** Chrome window (dedicated profi
 | JSON with a real `name` | Session OK — mark step 1 done |
 | CDP / connection error | `make browser`, port **9222** — retry when ready |
 | Login error | Finish LinkedIn sign-in, then retry |
+| Tool not found (`mcp__linkedin__scrape_profile` unavailable) | LinkedIn MCP hasn't loaded in this session — see browser tool policy above. Steps 0 / 2b–2d / 3 / 4 don't need it; only 1 / 2a / optional-2c do. |
 
 Keep the scrape JSON in context for step 2a if continuing in the same session; otherwise re-scrape in 2a.
 
@@ -144,7 +165,7 @@ From the scrape JSON, **you** synthesize a draft **`persona`** + **`organization
 
 If scrape data is thin (empty `about`, generic `title`), say so honestly and draft shorter copy — offer to re-scrape or fill gaps in 2c.
 
-Mark 2a done. Proceed to 2b in the **same turn** only to present; do **not** sync yet.
+Mark 2a done. Proceed to 2b in the **same turn** only to present; do **not** write `persona.json` yet.
 
 ### 2b — Present draft
 
@@ -156,7 +177,7 @@ Show the operator:
 
 Ask: *"What would you like to change?"* (tone, role wording, org description, specialization emphasis, etc.)
 
-Stop and wait. Do not sync.
+Stop and wait. Do not write yet.
 
 ### 2c — Corrections & adjustments
 
@@ -167,17 +188,24 @@ Apply the operator's edits to the draft. After each round:
 
 Repeat 2c until the operator explicitly says they are done (e.g. "looks good", "save it", "finalize").
 
-**Optional deep refresh:** If the operator asks for richer LinkedIn signal (experience, education, skills), run **`parse_profile`** and fold that into the draft — then return to **2b** (present again) before any sync. Do not use **`parse_profile`** by default; **`scrape_profile`** is the initial source.
+**Optional deep refresh:** If the operator asks for richer LinkedIn signal (experience, education, skills), run **`parse_profile`** and fold that into the draft — then return to **2b** (present again) before any write. Do not use **`parse_profile`** by default; **`scrape_profile`** is the initial source.
 
 ### 2d — Finalize & sync
 
 1. Show the **final** draft one last time.
 2. Require explicit confirmation to persist.
-3. Call **`merge_conversation_planner_identity`**:
-   - `persona_json` — JSON string with `name`, `role`, `organization`, `specialization`
-   - `organization_json` — JSON string with `description`
-4. Verify with **`get_conversation_planner_config`** and confirm `ok: true` from the merge response.
-5. Summarize what was saved in plain language.
+3. Read the current **`outreach/config/persona.json`** (fall back to `persona.json.example`, then the
+   hardcoded default `{"persona": {"name": "Nova Chen", "role": "virtual team member",
+   "organization": "Embedding VC", "specialization": "AI research and operations"},
+   "organization": {"description": "We back early-stage AI startups and connect top talent with
+   great AI companies."}}` if neither file exists). Shallow-merge the approved draft on top —
+   only overwrite the `persona`/`organization` fields the operator approved (`name`, `role`,
+   `organization`, `specialization`; `description`); leave any other existing field untouched.
+4. Write the merged object to **`outreach/config/persona.json`**.
+5. Validate: `uv run python tools/validate_outreach_config.py --persona outreach/config/persona.json`.
+   On `error: ...`, fix the draft (you likely introduced an unknown key or a non-string value) and re-write.
+6. Read the file back and confirm the fields match what you intended to save.
+7. Summarize what was saved in plain language.
 
 Stop and wait before step 3 (or step 4 if profile-only).
 
@@ -185,8 +213,8 @@ Stop and wait before step 3 (or step 4 if profile-only).
 
 ## Step 3 — Campaign, tone & style examples (optional)
 
-Read **`get_conversation_planner_config`**. Show `campaign`,
-`message_rules.tone`, `message_rules.tone_guidelines`, and
+Read **`outreach/config/conversation_planner.json`** (fall back to `conversation_planner.json.example`).
+Show `campaign`, `message_rules.tone`, `message_rules.tone_guidelines`, and
 `message_rules.style_examples` (count + first reply preview).
 
 Use **`AskQuestion`**: **Keep defaults** | **Customize** | **Skip**.
@@ -200,13 +228,18 @@ After 3a (or if the operator skips campaign edits), use **`AskQuestion`**:
 | **Yes — run questionnaires** | Continue to **3b → 3c** |
 | **No — skip questionnaires** | Persist campaign changes only (if any), then jump to step 4 |
 
-Do **not** call **`get_style_example_prompts`** or start tone/style questions
+Do **not** read `outreach/config/style_example_prompts.json` or start tone/style questions
 until the operator explicitly chooses **Yes**.
 
-Each sub-step echoes a draft, collects approval, then persists with
-**`upsert_conversation_planner_config`** (full planner JSON minus
-`persona` / `organization`). Verify with **`get_conversation_planner_config`**
-after every write.
+Each sub-step echoes a draft, collects approval, then persists by writing the **full**
+`conversation_planner.json` (merge the draft into the object you read at the top of step 3;
+never drop `campaign`/`message_rules`/`router` fields you weren't asked to change) and running:
+
+```bash
+uv run python tools/validate_outreach_config.py --planner outreach/config/conversation_planner.json
+```
+
+Read the file back after every write to verify.
 
 ### 3a — Campaign (goal / topic / value proposition)
 
@@ -217,7 +250,7 @@ Collect (one or two fields per turn): `campaign.goal`, `campaign.topic`,
 
 ### 3b — Tone questionnaire
 
-Only after the operator opts in. Call **`get_style_example_prompts`** and parse
+Only after the operator opts in. Read **`outreach/config/style_example_prompts.json`** and parse
 `tone_questions[]`.
 
 Walk the operator through **each** tone question **one at a time** (stop and
@@ -231,13 +264,13 @@ After all answers (or skips), synthesize:
 | `message_rules.tone` | Answer to the question whose `maps_to` is `message_rules.tone` (typically `tone_adjectives`). Keep ≤ ~80 chars. |
 | `message_rules.tone_guidelines` | Join the other tone answers into one plain-text sentence (semicolon-separated prose). Use `""` when none were answered. |
 
-Echo the draft `tone` + `tone_guidelines` → approval → include in the planner
-payload for **`upsert_conversation_planner_config`**.
+Echo the draft `tone` + `tone_guidelines` → approval → include in the merged
+`conversation_planner.json` write.
 
 ### 3c — Style example questionnaire
 
-Only after **3b** (same opt-in). Use the same **`get_style_example_prompts`**
-response. Parse
+Only after **3b** (same opt-in). Use the same `style_example_prompts.json`
+contents. Parse
 `style_example_prompts[]` — this is the **canonical outreach questionnaire**.
 
 Walk through **every** prompt in array order, **one scenario per turn** (stop
@@ -264,14 +297,14 @@ Do **not** invent scenario text — copy `label`, `context`, and `incoming` from
 the questionnaire entry.
 
 After each reply (or explicit skip), echo the running `style_examples[]`
-array. When all prompts are done, merge into the full planner config and call
-**`upsert_conversation_planner_config`**.
+array. When all prompts are done, merge into the full planner config and
+write + validate.
 
 Target **at least 2** non-skipped examples before finishing 3c; if the
 operator skipped most scenarios, offer to revisit skipped ones or add a custom
 example.
 
-Validation rules to mirror in your draft (server-enforced):
+Validation rules to mirror in your draft (checked by `tools/validate_outreach_config.py`):
 
 - `message_rules.style_examples` must be a JSON array of objects.
 - Each object must have a non-empty string `reply`.
@@ -284,7 +317,7 @@ Stop and wait before step 4.
 
 ## Step 4 — Ready
 
-1. **`get_conversation_planner_config`** — summary table:
+1. Read **`outreach/config/persona.json`** and **`outreach/config/conversation_planner.json`** — summary table:
    - Identity: `persona.name`, `persona.role`, `persona.organization`.
    - Campaign: `campaign.topic`, `campaign.goal`.
    - Voice: `message_rules.tone`, count of `message_rules.style_examples` (and
@@ -304,8 +337,9 @@ Mark all checklist items done.
 | CDP connection refused | `make browser`; port 9222 |
 | Scrape returns login page | Sign in in installer Chrome profile |
 | Draft feels wrong / too generic | Iterate in 2c; optional **`parse_profile`** refresh |
-| Still "Nova Chen" after sync | 2d merge failed — check tool response, retry |
-| MCP tools missing | `./install.sh` or `make claude-install` — `docs/install.md` |
+| Still "Nova Chen" after sync | Re-read `outreach/config/persona.json` — the write in 2d may have failed validation; check the `validate_outreach_config.py` output and retry |
+| `validate_outreach_config.py` reports `error: ...` | Fix the offending field in your draft (unknown key or non-string value) and re-write; never leave the file in an invalid state |
+| `scrape_profile` / `parse_profile` tool not found | LinkedIn MCP hasn't loaded in this session — `./install.sh` or `make claude-install`, then start a **new** session. Only affects steps 1 / 2a / optional-2c; the rest of the wizard doesn't need it |
 
 ---
 
@@ -313,12 +347,9 @@ Mark all checklist items done.
 
 | Tool | Role |
 |------|------|
-| **`scrape_profile`** | Initial draft + session check |
-| **`parse_profile`** | Optional deep refresh when scrape is too thin |
-| **`merge_conversation_planner_identity`** | Persist approved persona.json |
-| **`get_conversation_planner_config`** | Read merged config (persona + planner) |
-| **`get_style_example_prompts`** | Tone + style-example questionnaire (steps 3b–3c) |
-| **`upsert_conversation_planner_config`** | Campaign + tone + style examples (step 3); writes the full planner JSON minus persona/organization |
+| **`scrape_profile`** (MCP) | Initial draft + session check |
+| **`parse_profile`** (MCP) | Optional deep refresh when scrape is too thin |
+| **`tools/validate_outreach_config.py`** (Bash) | Confirms `persona.json` / `conversation_planner.json` are well-formed after a direct write |
 | **`ebase-upgrade`** (skill) | System check: service health + version check, optional git pull when `UPGRADE_AVAILABLE` (run at skill start) |
 
 For a standalone LinkedIn-only identity refresh (no wizard), use **`ebase-sync-persona`** (`parse_profile`-first).

@@ -59,7 +59,7 @@ After MCP registration and LinkedIn sign-in:
 1. Open Claude Code in the repo (or any project if you used `--scope user`).
 2. Run **`/ebase-setup`**.
 
-The wizard **`scrape_profile`**s your LinkedIn profile, presents a draft persona, lets you refine it interactively, then saves **`outreach/config/persona.json`** via MCP. This replaces manual editing or the optional `ebase-sync-persona` flow for first-time setup.
+The wizard **`scrape_profile`**s your LinkedIn profile, presents a draft persona, lets you refine it interactively, then writes **`outreach/config/persona.json`** directly and validates it with `tools/validate_outreach_config.py`. This replaces manual editing or the optional `ebase-sync-persona` flow for first-time setup.
 
 Details: [ebase-setup in Claude skills](./skills.md#ebase-setup-first-run-wizard).
 

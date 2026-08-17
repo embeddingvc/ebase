@@ -12,7 +12,7 @@ This repo wires Claude (via the MCP protocol) to a real LinkedIn session and a s
 ## What you can do
 
 - **First-run setup**
-  - Skill: **`ebase-setup`** — interactive wizard: **`scrape_profile`** → present draft persona → refine with operator → **`merge_conversation_planner_identity`**
+  - Skill: **`ebase-setup`** — interactive wizard: **`scrape_profile`** → present draft persona → refine with operator → write `persona.json` directly (validated by `tools/validate_outreach_config.py`, no MCP round trip)
 
 - **Profile data**
   - `scrape_profile`: quick structured scrape (includes `recent_posts` and also captures `raw_text`)
