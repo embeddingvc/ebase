@@ -1,11 +1,11 @@
 ---
 name: ebase-sync-persona
-description: Refresh planner identity in outreach/config/persona.json from LinkedIn by calling MCP parse_profile (structured crawl), synthesizing persona and organization prose in your reasoning, then merge_conversation_planner_identity (never heuristic server-side summarization). Use when the operator sets up persona, syncs from their profile, or wants specialization/description grounded in experience, education, skills, and activity.
+description: Refresh planner identity in outreach/config/persona.json from LinkedIn by calling MCP parse_profile (structured crawl), synthesizing persona and organization prose in your reasoning, then writing persona.json directly and validating with tools/validate_outreach_config.py (never heuristic server-side summarization). Use when the operator sets up persona, syncs from their profile, or wants specialization/description grounded in experience, education, skills, and activity.
 ---
 
 # Sync Planner Persona From LinkedIn
 
-Align **`outreach/config/persona.json`** (**`persona`** and **`organization`**) with a LinkedIn member profile using **`parse_profile`** for data and **`merge_conversation_planner_identity`** for persistence. Summarization is done **by you** (the Skill / model), not inside the MCP server.
+Align **`outreach/config/persona.json`** (**`persona`** and **`organization`**) with a LinkedIn member profile using **`parse_profile`** for data and a direct file write (validated by `tools/validate_outreach_config.py`) for persistence. Summarization is done **by you** (the Skill / model), not inside the MCP server.
 
 ## Browser tool policy (strict — read first)
 
@@ -30,11 +30,22 @@ them for this workflow:
 
 Allowed browser-side tool in this skill (LinkedIn MCP only): `mcp__linkedin__parse_profile`.
 
-If `mcp__linkedin__*` tools are not registered in the current session, **stop and tell the
-operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or
-`make claude-install`). Do **not** pick up a different browser tool as a fallback.
+If `mcp__linkedin__parse_profile` is not registered in the current session, **stop and tell the
+operator the LinkedIn MCP is not registered** (fix: run `./install.sh` or `make claude-install`,
+then start a **new** Claude Code session — MCP servers only load at session start). Do **not**
+pick up a different browser tool as a fallback.
 
-**Filesystem rule:** Never read or write `outreach/config/` via raw paths or shell. Use **`get_conversation_planner_config`** (merged read), **`merge_conversation_planner_identity`** (identity write), or **`upsert_conversation_planner_config`** for the **non-identity** planner file only through MCP.
+**Filesystem rule:** Read and write **`outreach/config/persona.json`** directly with the Read /
+Write tools (fall back to reading `persona.json.example` when the local file is absent) — no MCP
+round trip. After writing, confirm with:
+
+```bash
+uv run python tools/validate_outreach_config.py --persona outreach/config/persona.json
+```
+
+This has no LinkedIn MCP dependency, so it works even before the MCP server has loaded in this
+session — only the `parse_profile` crawl in step 1 needs it. Never touch
+`conversation_planner.json` from this skill (see Campaign block below).
 
 ---
 
@@ -63,7 +74,7 @@ Do not block on network failures.
 
 - **`profile_url`** — Full `https://www.linkedin.com/in/…/` URL.
   - For the **signed-in member**, use **`https://www.linkedin.com/in/me/`** (LinkedIn redirects to their public slug).
-  - Optionally confirm with **`get_conversation_planner_config`** after merge.
+  - Optionally confirm by reading **`outreach/config/persona.json`** after the write.
 
 **Live prerequisites:** Same as other browser tools (`make browser`, Chrome CDP `9222`, logged into LinkedIn). **`parse_profile`** is slower than **`scrape_profile`** (experience, education, skills, activity crawl).
 
@@ -105,37 +116,32 @@ Optional: briefly show the operator your drafted JSON objects before merging if 
 
 ### 3. Persist (merge only identity)
 
-Call MCP **`merge_conversation_planner_identity`**:
+Read the current **`outreach/config/persona.json`** (fall back to `persona.json.example`, then the
+hardcoded default identity if neither exists). Shallow-merge your drafted fields on top — only
+overwrite whichever of `persona.name`, `persona.role`, `persona.organization`,
+`persona.specialization`, `organization.description` you are updating; leave everything else in
+the file untouched. Do not introduce unknown keys.
 
-- **`persona_json`** — JSON object string with whichever of `name`, `role`, `organization`, `specialization` you are updating (you may send all four).
-- **`organization_json`** — JSON object string, typically `{ "description": "…" }`.
+Write the merged object to **`outreach/config/persona.json`**, then validate:
 
-Use **`{}`** for either argument to skip that block. Do not send unknown keys.
-
-Example (illustrative — your strings differ):
-
-```json
-Tool: merge_conversation_planner_identity
-persona_json: "{\"name\":\"…\",\"role\":\"…\",\"organization\":\"…\",\"specialization\":\"…\"}"
-organization_json: "{\"description\":\"…\"}"
+```bash
+uv run python tools/validate_outreach_config.py --persona outreach/config/persona.json
 ```
 
-On success, parse the tool’s JSON return and confirm `ok: true`.
+On `error: ...`, fix the draft and re-write.
 
 ### 4. Verify
 
-Call **`get_conversation_planner_config`** and ensure `persona` / `organization` match intent.
+Read **`outreach/config/persona.json`** back and ensure `persona` / `organization` match intent.
 
 ---
 
-## Related MCP tools
+## Related tools
 
 | Tool | Role here |
 |------|-----------|
-| `parse_profile` | Source of truth for experience, education, skills, activity, about |
-| `merge_conversation_planner_identity` | Safe partial write of identity fields |
-| `get_conversation_planner_config` | Read-back / optional pre-merge context |
-| `upsert_conversation_planner_config` | Only if the operator needs to replace the **entire** `conversation_planner.json` (campaign / rules / router — **not** persona; avoid for routine identity sync) |
+| `parse_profile` (MCP) | Source of truth for experience, education, skills, activity, about |
+| `tools/validate_outreach_config.py` (Bash) | Confirms the written `persona.json` is well-formed |
 
 Do **not** use **`scrape_profile`** alone for this Skill when you need skills/education/activity depth — use **`parse_profile`**.
 
@@ -143,4 +149,4 @@ Do **not** use **`scrape_profile`** alone for this Skill when you need skills/ed
 
 ## Campaign block
 
-Do **not** overwrite `campaign`, `message_rules`, or `router` unless the operator asks. **`merge_conversation_planner_identity`** writes only **`persona.json`** (`persona` + `organization`); it never edits `conversation_planner.json`.
+Do **not** overwrite `campaign`, `message_rules`, or `router` unless the operator asks. This skill only ever writes **`persona.json`** (`persona` + `organization`); it never edits `conversation_planner.json`.

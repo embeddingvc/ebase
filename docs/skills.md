@@ -25,9 +25,9 @@ Run **`/ebase-setup`** in Claude Code (or ask to “run ebase-setup”) after in
 1. **`scrape_profile`** on `https://www.linkedin.com/in/me/` — draft `persona` + `organization` from name, headline, about, and recent posts
 2. **Present** the draft in plain language and as JSON
 3. **Refine** — you request corrections; the agent revises until you approve
-4. **Sync** — **`merge_conversation_planner_identity`** writes `outreach/config/persona.json`
+4. **Sync** — writes `outreach/config/persona.json` directly and validates with `tools/validate_outreach_config.py` (no MCP round trip, so this works even before the newly-registered LinkedIn MCP has loaded in the current session)
 
-Optional later steps: campaign/tone tweaks via **`upsert_conversation_planner_config`**, then a readiness summary.
+Optional later steps: campaign/tone tweaks persisted the same way to `outreach/config/conversation_planner.json`, then a readiness summary.
 
 **Prerequisites:** Chrome with CDP (`make browser`), signed into LinkedIn in the installer Chrome profile, LinkedIn MCP registered. See [Quickstart](./quickstart.md) and [Conversation planner config](./ebase-conversation-planner.md).
 

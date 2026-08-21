@@ -70,6 +70,13 @@ _ROOT = Path(__file__).parent.parent
 sys.path.append(str(_ROOT))
 sys.path.append(str(Path(__file__).parent))
 
+from outreach_config import (  # noqa: E402
+    ALLOWED_PLANNER_PERSONA_KEYS as _ALLOWED_PLANNER_PERSONA_KEYS,
+    ALLOWED_PLANNER_ORGANIZATION_KEYS as _ALLOWED_PLANNER_ORGANIZATION_KEYS,
+    atomic_write_json as _atomic_write_json,
+    validate_conversation_planner_config as _validate_conversation_planner_config,
+)
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 
 _LOG_DIR = _ROOT / "logs"
@@ -728,7 +735,6 @@ async def browse_forever(
 # need to guess paths or run bash scripts.
 # ═════════════════════════════════════════════════════════════════════════════
 
-import tempfile
 from datetime import datetime, timezone
 
 
@@ -822,12 +828,6 @@ def _load_style_example_prompts() -> dict:
         if isinstance(data, dict):
             return data
     return {"version": 1, "tone_questions": [], "style_example_prompts": []}
-
-
-_ALLOWED_PLANNER_PERSONA_KEYS = frozenset(
-    {"name", "role", "organization", "specialization"}
-)
-_ALLOWED_PLANNER_ORGANIZATION_KEYS = frozenset({"description"})
 
 
 def _default_planner_identity() -> dict:
@@ -973,96 +973,6 @@ def _default_conversation_planner_config() -> dict:
             },
         },
     }
-
-
-def _validate_conversation_planner_config(config: dict) -> str | None:
-    if not isinstance(config, dict):
-        return "config must be a JSON object"
-
-    if "persona" in config or "organization" in config:
-        return (
-            "persona and organization are stored in persona.json (under the active outreach data root); "
-            "remove them from this payload and use merge_conversation_planner_identity, "
-            "or edit persona.json directly"
-        )
-
-    for key in (
-        "campaign",
-        "conversation_end_goals",
-        "message_rules",
-        "router",
-    ):
-        if key in config and not isinstance(config[key], dict):
-            return f"{key} must be an object"
-
-    for key in ("connection_note_char_limit", "followup_char_limit"):
-        value = (
-            config.get("message_rules", {}).get(key)
-            if isinstance(config.get("message_rules"), dict)
-            else None
-        )
-        if value is not None and (not isinstance(value, int) or value <= 0):
-            return f"message_rules.{key} must be a positive integer"
-
-    rules = config.get("message_rules")
-    if isinstance(rules, dict):
-        guidelines = rules.get("tone_guidelines")
-        if guidelines is not None and not isinstance(guidelines, str):
-            return "message_rules.tone_guidelines must be a string"
-
-        examples = rules.get("style_examples")
-        if examples is not None:
-            if not isinstance(examples, list):
-                return "message_rules.style_examples must be an array"
-            for idx, item in enumerate(examples):
-                if not isinstance(item, dict):
-                    return f"message_rules.style_examples[{idx}] must be an object"
-                reply = item.get("reply")
-                if not isinstance(reply, str) or not reply.strip():
-                    return (
-                        f"message_rules.style_examples[{idx}].reply must be a "
-                        "non-empty string"
-                    )
-                for opt_key in ("label", "context", "incoming"):
-                    val = item.get(opt_key)
-                    if val is not None and not isinstance(val, str):
-                        return (
-                            f"message_rules.style_examples[{idx}].{opt_key} "
-                            "must be a string when set"
-                        )
-
-    end_goals = config.get("conversation_end_goals")
-    if isinstance(end_goals, dict):
-        for bucket in ("preferred", "fallback"):
-            items = end_goals.get(bucket)
-            if items is None:
-                continue
-            if not isinstance(items, list):
-                return f"conversation_end_goals.{bucket} must be an array"
-            for idx, item in enumerate(items):
-                if not isinstance(item, dict):
-                    return f"conversation_end_goals.{bucket}[{idx}] must be an object"
-                if not item.get("id"):
-                    return f"conversation_end_goals.{bucket}[{idx}].id is required"
-
-    router = config.get("router")
-    if isinstance(router, dict):
-        timeout = router.get("step_timeout_hours")
-        if timeout is not None and (not isinstance(timeout, int) or timeout <= 0):
-            return "router.step_timeout_hours must be a positive integer"
-        priorities = router.get("step4_path_priority")
-        if priorities is not None:
-            if not isinstance(priorities, list) or not all(
-                isinstance(item, str) and item.strip() for item in priorities
-            ):
-                return (
-                    "router.step4_path_priority must be an array of non-empty strings"
-                )
-        routes = router.get("signal_routes")
-        if routes is not None and not isinstance(routes, dict):
-            return "router.signal_routes must be an object"
-
-    return None
 
 
 def _normalize_prospect_id_slug(raw: str | None) -> str | None:
@@ -1237,23 +1147,6 @@ def _lookup_connection_name(profile_url: str) -> str | None:
     except Exception:
         logger.exception("_lookup_connection_name failed")
     return None
-
-
-def _atomic_write_json(path: Path, data: object) -> None:
-    """Write JSON atomically via temp-file + rename so a crash cannot corrupt the file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp_")
-    try:
-        with open(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-            f.write("\n")
-        Path(tmp).replace(path)
-    except Exception:
-        try:
-            Path(tmp).unlink()
-        except OSError:
-            pass
-        raise
 
 
 @mcp.tool()
