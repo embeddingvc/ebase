@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.22] - 2026-08-16
+
+### Changed
+- `ebase-setup` and `ebase-sync-persona` now read and write `outreach/config/persona.json` / `conversation_planner.json` directly with Read/Write instead of going through the `merge_conversation_planner_identity`, `upsert_conversation_planner_config`, `get_conversation_planner_config`, and `get_style_example_prompts` MCP tools. Claude Code only loads MCP servers at session start, so a session that had just run `claude mcp add` (the agent-addressed installer from #31) couldn't see those tools yet and setup was blocked until a restart. None of the four tools ever touched LinkedIn — they only moved local JSON — so the MCP round trip bought nothing. Part of #31.
+
+### Added
+- `tools/outreach_config.py`, a shared module holding the config schema, validation, and atomic-write logic, plus a standalone `tools/validate_outreach_config.py` CLI for skills to validate what they just wrote. This retires a second, hand-written copy of the validation logic in `tools/setup_tone_examples.py` (install.sh's non-interactive path) that had already drifted from the MCP tools' version. `tools/server.py`'s MCP config tools keep working for programmatic/dashboard callers but now call the shared module.
+
+## [1.0.0.21] - 2026-08-13
+
+### Fixed
+- `bin/outreach-update-check` and `bin/outreach-upgrade` now prefer an `upstream` remote over `origin` when one exists. Both had `origin` hardcoded into their `git fetch`/`git pull`, which is the wrong source in a contributor checkout where `origin` is a personal fork — a stale fork made update-check report `UP_TO_DATE` while upstream had newer commits, and upgrade would silently pull nothing (#36).
+
+## [1.0.0.20] - 2026-08-10
+
+### Changed
+- **Breaking:** the nine ebase-owned Claude skills are renamed with an `ebase-` prefix for namespace safety against other installed skills: `setup-outreach` → `ebase-setup`, `outreach-upgrade` → `ebase-upgrade`, `outreach-uninstall` → `ebase-uninstall`, `stats` → `ebase-stats`, `send-connection-request` → `ebase-send-connection-request`, `reply-to-post` → `ebase-reply-to-post`, `conversation-planner` → `ebase-conversation-planner`, `sync-planner-persona-from-linkedin` → `ebase-sync-persona` (#32). Clean break, no deprecation stubs — invoke the new names. `sync-pending-connections` was already retired and is untouched.
+
+## [1.0.0.19] - 2026-08-08
+
+### Changed
+- The root `SKILL.md` install section is now an agent-executable runbook rather than prose for a human: paste `set up https://ebase.dev/SKILL.md` and the agent walks the steps, narrating each one and delegating the mechanical work to the existing `install.sh` instead of re-implementing it. Adds a conversational recovery tree for Chrome/CDP attach failures — the one step `install.sh` can only warn about, not fix interactively — a verification step, and a mandatory hand-off into `/setup-outreach` (renamed `/ebase-setup` in 1.0.0.20) so the first session ends on a read-only win. README's install CTA leads with the agent path; the `curl` one-liner stays documented as the fallback (#31).
+
 ## [1.0.0.18] - 2026-07-26
 
 ### Fixed
