@@ -100,7 +100,6 @@ No dashboard to learn. No per-seat fees. Each skill maps to something you alread
 | What you'd normally do | ebase skill | What happens |
 |---|---|---|
 | Research + connect with a candidate | `/ebase-send-connection-request` | Reads their profile, writes a personalized note in your voice, sends, logs to pipeline |
-| Check which requests got accepted | `/sync-pending-connection` | Verifies acceptance on LinkedIn, updates your connections list, queues follow-ups |
 | Write a multi-touch DM sequence | `/ebase-conversation-planner` | Plans the next message based on thread history, your persona, and their profile |
 | Set up your outreach voice | `/ebase-setup` | Scrapes your LinkedIn profile, builds your persona and tone config |
 | Engage on a prospect's post | `/ebase-reply-to-post` | Writes a comment in your voice, confirms with you, posts it |
