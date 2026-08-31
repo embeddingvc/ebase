@@ -107,6 +107,21 @@ Read **`outreach/config/persona.json`** (fall back to `persona.json.example`, th
 `{"persona": {"name": "Nova Chen"}}` if neither exists). If `persona.name` is still
 **"Nova Chen"**, treat identity as unset.
 
+**First-run check.** If identity is unset (still "Nova Chen"), this is likely a fresh install.
+Check whether the LinkedIn MCP tools are registered in this session (look for
+`mcp__linkedin__scrape_profile` in your available tools — don't call it yet, just check it's
+listed). If it is **not** listed:
+
+> This looks like your first time running setup, and the LinkedIn browser tools haven't loaded
+> into this Claude Code session yet — that's expected right after install, since MCP servers
+> only load at session start. Please **close this session and start a new one**, then run
+> `/ebase-setup` again. (If `install.sh` / `make claude-install` hasn't been run yet, do that
+> first.)
+
+Stop there — don't offer the path menu below until the tools are present, since Full setup and
+Profile only both need step 1. If identity is unset but the tools **are** listed (e.g. this is a
+second session), proceed normally.
+
 Use **`AskQuestion`** (or ask in chat):
 
 | Option | When |
@@ -335,11 +350,14 @@ Mark all checklist items done.
 | Symptom | Guidance |
 |---------|----------|
 | CDP connection refused | `make browser`; port 9222 |
+| `make browser` itself fails (missing Chrome for Testing, command not found) | Tell the operator plainly what failed and point them at the repo's install docs / `./install.sh`; don't retry silently in a loop |
 | Scrape returns login page | Sign in in installer Chrome profile |
 | Draft feels wrong / too generic | Iterate in 2c; optional **`parse_profile`** refresh |
 | Still "Nova Chen" after sync | Re-read `outreach/config/persona.json` — the write in 2d may have failed validation; check the `validate_outreach_config.py` output and retry |
+| `persona.json` / `conversation_planner.json` exists but isn't valid JSON | Don't merge into it — show the operator the parse error, offer to start from the matching `*.example` file instead, and confirm before overwriting |
 | `validate_outreach_config.py` reports `error: ...` | Fix the offending field in your draft (unknown key or non-string value) and re-write; never leave the file in an invalid state |
 | `scrape_profile` / `parse_profile` tool not found | LinkedIn MCP hasn't loaded in this session — `./install.sh` or `make claude-install`, then start a **new** session. Only affects steps 1 / 2a / optional-2c; the rest of the wizard doesn't need it |
+| Operator wants to stop mid-wizard | Note current progress-tracker state out loud so they know where a re-run of `/ebase-setup` will resume; don't force them through remaining steps |
 
 ---
 
