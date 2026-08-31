@@ -1,6 +1,6 @@
 [project]
 name = "ebase"
-version = "1.0.0.22"
+version = "1.0.0.23"
 description = "LinkedIn recruiting outreach that runs inside Claude Code"
 readme = "README.md"
 license = "MIT"
