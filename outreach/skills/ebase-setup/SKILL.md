@@ -115,8 +115,7 @@ listed). If it is **not** listed:
 > This looks like your first time running setup, and the LinkedIn browser tools haven't loaded
 > into this Claude Code session yet — that's expected right after install, since MCP servers
 > only load at session start. Please **close this session and start a new one**, then run
-> `/ebase-setup` again. (If `install.sh` / `make claude-install` hasn't been run yet, do that
-> first.)
+> `/ebase-setup` again. 
 
 Stop there — don't offer the path menu below until the tools are present, since Full setup and
 Profile only both need step 1. If identity is unset but the tools **are** listed (e.g. this is a
